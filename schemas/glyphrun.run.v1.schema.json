@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://glyphrun.dev/schemas/glyphrun.run.v1.schema.json",
+  "title": "Glyphrun Run Result v1",
+  "type": "object",
+  "required": ["schemaVersion", "runId", "specName", "status", "outcomes", "artifacts", "exitCode"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string" },
+    "specName": { "type": "string" },
+    "status": { "enum": ["passed", "failed", "errored"] },
+    "startedAt": { "type": "string" },
+    "endedAt": { "type": "string" },
+    "durationMs": { "type": "integer" },
+    "outcomes": { "type": "array" },
+    "artifacts": { "type": "object" },
+    "exitCode": { "type": "integer" }
+  },
+  "additionalProperties": true
+}
+

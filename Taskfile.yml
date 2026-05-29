@@ -1,0 +1,61 @@
+version: '3'
+
+vars:
+  BIN: ./bin/glyph
+  MAIN: ./cmd/glyph
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  deps:
+    cmds:
+      - go mod tidy
+
+  build:
+    cmds:
+      - mkdir -p bin
+      - go build -o {{.BIN}} {{.MAIN}}
+
+  run:
+    deps: [build]
+    cmds:
+      - '{{.BIN}} run {{.CLI_ARGS}}'
+
+  doctor:
+    deps: [build]
+    cmds:
+      - '{{.BIN}} doctor --format md'
+
+  test:
+    cmds:
+      - go test ./...
+
+  lint:
+    cmds:
+      - go vet ./...
+
+  fmt:
+    cmds:
+      - gofmt -w .
+
+  verify:
+    cmds:
+      - task fmt
+      - task lint
+      - task test
+      - task build
+      - '{{.BIN}} doctor --format json'
+
+  example:
+    deps: [build]
+    cmds:
+      - go build -o ./examples/apps/hello/hello ./examples/apps/hello
+      - '{{.BIN}} run examples/specs/hello.yml --format md'
+
+  context:
+    deps: [build]
+    cmds:
+      - '{{.BIN}} context latest --format md'
+

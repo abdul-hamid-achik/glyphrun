@@ -1,0 +1,45 @@
+version: 1
+name: hello_quits
+
+intent: |
+  a user can open the hello demo app and quit with q.
+
+target:
+  cmd: ["${vars.helloBin}"]
+  cwd: "."
+
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+
+preconditions:
+  commands:
+    - run: "go build -o ./examples/apps/hello/hello ./examples/apps/hello"
+      timeoutMs: 30000
+
+steps:
+  - wait:
+      screen:
+        contains: "hello from glyphrun"
+      timeoutMs: 3000
+  - snapshot: home
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000
+
+outcomes:
+  - id: welcome_visible
+    description: the rendered terminal screen contains the welcome text
+    verify:
+      screen:
+        contains: "hello from glyphrun"
+
+  - id: clean_exit
+    description: q exits the application with status code 0
+    verify:
+      process:
+        exitCode: 0
+

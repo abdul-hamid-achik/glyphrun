@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://glyphrun.dev/schemas/glyphrun.config.v1.schema.json",
+  "title": "Glyphrun Config v1",
+  "type": "object",
+  "properties": {
+    "version": { "const": 1 },
+    "defaultEnvironment": { "type": "string" },
+    "artifactRoot": { "type": "string" },
+    "snapshotRoot": { "type": "string" },
+    "schemaRoot": { "type": "string" },
+    "environments": { "type": "object" },
+    "terminal": { "type": "object" },
+    "artifacts": { "type": "object" },
+    "redaction": { "type": "object" }
+  },
+  "additionalProperties": false
+}
+

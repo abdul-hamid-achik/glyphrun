@@ -1,0 +1,53 @@
+version: 1
+
+defaultEnvironment: local
+
+artifactRoot: .glyphrun/runs
+snapshotRoot: .glyphrun/snapshots
+schemaRoot: schemas
+
+environments:
+  local:
+    vars:
+      helloBin: ./examples/apps/hello/hello
+      defaultCols: 100
+      defaultRows: 30
+    env:
+      TERM: xterm-256color
+      COLORTERM: truecolor
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+      CI: "1"
+      GLYPHRUN: "1"
+
+terminal:
+  profile: xterm-256color
+  cols: 100
+  rows: 30
+  normalize:
+    trimRight: true
+    normalizeLineEndings: true
+    hideCursorInTextSnapshots: false
+
+artifacts:
+  rawLog: true
+  frames: true
+  finalScreen: true
+  snapshots: true
+  agentContext: true
+  maxRawLogBytes: 10485760
+
+redaction:
+  enabled: true
+  envAllowlist:
+    - TERM
+    - COLORTERM
+    - LANG
+    - LC_ALL
+    - CI
+    - GLYPHRUN
+  patterns:
+    - name: bearer-token
+      regex: '(?i)bearer\s+[a-z0-9._~+/-]+'
+      replace: 'bearer <redacted>'
+

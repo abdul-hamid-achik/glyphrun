@@ -1,0 +1,68 @@
+package cli
+
+import "github.com/spf13/cobra"
+
+func newExplainCommand(opts *globalOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "explain",
+		Short: "Describe the current CLI/spec/artifact vocabulary",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := resolveFormat(opts.format)
+			if err != nil {
+				return exitError{code: 2, err: err}
+			}
+			value := map[string]any{
+				"schemaVersion": 1,
+				"project":       "glyphrun",
+				"binary":        "glyph",
+				"commands": []string{
+					"glyph run <spec...>",
+					"glyph spec verify <spec>",
+					"glyph spec scaffold",
+					"glyph snapshot update <spec...>",
+					"glyph diff <runA> <runB>",
+					"glyph record -- <command...>",
+					"glyph replay <run>",
+					"glyph context <run|latest>",
+					"glyph docs [topic]",
+					"glyph explain",
+					"glyph doctor",
+					"glyph mcp",
+				},
+				"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use"},
+				"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command"},
+				"formats":   []string{"json", "yaml", "md"},
+				"artifacts": []string{
+					"run.json",
+					"run.yaml",
+					"run.md",
+					"agent_context.md",
+					"events.ndjson",
+					"spec.resolved.yml",
+					"screens/final.txt",
+					"screens/final.json",
+					"raw/pty.raw.log",
+					"frames/frames.ndjson",
+					"snapshots/*.txt",
+					"outcomes/*.md",
+					"diagnostics/*.md",
+				},
+			}
+			output, err := emit(format, value, func() string {
+				return `# Glyphrun Explain
+
+- binary: ` + "`glyph`" + `
+- steps: press, type, paste, send, wait, resize, snapshot, use
+- verifiers: screen, region, cell, cursor, process, snapshot, command
+- formats: json, yaml, md
+- artifacts: run summaries, agent context, events, final screen, raw PTY log, frames, snapshots, outcomes, diagnostics
+`
+			})
+			if err != nil {
+				return exitError{code: 2, err: err}
+			}
+			cmd.Print(output)
+			return nil
+		},
+	}
+}

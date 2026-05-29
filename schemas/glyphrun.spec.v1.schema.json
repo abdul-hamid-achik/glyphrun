@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://glyphrun.dev/schemas/glyphrun.spec.v1.schema.json",
+  "title": "Glyphrun Spec v1",
+  "type": "object",
+  "required": ["version", "name", "intent", "target", "steps", "outcomes"],
+  "properties": {
+    "version": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "contractHash": { "type": "string" },
+    "intent": { "type": "string", "minLength": 1 },
+    "imports": { "type": "array", "items": { "type": "string" } },
+    "target": {
+      "type": "object",
+      "required": ["cmd"],
+      "properties": {
+        "cmd": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "cwd": { "type": "string" },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "timeoutMs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "terminal": {
+      "type": "object",
+      "properties": {
+        "cols": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 },
+        "profile": { "enum": ["xterm-256color", "vt100", "ansi"] },
+        "color": { "enum": ["auto", "always", "never"] },
+        "alternateScreen": { "enum": ["auto", "require", "forbid"] }
+      },
+      "additionalProperties": false
+    },
+    "preconditions": {
+      "type": "object",
+      "properties": {
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["run"],
+            "properties": {
+              "run": { "type": "string" },
+              "cwd": { "type": "string" },
+              "timeoutMs": { "type": "integer", "minimum": 1 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "steps": { "type": "array", "items": { "type": "object" } },
+    "outcomes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "verify"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "verify": { "type": "object" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "normalize": {
+      "type": "object",
+      "properties": {
+        "trimRight": { "type": "boolean" },
+        "normalizeLineEndings": { "type": "boolean" },
+        "stripAnsiTitle": { "type": "boolean" },
+        "replace": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["regex", "with"],
+            "properties": {
+              "regex": { "type": "string" },
+              "with": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "ignoreRegions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["x", "y", "width", "height"],
+            "properties": {
+              "x": { "type": "integer" },
+              "y": { "type": "integer" },
+              "width": { "type": "integer", "minimum": 1 },
+              "height": { "type": "integer", "minimum": 1 },
+              "reason": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
