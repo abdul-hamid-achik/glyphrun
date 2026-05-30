@@ -49,10 +49,25 @@ go build -o ./bin/glyph ./cmd/glyph
 ./bin/glyph run examples/specs/hello.yml --format md
 ```
 
+To install the CLI globally from this checkout:
+
+```bash
+go build -o ~/.local/bin/glyph ./cmd/glyph
+glyph doctor --format md
+```
+
 After a run, inspect the newest agent-readable context:
 
 ```bash
 ./bin/glyph context latest --format md
+```
+
+For a guided command map:
+
+```bash
+glyph agent --format md
+glyph docs topics --format md
+glyph explain --format json
 ```
 
 ## Example Spec
@@ -118,12 +133,30 @@ glyph record -- <command...>        Capture a PTY session as an artifact pack
 glyph replay <run>                  Replay or print a recorded PTY log
 glyph context <run|latest>          Print agent-focused failure/run context
 glyph docs [topic]                  Print built-in docs
+glyph agent                         Print the recommended agent workflow
 glyph explain                       Explain project concepts and command flow
 glyph doctor                        Check local setup
 glyph mcp                           Start the MCP stdio server
 ```
 
-Agent-callable commands support `--format json|yaml|md`. JSON and YAML modes do not prompt interactively.
+Agent-callable commands support `--format json|yaml|md`. JSON and YAML modes do not prompt interactively. Markdown is the default human report format.
+
+## Human And Agent DX
+
+For humans, `--format md` prints a compact report with run status, target command, terminal size, outcome counts, failure focus, key artifact paths, and suggested next commands. Markdown output is colorized on real terminals. Set `GLYPHRUN_COLOR=always` to force color, `GLYPHRUN_COLOR=never` or `--no-color` to disable it, and `NO_COLOR=1` to follow the common no-color convention.
+
+For agents, start with:
+
+```bash
+glyph agent --format md
+glyph explain --format json
+glyph docs agents --format md
+glyph spec verify <spec> --format json
+glyph run <spec> --format json
+glyph context latest --format md
+```
+
+The agent contract is simple: treat `intent` and `outcomes` as the behavior contract, treat `steps` as repairable navigation hints, and use `glyph context latest` after failures before editing code.
 
 ## MCP
 
@@ -145,6 +178,8 @@ Every `glyph run` writes a run directory under `.glyphrun/runs/` by default. Dep
 - `diagnostics/*.md`
 
 Run artifacts are ignored by Git. Committed snapshots can live under `.glyphrun/snapshots/` when you choose to update them.
+
+The most useful files during debugging are `run.md`, `agent_context.md`, `diagnostics/failure.md`, `screens/final.txt`, and `frames/frames.ndjson`.
 
 ## Configuration
 

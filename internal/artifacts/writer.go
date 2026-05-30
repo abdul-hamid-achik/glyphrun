@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
@@ -105,7 +106,7 @@ func (w *Writer) WriteFrames(frames []terminal.Frame) error {
 }
 
 func (w *Writer) WriteSnapshot(name string, snapshot terminal.ScreenSnapshot) error {
-	safe := safeName(name)
+	safe := SafeName(name)
 	if err := os.WriteFile(w.Resolve("snapshots/"+safe+".txt"), []byte(w.redactor.Text(snapshot.Text)+"\n"), 0o644); err != nil {
 		return err
 	}
@@ -113,10 +114,13 @@ func (w *Writer) WriteSnapshot(name string, snapshot terminal.ScreenSnapshot) er
 }
 
 func (w *Writer) WriteOutcome(result OutcomeResult, raw any) error {
-	safe := safeName(result.ID)
+	safe := SafeName(result.ID)
 	md := "# Outcome: " + result.ID + "\n\n" +
 		"- status: " + string(result.Status) + "\n" +
 		"- message: " + result.Message + "\n"
+	if result.Evidence != "" {
+		md += "- evidence: " + result.Evidence + "\n"
+	}
 	if err := os.WriteFile(w.Resolve("outcomes/"+safe+".md"), []byte(w.redactor.Text(md)), 0o644); err != nil {
 		return err
 	}
@@ -140,9 +144,24 @@ func (w *Writer) WriteOutcomesIndex(result RunResult) error {
 	}
 	var b strings.Builder
 	b.WriteString("# Outcomes\n\n")
+	passed, failed := outcomeCounts(result.Outcomes)
+	b.WriteString("## Summary\n\n")
+	b.WriteString("- passed: ")
+	b.WriteString(strconv.Itoa(passed))
+	b.WriteByte('\n')
+	b.WriteString("- failed: ")
+	b.WriteString(strconv.Itoa(failed))
+	b.WriteByte('\n')
+	b.WriteString("- total: ")
+	b.WriteString(strconv.Itoa(len(result.Outcomes)))
+	b.WriteString("\n\n## Results\n\n")
 	for _, outcome := range result.Outcomes {
 		b.WriteString("- ")
-		b.WriteString(string(outcome.Status))
+		if outcome.Status == OutcomePassed {
+			b.WriteString("PASS")
+		} else {
+			b.WriteString("FAIL")
+		}
 		b.WriteByte(' ')
 		b.WriteString(outcome.ID)
 		if outcome.Message != "" {
@@ -160,7 +179,7 @@ func (w *Writer) WriteAgentContext(s spec.Spec, result RunResult, finalScreen st
 }
 
 func (w *Writer) WriteDiagnostic(name string, content string) error {
-	return os.WriteFile(w.Resolve("diagnostics/"+safeName(name)+".md"), []byte(w.redactor.Text(content)), 0o644)
+	return os.WriteFile(w.Resolve("diagnostics/"+SafeName(name)+".md"), []byte(w.redactor.Text(content)), 0o644)
 }
 
 func writeJSON(path string, value any, redactor Redactor) error {
@@ -180,7 +199,7 @@ func writeYAML(path string, value any, redactor Redactor) error {
 	return os.WriteFile(path, redactor.Bytes(data), 0o644)
 }
 
-func safeName(name string) string {
+func SafeName(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return "unnamed"

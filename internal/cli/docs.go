@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/spf13/cobra"
 )
@@ -10,26 +11,55 @@ var docsByTopic = map[string]string{
 	"overview": `# Glyphrun Overview
 
 Glyphrun runs YAML or JSON terminal behavior specs against a target command in a real PTY. Assertions read a virtual terminal screen, not raw ANSI bytes.
+
+Start with ` + "`glyph agent --format md`" + ` for the agent workflow, or ` + "`glyph docs topics --format md`" + ` to list focused docs.
+`,
+	"quickstart": `# Quickstart
+
+1. Run ` + "`glyph doctor --format md`" + `.
+2. Create a spec with ` + "`glyph spec scaffold > specs/smoke.yml`" + `.
+3. Validate it with ` + "`glyph spec verify specs/smoke.yml --format json`" + `.
+4. Run it with ` + "`glyph run specs/smoke.yml --format md`" + `.
+5. Inspect failures with ` + "`glyph context latest --format md`" + `.
 `,
 	"authoring": `# Authoring
 
 Separate behavior contracts from repairable steps. Keep user intent in ` + "`intent`" + `, stable expectations in ` + "`outcomes`" + `, and navigation/input hints in ` + "`steps`" + `.
+
+Run ` + "`glyph spec verify <spec> --format json`" + ` before running a spec. Use ` + "`glyph spec verify <spec> --stamp`" + ` only when the expected behavior intentionally changed.
+
+Good specs assert user-visible behavior. Avoid coupling outcomes to implementation details, timing artifacts, or raw ANSI bytes.
 `,
 	"steps": `# Steps
 
 Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + "`send`" + `, ` + "`wait`" + `, ` + "`resize`" + `, ` + "`snapshot`" + `, and imported ` + "`use`" + ` actions.
+
+Prefer ` + "`wait`" + ` steps that synchronize on visible screen or process state. Use ` + "`snapshot`" + ` to capture named terminal states in the artifact pack.
 `,
 	"verifiers": `# Verifiers
 
 Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, and trusted ` + "`command`" + `.
+
+Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes. Process verifiers can check exit state and exit code.
 `,
 	"artifacts": `# Artifacts
 
 Each run writes ` + "`run.json`" + `, ` + "`run.yaml`" + `, ` + "`run.md`" + `, ` + "`agent_context.md`" + `, ` + "`events.ndjson`" + `, ` + "`spec.resolved.yml`" + `, final screens, frames, raw logs, snapshots, outcomes, and diagnostics.
+
+Start with ` + "`run.md`" + ` for a human summary, ` + "`run.json`" + ` for automation, ` + "`agent_context.md`" + ` for agent debugging, and ` + "`screens/final.txt`" + ` for the normalized terminal state.
 `,
 	"agents": `# Agents
 
-Call ` + "`glyph explain --format json`" + ` first, then ` + "`glyph spec verify`" + `, ` + "`glyph run`" + `, and ` + "`glyph context latest`" + `. Do not edit ` + "`intent`" + ` or ` + "`outcomes`" + ` without surfacing the contract change.
+Call ` + "`glyph agent --format md`" + ` or ` + "`glyph explain --format json`" + ` before editing specs.
+
+Recommended loop:
+
+1. ` + "`glyph spec verify <spec> --format json`" + `
+2. ` + "`glyph run <spec> --format json`" + `
+3. ` + "`glyph context latest --format md`" + ` after a failure
+4. inspect ` + "`diagnostics/failure.md`" + `, ` + "`screens/final.txt`" + `, and ` + "`frames/frames.ndjson`" + `
+
+Do not edit ` + "`intent`" + ` or ` + "`outcomes`" + ` without surfacing the contract change. Repair ` + "`steps`" + ` when the route through the terminal UI changed.
 `,
 	"mcp": `# MCP
 
@@ -38,10 +68,26 @@ Run ` + "`glyph mcp`" + ` to start the stdio MCP server. The current server expo
 	"configuration": `# Configuration
 
 Glyphrun reads ` + "`glyphrun.config.yml`" + ` by walking up from the spec path. Defaults include ` + "`.glyphrun/runs`" + ` artifacts and an xterm-256color terminal profile.
+
+Use config for shared terminal defaults, artifact behavior, variables, and redaction rules. Use ` + "`glyph doctor --format md`" + ` to confirm the active config and artifact root.
 `,
 	"troubleshooting": `# Troubleshooting
 
 Use ` + "`glyph context latest --format md`" + ` after a failure. Inspect ` + "`screens/final.txt`" + `, ` + "`raw/pty.raw.log`" + `, ` + "`frames/frames.ndjson`" + `, and ` + "`diagnostics/failure.md`" + `.
+`,
+	"topics": `# Docs Topics
+
+- overview
+- quickstart
+- authoring
+- steps
+- verifiers
+- artifacts
+- agents
+- mcp
+- configuration
+- troubleshooting
+- topics
 `,
 }
 
@@ -61,10 +107,10 @@ func newDocsCommand(opts *globalOptions) *cobra.Command {
 			}
 			content, ok := docsByTopic[topic]
 			if !ok {
-				return exitError{code: 2, err: fmt.Errorf("unknown docs topic %q", topic)}
+				return exitError{code: 2, err: fmt.Errorf("unknown docs topic %q; run `glyph docs topics --format md`", topic)}
 			}
 			value := map[string]any{"schemaVersion": 1, "topic": topic, "content": content}
-			output, err := emit(format, value, func() string { return content })
+			output, err := emitForCLI(cmd, opts, format, value, func() string { return content })
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
@@ -72,4 +118,13 @@ func newDocsCommand(opts *globalOptions) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func docsTopics() []string {
+	topics := make([]string, 0, len(docsByTopic))
+	for topic := range docsByTopic {
+		topics = append(topics, topic)
+	}
+	sort.Strings(topics)
+	return topics
 }

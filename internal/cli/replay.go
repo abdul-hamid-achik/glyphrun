@@ -48,7 +48,7 @@ func newReplayCommand(opts *globalOptions) *cobra.Command {
 				return nil
 			}
 			value := map[string]any{"schemaVersion": 1, "run": result.RunID, "rawPtyLog": rawPath, "bytes": len(raw)}
-			output, err := emit(format, value, func() string { return string(raw) })
+			output, err := emitForCLI(cmd, opts, format, value, func() string { return string(raw) })
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}

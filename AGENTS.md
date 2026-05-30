@@ -4,6 +4,7 @@ Glyphrun is a local-first terminal behavior spec runner. Specs declare `intent +
 
 ## Required Agent Behavior
 
+- Run `glyph agent --format md` when entering a Glyphrun-enabled repository for the first time.
 - Run `glyph explain --format json` before assuming the current CLI/spec surface.
 - Use `glyph docs <topic> --format json` for focused authoring guidance.
 - Use `glyph spec verify <spec> --format json` before running a spec.
@@ -16,3 +17,11 @@ Glyphrun is a local-first terminal behavior spec runner. Specs declare `intent +
 - Keep CLI JSON/YAML paths non-interactive.
 - Keep parser, runner, PTY backend, emulator, verifiers, and artifacts separate.
 
+## Useful Human Commands
+
+- `glyph doctor --format md`
+- `glyph docs topics --format md`
+- `glyph run <spec> --format md`
+- `glyph context latest --format md`
+
+Markdown output may use ANSI color in a real terminal. Use `--no-color` for plain output.

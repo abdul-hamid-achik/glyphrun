@@ -75,7 +75,7 @@ func newDoctorCommand(opts *globalOptions) *cobra.Command {
 				}
 			}
 			value := map[string]any{"schemaVersion": 1, "ok": ok, "checks": checks}
-			output, err := emit(format, value, func() string {
+			output, err := emitForCLI(cmd, opts, format, value, func() string {
 				md := "# Glyphrun Doctor\n\n"
 				for _, check := range checks {
 					mark := "PASS"

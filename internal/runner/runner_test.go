@@ -132,6 +132,9 @@ outcomes:
 	if checked.Status != artifacts.StatusPassed {
 		t.Fatalf("compare status = %s, outcomes = %#v", checked.Status, checked.Outcomes)
 	}
+	if checked.Artifacts["snapshot:home"] != "snapshots/home.txt" {
+		t.Fatalf("snapshot artifact missing: %#v", checked.Artifacts)
+	}
 }
 
 func TestRunSpecHonorsArtifactFlagsAndNormalization(t *testing.T) {

@@ -69,6 +69,7 @@ func newRootCommand(opts *globalOptions) *cobra.Command {
 	cmd.AddCommand(newReplayCommand(opts))
 	cmd.AddCommand(newContextCommand(opts))
 	cmd.AddCommand(newDocsCommand(opts))
+	cmd.AddCommand(newAgentCommand(opts))
 	cmd.AddCommand(newExplainCommand(opts))
 	cmd.AddCommand(newDoctorCommand(opts))
 	cmd.AddCommand(newMCPCommand(opts))

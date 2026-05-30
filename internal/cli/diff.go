@@ -41,7 +41,7 @@ func newDiffCommand(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
-			output, err := emit(format, diff, func() string { return artifacts.RenderRunDiffMarkdown(diff) })
+			output, err := emitForCLI(cmd, opts, format, diff, func() string { return artifacts.RenderRunDiffMarkdown(diff) })
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}

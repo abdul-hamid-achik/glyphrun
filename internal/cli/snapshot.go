@@ -52,7 +52,7 @@ func newSnapshotUpdateCommand(opts *globalOptions) *cobra.Command {
 				}
 			}
 			value := map[string]any{"schemaVersion": 1, "updated": true, "results": results}
-			output, err := emit(format, value, func() string {
+			output, err := emitForCLI(cmd, opts, format, value, func() string {
 				md := "# Snapshot Update\n\n"
 				for _, result := range results {
 					md += "- " + string(result.Status) + " " + result.SpecName + " " + result.RunDir + "\n"

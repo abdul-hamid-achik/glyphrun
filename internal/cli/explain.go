@@ -25,6 +25,7 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph replay <run>",
 					"glyph context <run|latest>",
 					"glyph docs [topic]",
+					"glyph agent",
 					"glyph explain",
 					"glyph doctor",
 					"glyph mcp",
@@ -48,10 +49,13 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"diagnostics/*.md",
 				},
 			}
-			output, err := emit(format, value, func() string {
+			output, err := emitForCLI(cmd, opts, format, value, func() string {
 				return `# Glyphrun Explain
 
 - binary: ` + "`glyph`" + `
+- agent guide: ` + "`glyph agent --format md`" + `
+- docs: ` + "`glyph docs agents --format md`" + `, ` + "`glyph docs authoring --format md`" + `
+- context: ` + "`glyph context latest --format md`" + `
 - steps: press, type, paste, send, wait, resize, snapshot, use
 - verifiers: screen, region, cell, cursor, process, snapshot, command
 - formats: json, yaml, md

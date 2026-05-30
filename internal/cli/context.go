@@ -46,7 +46,7 @@ func newContextCommand(opts *globalOptions) *cobra.Command {
 				"path":          contextPath,
 				"content":       string(content),
 			}
-			output, err := emit(format, value, func() string { return string(content) })
+			output, err := emitForCLI(cmd, opts, format, value, func() string { return string(content) })
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}

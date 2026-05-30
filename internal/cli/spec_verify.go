@@ -58,7 +58,7 @@ func newSpecVerifyCommand(opts *globalOptions) *cobra.Command {
 				"outcomes":          len(parsed.Resolved.Outcomes),
 				"stamped":           stamp,
 			}
-			output, err := emit(format, value, func() string {
+			output, err := emitForCLI(cmd, opts, format, value, func() string {
 				return fmt.Sprintf("# Spec Valid\n\n- name: %s\n- contractHash: `%s`\n- steps: %d\n- outcomes: %d\n", parsed.Spec.Name, parsed.ContractHash, len(parsed.Resolved.Steps), len(parsed.Resolved.Outcomes))
 			})
 			if err != nil {

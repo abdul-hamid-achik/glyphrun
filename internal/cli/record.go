@@ -35,7 +35,7 @@ func newRecordCommand(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
-			output, err := emit(format, result, func() string { return artifacts.RenderRunMarkdown(result) })
+			output, err := emitForCLI(cmd, opts, format, result, func() string { return artifacts.RenderRunMarkdown(result) })
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}

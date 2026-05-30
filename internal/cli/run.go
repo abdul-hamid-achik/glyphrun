@@ -30,13 +30,17 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 			var output string
 			var outputErr error
 			if len(results) == 1 {
-				output, outputErr = emit(format, results[0], func() string { return artifacts.RenderRunMarkdown(results[0]) })
+				output, outputErr = emitForCLI(cmd, opts, format, results[0], func() string { return artifacts.RenderRunMarkdown(results[0]) })
 			} else {
 				batch := map[string]any{"schemaVersion": 1, "results": results}
-				output, outputErr = emit(format, batch, func() string {
-					md := "# Glyphrun Batch\n\n"
+				output, outputErr = emitForCLI(cmd, opts, format, batch, func() string {
+					md := "# Glyphrun Batch\n\n## Results\n\n"
 					for _, result := range results {
-						md += "- " + string(result.Status) + " " + result.SpecName + " " + result.RunDir + "\n"
+						mark := "PASS"
+						if result.Status != artifacts.StatusPassed {
+							mark = "FAIL"
+						}
+						md += "- " + mark + " " + result.SpecName + ": " + string(result.Status) + " `" + result.RunDir + "`\n"
 					}
 					return md
 				})

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -574,9 +575,23 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		result.Artifacts["rawPtyLog"] = "raw/pty.raw.log"
 		result.Artifacts["inputRawLog"] = "raw/input.raw.log"
 	}
+	if s.runtime.Config.Artifacts.Snapshots {
+		s.mu.Lock()
+		snapshotNames := make([]string, 0, len(s.snapshots))
+		for name := range s.snapshots {
+			snapshotNames = append(snapshotNames, name)
+		}
+		s.mu.Unlock()
+		sort.Strings(snapshotNames)
+		for _, name := range snapshotNames {
+			result.Artifacts["snapshot:"+name] = "snapshots/" + artifacts.SafeName(name) + ".txt"
+		}
+	}
 	if diagnostic != "" {
+		result.Artifacts["failureDiagnostic"] = "diagnostics/failure.md"
 		_ = s.writer.WriteDiagnostic("failure", "## Failure\n\n"+diagnostic+"\n\n## Final Screen\n\n```text\n"+finalSnapshot.Text+"\n```\n")
 	} else if status == artifacts.StatusFailed {
+		result.Artifacts["failureDiagnostic"] = "diagnostics/failure.md"
 		_ = s.writer.WriteDiagnostic("failure", renderOutcomeFailureDiagnostic(outcomes, finalSnapshot.Text))
 	}
 	if s.runtime.Config.Artifacts.FinalScreen {
