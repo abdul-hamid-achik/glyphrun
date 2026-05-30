@@ -49,3 +49,22 @@ func TestSimpleEmulatorIgnoresOSCTitleSequences(t *testing.T) {
 		t.Fatalf("screen text = %q", text)
 	}
 }
+
+func TestSimpleEmulatorTracksBracketedPasteMode(t *testing.T) {
+	em := NewEmulator(20, 3)
+	if em.BracketedPasteMode() {
+		t.Fatal("bracketed paste should start disabled")
+	}
+	if _, err := em.Feed([]byte("\x1b[?2004h")); err != nil {
+		t.Fatal(err)
+	}
+	if !em.BracketedPasteMode() {
+		t.Fatal("bracketed paste should be enabled")
+	}
+	if _, err := em.Feed([]byte("\x1b[?2004l")); err != nil {
+		t.Fatal(err)
+	}
+	if em.BracketedPasteMode() {
+		t.Fatal("bracketed paste should be disabled")
+	}
+}

@@ -5,15 +5,120 @@
   "type": "object",
   "properties": {
     "version": { "const": 1 },
-    "defaultEnvironment": { "type": "string" },
-    "artifactRoot": { "type": "string" },
-    "snapshotRoot": { "type": "string" },
-    "schemaRoot": { "type": "string" },
-    "environments": { "type": "object" },
-    "terminal": { "type": "object" },
-    "artifacts": { "type": "object" },
-    "redaction": { "type": "object" }
+    "defaultEnvironment": { "type": "string", "minLength": 1 },
+    "artifactRoot": { "type": "string", "minLength": 1 },
+    "snapshotRoot": { "type": "string", "minLength": 1 },
+    "schemaRoot": { "type": "string", "minLength": 1 },
+    "environments": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/environment" }
+    },
+    "terminal": { "$ref": "#/$defs/terminal" },
+    "artifacts": { "$ref": "#/$defs/artifacts" },
+    "redaction": { "$ref": "#/$defs/redaction" }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "environment": {
+      "type": "object",
+      "properties": {
+        "vars": {
+          "type": "object",
+          "additionalProperties": { "type": ["string", "number", "boolean"] }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "terminal": {
+      "type": "object",
+      "properties": {
+        "profile": { "enum": ["xterm-256color", "vt100", "ansi"] },
+        "cols": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 },
+        "normalize": { "$ref": "#/$defs/normalize" }
+      },
+      "additionalProperties": false
+    },
+    "normalize": {
+      "type": "object",
+      "properties": {
+        "trimRight": { "type": "boolean" },
+        "normalizeLineEndings": { "type": "boolean" },
+        "hideCursorInTextSnapshots": { "type": "boolean" },
+        "stripAnsiTitle": { "type": "boolean" },
+        "ignoreCursorVisibility": { "type": "boolean" },
+        "replace": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/normalizeReplace" }
+        },
+        "ignoreRegions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/normalizeIgnoreRegion" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "normalizeReplace": {
+      "type": "object",
+      "required": ["regex", "with"],
+      "properties": {
+        "regex": { "type": "string", "minLength": 1 },
+        "with": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "normalizeIgnoreRegion": {
+      "type": "object",
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "reason": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "properties": {
+        "rawLog": { "type": "boolean" },
+        "frames": { "type": "boolean" },
+        "finalScreen": { "type": "boolean" },
+        "snapshots": { "type": "boolean" },
+        "agentContext": { "type": "boolean" },
+        "maxRawLogBytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "redaction": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "envAllowlist": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "patterns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/redactionPattern" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "redactionPattern": {
+      "type": "object",
+      "required": ["name", "regex", "replace"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "regex": { "type": "string", "minLength": 1 },
+        "replace": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
 }
-

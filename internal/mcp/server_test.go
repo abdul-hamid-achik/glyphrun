@@ -31,6 +31,30 @@ func TestServeToolsListLineJSON(t *testing.T) {
 	}
 }
 
+func TestServeDocsWorksWithoutDocsDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"glyph_docs","arguments":{"topic":"agents"}}}` + "\n")
+	var output bytes.Buffer
+	if err := Serve(context.Background(), input, &output, ServerOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	payload := responsePayload(t, output.String())
+	var resp response
+	if err := json.Unmarshal(payload, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %#v", resp.Error)
+	}
+	data, err := json.Marshal(resp.Result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte("glyph context latest --format md")) {
+		t.Fatalf("docs response missing agent workflow: %s", string(data))
+	}
+}
+
 func responsePayload(t *testing.T, framed string) []byte {
 	t.Helper()
 	parts := strings.SplitN(framed, "\r\n\r\n", 2)

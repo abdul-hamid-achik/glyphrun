@@ -222,17 +222,19 @@ Every `glyph run` writes a run directory under `.glyphrun/runs/` by default. Dep
 - `raw/pty.raw.log`
 - `snapshots/*.txt` and `snapshots/*.json`
 - `outcomes/results.*`
-- `diagnostics/*.md`
+- `diagnostics/failure.md` and `diagnostics/environment.md`
 
 Run artifacts are ignored by Git. Committed snapshots can live under `.glyphrun/snapshots/` when you choose to update them.
 
-The most useful files during debugging are `run.md`, `agent_context.md`, `diagnostics/failure.md`, `screens/final.txt`, and `frames/frames.ndjson`.
+The most useful files during debugging are `run.md`, `agent_context.md`, `diagnostics/failure.md`, `diagnostics/environment.md`, `screens/final.txt`, and `frames/frames.ndjson`. `agent_context.md` includes recent events and suggested inspection commands for coding agents.
 
 ## Configuration
 
 Glyphrun reads `glyphrun.config.yml` from the working tree. Config can define shared variables, default terminal size/profile, artifact behavior, redaction rules, and text normalization.
 
 Specs can override relevant settings locally. Secrets should be passed through environment variables or external setup, not hard-coded in specs.
+
+Outcomes can set `timeoutMs` and `normalize` when a single assertion needs longer polling or custom volatile-text cleanup. `target.timeoutMs` wraps the whole PTY session and maps to exit code `3` when it expires.
 
 ## Project Layout
 

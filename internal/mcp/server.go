@@ -14,6 +14,7 @@ import (
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
+	glyphdocs "github.com/abdul-hamid-achik/glyphrun/internal/docs"
 	"github.com/abdul-hamid-achik/glyphrun/internal/runner"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 )
@@ -323,12 +324,10 @@ func toolError(err error) (any, *responseError) {
 }
 
 func docs(topic string) string {
-	path := filepath.Join("docs", topic+".md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "unknown topic: " + topic
+	if content, ok := glyphdocs.Content(topic); ok {
+		return content
 	}
-	return string(data)
+	return "unknown topic: " + topic
 }
 
 func contextContent(run string, opts ServerOptions) (string, error) {

@@ -1,6 +1,7 @@
 package artifacts
 
 import (
+	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -173,8 +174,34 @@ func (w *Writer) WriteOutcomesIndex(result RunResult) error {
 	return os.WriteFile(w.Resolve("outcomes/results.md"), []byte(w.redactor.Text(b.String())), 0o644)
 }
 
-func (w *Writer) WriteAgentContext(s spec.Spec, result RunResult, finalScreen string) error {
-	content := RenderAgentContext(s, result, finalScreen)
+func (w *Writer) RecentEvents(limit int) []Event {
+	if limit <= 0 {
+		return nil
+	}
+	f, err := os.Open(w.Resolve("events.ndjson"))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	var events []Event
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var event Event
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+		events = append(events, event)
+		if len(events) > limit {
+			copy(events, events[1:])
+			events = events[:limit]
+		}
+	}
+	return events
+}
+
+func (w *Writer) WriteAgentContext(s spec.Spec, result RunResult, finalScreen string, recentEvents []Event) error {
+	content := RenderAgentContext(s, result, finalScreen, recentEvents)
 	return os.WriteFile(w.Resolve("agent_context.md"), []byte(w.redactor.Text(content)), 0o644)
 }
 

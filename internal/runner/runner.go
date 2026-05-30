@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -29,6 +30,45 @@ const (
 	DefaultPollInterval = 25 * time.Millisecond
 	CleanupTimeout      = 2 * time.Second
 )
+
+const (
+	exitPassed              = 0
+	exitFailed              = 1
+	exitErrored             = 2
+	exitTimedOut            = 3
+	exitUnsupportedTerminal = 6
+)
+
+type runTimeoutError struct {
+	Scope   string
+	Timeout time.Duration
+	Message string
+}
+
+func (e runTimeoutError) Error() string {
+	if e.Message != "" {
+		return e.Message
+	}
+	if e.Scope == "" {
+		return fmt.Sprintf("timed out after %s", e.Timeout)
+	}
+	return fmt.Sprintf("%s timed out after %s", e.Scope, e.Timeout)
+}
+
+type unsupportedTerminalError struct {
+	Err error
+}
+
+func (e unsupportedTerminalError) Error() string {
+	if e.Err == nil {
+		return "unsupported terminal behavior"
+	}
+	return "unsupported terminal behavior: " + e.Err.Error()
+}
+
+func (e unsupportedTerminalError) Unwrap() error {
+	return e.Err
+}
 
 type Options struct {
 	SpecPath        string
@@ -90,13 +130,20 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		opts.Listener.OnRunStart(resolved, runID, runDir)
 	}
 	if err := state.runPreconditions(ctx); err != nil {
-		return state.finish(started, artifacts.StatusErrored, nil, fmt.Sprintf("precondition failed: %v", err)), nil
+		return state.finish(started, artifacts.StatusErrored, nil, fmt.Sprintf("precondition failed: %v", err), exitCodeForError(err)), nil
 	}
 
 	if err := state.startTarget(); err != nil {
 		return state.finish(started, artifacts.StatusErrored, nil, fmt.Sprintf("target failed to start: %v", err)), nil
 	}
 	defer state.cleanup()
+	runCtx := ctx
+	var cancelRun context.CancelFunc
+	if resolved.Target.TimeoutMS > 0 {
+		timeout := time.Duration(resolved.Target.TimeoutMS) * time.Millisecond
+		runCtx, cancelRun = context.WithTimeout(ctx, timeout)
+		defer cancelRun()
+	}
 
 	for idx, step := range resolved.Steps {
 		name := fmt.Sprintf("step.%d", idx+1)
@@ -105,11 +152,18 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		if state.listener != nil {
 			state.listener.OnStepStart(idx, step)
 		}
-		result, err := state.executeStep(ctx, step)
+		result, err := state.executeStep(runCtx, step)
 		if err != nil {
 			_ = writer.AppendEvent(event("step.failed", name, err.Error()))
 			if state.listener != nil {
 				state.listener.OnStepFinish(idx, step, ProgressFailed, time.Since(stepStart), err.Error())
+			}
+			if code := exitCodeForError(err); code == exitTimedOut || code == exitUnsupportedTerminal {
+				message := fmt.Sprintf("step %d failed: %v", idx+1, err)
+				if errors.Is(err, context.DeadlineExceeded) && resolved.Target.TimeoutMS > 0 {
+					message = fmt.Sprintf("step %d failed: %s", idx+1, targetTimeoutMessage(resolved.Target.TimeoutMS))
+				}
+				return state.finish(started, artifacts.StatusErrored, nil, message, code), nil
 			}
 			result := state.evaluateOutcomes(ctx)
 			return state.finish(started, artifacts.StatusFailed, result, fmt.Sprintf("step %d failed: %v", idx+1, err)), nil
@@ -127,7 +181,13 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		_ = writer.AppendEvent(event("step.finished", name, ""))
 	}
 
-	outcomes := state.evaluateOutcomes(ctx)
+	outcomes := state.evaluateOutcomes(runCtx)
+	if err := state.terminalError(); err != nil {
+		return state.finish(started, artifacts.StatusErrored, outcomes, err.Error(), exitCodeForError(err)), nil
+	}
+	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		return state.finish(started, artifacts.StatusErrored, outcomes, targetTimeoutMessage(resolved.Target.TimeoutMS), exitTimedOut), nil
+	}
 	status := artifacts.StatusPassed
 	for _, outcome := range outcomes {
 		if outcome.Status != artifacts.OutcomePassed {
@@ -151,6 +211,7 @@ type runState struct {
 	rawPTY    []byte
 	inputLog  []byte
 	frames    []terminal.Frame
+	termErr   error
 	snapshots map[string]terminal.ScreenSnapshot
 }
 
@@ -209,8 +270,13 @@ func (s *runState) startTarget() error {
 				s.rawPTY = append(s.rawPTY, data...)
 			}
 			s.mu.Unlock()
-			frames, _ := s.emulator.Feed(data)
+			frames, err := s.emulator.Feed(data)
 			s.mu.Lock()
+			if err != nil && s.termErr == nil {
+				s.termErr = unsupportedTerminalError{Err: err}
+				s.mu.Unlock()
+				return
+			}
 			s.frames = append(s.frames, frames...)
 			s.mu.Unlock()
 		},
@@ -228,8 +294,14 @@ type stepExecutionResult struct {
 }
 
 func (s *runState) executeStep(ctx context.Context, step spec.Step) (stepExecutionResult, error) {
+	if err := ctx.Err(); err != nil {
+		return stepExecutionResult{}, err
+	}
+	if err := s.terminalError(); err != nil {
+		return stepExecutionResult{}, err
+	}
 	if step.When != nil {
-		ok, message := s.checkVerify(ctx, *step.When)
+		ok, message := s.checkVerify(ctx, *step.When, nil)
 		if !ok {
 			return stepExecutionResult{Skipped: true, Message: message}, nil
 		}
@@ -244,7 +316,11 @@ func (s *runState) executeStep(ctx context.Context, step spec.Step) (stepExecuti
 	case step.Type != "":
 		return stepExecutionResult{}, s.writeInput([]byte(step.Type))
 	case step.Paste != "":
-		return stepExecutionResult{}, s.writeInput([]byte(step.Paste))
+		data := []byte(step.Paste)
+		if bracketedPasteEnabled(s.emulator) {
+			data = input.BracketedPasteBytes(step.Paste)
+		}
+		return stepExecutionResult{}, s.writeInput(data)
 	case step.Send != nil:
 		data, err := decodeEscaped(step.Send.Bytes)
 		if err != nil {
@@ -298,6 +374,9 @@ func (s *runState) waitFor(ctx context.Context, wait spec.WaitStep) error {
 	tick := time.NewTicker(DefaultPollInterval)
 	defer tick.Stop()
 	for {
+		if err := s.terminalError(); err != nil {
+			return err
+		}
 		ok, message := s.checkWait(wait)
 		if ok {
 			return nil
@@ -306,7 +385,7 @@ func (s *runState) waitFor(ctx context.Context, wait spec.WaitStep) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("timed out after %s: %s", timeout, message)
+			return runTimeoutError{Scope: "wait step", Timeout: timeout, Message: fmt.Sprintf("timed out after %s: %s", timeout, message)}
 		case <-tick.C:
 		}
 	}
@@ -351,14 +430,17 @@ func (s *runState) evaluateOutcomes(ctx context.Context) []artifacts.OutcomeResu
 }
 
 func (s *runState) evaluateOutcome(ctx context.Context, outcome spec.Outcome) artifacts.OutcomeResult {
-	timeout := DefaultTimeout
+	timeout := timeoutFromMS(outcome.TimeoutMS)
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	tick := time.NewTicker(DefaultPollInterval)
 	defer tick.Stop()
 	var last string
 	for {
-		ok, message := s.checkVerify(ctx, outcome.Verify)
+		if err := s.terminalError(); err != nil {
+			return artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: err.Error(), Evidence: "outcomes/" + outcome.ID + ".md"}
+		}
+		ok, message := s.checkVerify(ctx, outcome.Verify, outcome.Normalize)
 		if ok {
 			return artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomePassed, Message: message, Evidence: "outcomes/" + outcome.ID + ".md"}
 		}
@@ -367,20 +449,21 @@ func (s *runState) evaluateOutcome(ctx context.Context, outcome spec.Outcome) ar
 		case <-ctx.Done():
 			return artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: ctx.Err().Error(), Evidence: "outcomes/" + outcome.ID + ".md"}
 		case <-deadline.C:
-			return artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: last, Evidence: "outcomes/" + outcome.ID + ".md"}
+			return artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: fmt.Sprintf("timed out after %s: %s", timeout, last), Evidence: "outcomes/" + outcome.ID + ".md"}
 		case <-tick.C:
 		}
 	}
 }
 
-func (s *runState) checkVerify(ctx context.Context, verify spec.Verify) (bool, string) {
+func (s *runState) checkVerify(ctx context.Context, verify spec.Verify, normalizeOverride *spec.Normalize) (bool, string) {
 	screen := s.emulator.Screen()
+	normalize := s.normalizeConfigWith(normalizeOverride)
 	switch {
 	case verify.Screen != nil:
-		return checkScreen(s.screenText(), *verify.Screen)
+		return checkScreen(s.screenTextWithNormalize(normalize), *verify.Screen)
 	case verify.Region != nil:
 		cond := verify.Region
-		return checkScreen(normalizeText(screen.Region(cond.X, cond.Y, cond.Width, cond.Height).Text(), s.normalizeConfig()), spec.ScreenCondition{
+		return checkScreen(normalizeText(screen.Region(cond.X, cond.Y, cond.Width, cond.Height).Text(), normalize), spec.ScreenCondition{
 			Contains:    cond.Contains,
 			NotContains: cond.NotContains,
 			Regex:       cond.Regex,
@@ -441,8 +524,9 @@ func (s *runState) checkSnapshot(cond spec.SnapshotCondition) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("failed to read committed snapshot %q: %v", cond.Name, err)
 	}
-	expectedText := strings.TrimRight(string(expected), "\n")
-	actualText := strings.TrimRight(current.Text, "\n")
+	normalize := s.normalizeConfigWith(cond.Normalize)
+	expectedText := normalizePlainSnapshotText(string(expected), normalize)
+	actualText := normalizeSnapshotText(current, normalize)
 	if expectedText != actualText {
 		if s.updateSnapshots {
 			if err := s.writeCommittedSnapshot(cond.Name, current); err != nil {
@@ -456,7 +540,11 @@ func (s *runState) checkSnapshot(cond spec.SnapshotCondition) (bool, string) {
 }
 
 func (s *runState) screenText() string {
-	return s.normalizeSnapshot(s.emulator.Screen().Snapshot()).Text
+	return s.screenTextWithNormalize(s.normalizeConfig())
+}
+
+func (s *runState) screenTextWithNormalize(normalize config.Normalize) string {
+	return normalizeSnapshotText(s.emulator.Screen().Snapshot(), normalize)
 }
 
 func (s *runState) normalizeSnapshot(snapshot terminal.ScreenSnapshot) terminal.ScreenSnapshot {
@@ -465,21 +553,33 @@ func (s *runState) normalizeSnapshot(snapshot terminal.ScreenSnapshot) terminal.
 }
 
 func (s *runState) normalizeConfig() config.Normalize {
+	return s.normalizeConfigWith(nil)
+}
+
+func (s *runState) normalizeConfigWith(overlay *spec.Normalize) config.Normalize {
 	out := s.runtime.Config.Terminal.Normalize
-	if s.spec.Normalize == nil {
+	out.Replace = append([]spec.NormalizeReplace(nil), out.Replace...)
+	out.IgnoreRegions = append([]spec.NormalizeIgnoreArea(nil), out.IgnoreRegions...)
+	out = applyNormalizeOverlay(out, s.spec.Normalize)
+	out = applyNormalizeOverlay(out, overlay)
+	return out
+}
+
+func applyNormalizeOverlay(out config.Normalize, overlay *spec.Normalize) config.Normalize {
+	if overlay == nil {
 		return out
 	}
-	if s.spec.Normalize.TrimRight != nil {
-		out.TrimRight = *s.spec.Normalize.TrimRight
+	if overlay.TrimRight != nil {
+		out.TrimRight = *overlay.TrimRight
 	}
-	if s.spec.Normalize.NormalizeLineEndings != nil {
-		out.NormalizeLineEndings = *s.spec.Normalize.NormalizeLineEndings
+	if overlay.NormalizeLineEndings != nil {
+		out.NormalizeLineEndings = *overlay.NormalizeLineEndings
 	}
-	if s.spec.Normalize.StripAnsiTitle != nil {
-		out.StripAnsiTitle = *s.spec.Normalize.StripAnsiTitle
+	if overlay.StripAnsiTitle != nil {
+		out.StripAnsiTitle = *overlay.StripAnsiTitle
 	}
-	out.Replace = append(out.Replace, s.spec.Normalize.Replace...)
-	out.IgnoreRegions = append(out.IgnoreRegions, s.spec.Normalize.IgnoreRegions...)
+	out.Replace = append(out.Replace, overlay.Replace...)
+	out.IgnoreRegions = append(out.IgnoreRegions, overlay.IgnoreRegions...)
 	return out
 }
 
@@ -550,6 +650,28 @@ func normalizeText(text string, normalize config.Normalize) string {
 	return strings.TrimRight(out, "\n")
 }
 
+func normalizePlainSnapshotText(text string, normalize config.Normalize) string {
+	if len(normalize.IgnoreRegions) == 0 {
+		return normalizeText(text, normalize)
+	}
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	for _, region := range normalize.IgnoreRegions {
+		for y := region.Y; y < region.Y+region.Height && y < len(lines); y++ {
+			if y < 0 {
+				continue
+			}
+			runes := []rune(lines[y])
+			for x := region.X; x < region.X+region.Width && x < len(runes); x++ {
+				if x >= 0 {
+					runes[x] = ' '
+				}
+			}
+			lines[y] = string(runes)
+		}
+	}
+	return normalizeText(strings.Join(lines, "\n"), normalize)
+}
+
 func (s *runState) writeCommittedSnapshot(name string, snapshot terminal.ScreenSnapshot) error {
 	textPath := s.committedSnapshotTextPath(name)
 	jsonPath := strings.TrimSuffix(textPath, ".txt") + ".json"
@@ -589,7 +711,7 @@ func (s *runState) runShellCommand(ctx context.Context, command string, cwd stri
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if runCtx.Err() != nil {
-			return fmt.Errorf("%q timed out after %s", command, timeout)
+			return runTimeoutError{Scope: "command", Timeout: timeout, Message: fmt.Sprintf("%q timed out after %s", command, timeout)}
 		}
 		return fmt.Errorf("%q failed: %v %s", command, err, strings.TrimSpace(stderr.String()))
 	}
@@ -602,19 +724,28 @@ func (s *runState) cleanup() {
 	}
 }
 
-func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcomes []artifacts.OutcomeResult, diagnostic string) artifacts.RunResult {
+func (s *runState) terminalError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.termErr
+}
+
+func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcomes []artifacts.OutcomeResult, diagnostic string, exitCodeOverride ...int) artifacts.RunResult {
 	if outcomes == nil {
 		outcomes = []artifacts.OutcomeResult{}
 	}
 	s.cleanup()
 	finalSnapshot := s.normalizeSnapshot(s.emulator.Screen().Snapshot())
 	ended := time.Now().UTC()
-	exitCode := 0
+	exitCode := exitPassed
 	if status == artifacts.StatusFailed {
-		exitCode = 1
+		exitCode = exitFailed
 	}
 	if status == artifacts.StatusErrored {
-		exitCode = 2
+		exitCode = exitErrored
+	}
+	if len(exitCodeOverride) > 0 && exitCodeOverride[0] != 0 {
+		exitCode = exitCodeOverride[0]
 	}
 	result := artifacts.RunResult{
 		SchemaVersion: 1,
@@ -629,7 +760,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		Outcomes:      outcomes,
 		RunDir:        s.writer.RunDir,
 		ExitCode:      exitCode,
-		Artifacts:     map[string]string{"events": "events.ndjson"},
+		Artifacts:     map[string]string{"events": "events.ndjson", "environmentDiagnostic": "diagnostics/environment.md"},
 	}
 	if s.runtime.Config.Artifacts.AgentContext {
 		result.Artifacts["agentContext"] = "agent_context.md"
@@ -679,11 +810,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	if s.runtime.Config.Artifacts.Frames {
 		_ = s.writer.WriteFrames(frames)
 	}
-	if s.runtime.Config.Artifacts.AgentContext {
-		_ = s.writer.WriteAgentContext(s.spec, result, finalSnapshot.Text)
-	}
-	_ = s.writer.WriteOutcomesIndex(result)
-	_ = s.writer.WriteRun(result)
+	_ = s.writer.WriteDiagnostic("environment", renderEnvironmentDiagnostic(s.runtime, s.spec, result))
 	if status == artifacts.StatusPassed {
 		_ = s.writer.AppendEvent(event("run.passed", s.spec.Name, ""))
 	} else if status == artifacts.StatusFailed {
@@ -691,6 +818,11 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	} else {
 		_ = s.writer.AppendEvent(event("run.errored", s.spec.Name, diagnostic))
 	}
+	if s.runtime.Config.Artifacts.AgentContext {
+		_ = s.writer.WriteAgentContext(s.spec, result, finalSnapshot.Text, s.writer.RecentEvents(12))
+	}
+	_ = s.writer.WriteOutcomesIndex(result)
+	_ = s.writer.WriteRun(result)
 	if s.listener != nil {
 		s.listener.OnRunEnd(result)
 	}
@@ -714,6 +846,46 @@ func renderOutcomeFailureDiagnostic(outcomes []artifacts.OutcomeResult, finalScr
 	b.WriteString("\n## Final Screen\n\n```text\n")
 	b.WriteString(finalScreen)
 	b.WriteString("\n```\n")
+	return b.String()
+}
+
+func renderEnvironmentDiagnostic(rt config.Runtime, s spec.Spec, result artifacts.RunResult) string {
+	var b strings.Builder
+	b.WriteString("## Environment\n\n")
+	fmt.Fprintf(&b, "- project root: `%s`\n", rt.ProjectRoot)
+	if rt.ConfigPath != "" {
+		fmt.Fprintf(&b, "- config: `%s`\n", rt.ConfigPath)
+	}
+	if rt.Environment != "" {
+		fmt.Fprintf(&b, "- environment: `%s`\n", rt.Environment)
+	}
+	fmt.Fprintf(&b, "- artifact root: `%s`\n", rt.Config.ArtifactRoot)
+	fmt.Fprintf(&b, "- snapshot root: `%s`\n", rt.Config.SnapshotRoot)
+	fmt.Fprintf(&b, "- run dir: `%s`\n", result.RunDir)
+	b.WriteString("\n## Target\n\n")
+	fmt.Fprintf(&b, "- command: `%s`\n", strings.Join(s.Target.Cmd, " "))
+	fmt.Fprintf(&b, "- cwd: `%s`\n", resolveProjectPath(rt.ProjectRoot, s.Target.Cwd))
+	if s.Target.TimeoutMS > 0 {
+		fmt.Fprintf(&b, "- timeout: %dms\n", s.Target.TimeoutMS)
+	}
+	if len(s.Target.Env) > 0 {
+		fmt.Fprintf(&b, "- target env overrides: %d keys\n", len(s.Target.Env))
+	}
+	b.WriteString("\n## Terminal\n\n")
+	fmt.Fprintf(&b, "- size: %dx%d\n", s.Terminal.Cols, s.Terminal.Rows)
+	fmt.Fprintf(&b, "- profile: `%s`\n", s.Terminal.Profile)
+	if s.Terminal.Color != "" {
+		fmt.Fprintf(&b, "- color: `%s`\n", s.Terminal.Color)
+	}
+	if s.Terminal.AlternateScreen != "" {
+		fmt.Fprintf(&b, "- alternate screen: `%s`\n", s.Terminal.AlternateScreen)
+	}
+	b.WriteString("\n## Artifacts\n\n")
+	for _, key := range []string{"agentContext", "failureDiagnostic", "finalScreenText", "finalScreenJSON", "events", "frames", "rawPtyLog", "inputRawLog"} {
+		if path := result.Artifacts[key]; path != "" {
+			fmt.Fprintf(&b, "- %s: `%s`\n", key, path)
+		}
+	}
 	return b.String()
 }
 
@@ -794,6 +966,25 @@ func timeoutFromMS(ms int) time.Duration {
 	return time.Duration(ms) * time.Millisecond
 }
 
+func exitCodeForError(err error) int {
+	var timeoutErr runTimeoutError
+	if errors.As(err, &timeoutErr) || errors.Is(err, context.DeadlineExceeded) {
+		return exitTimedOut
+	}
+	var terminalErr unsupportedTerminalError
+	if errors.As(err, &terminalErr) {
+		return exitUnsupportedTerminal
+	}
+	return exitErrored
+}
+
+func targetTimeoutMessage(timeoutMS int) string {
+	if timeoutMS <= 0 {
+		return context.DeadlineExceeded.Error()
+	}
+	return fmt.Sprintf("target timed out after %s", time.Duration(timeoutMS)*time.Millisecond)
+}
+
 func resolveProjectPath(projectRoot string, path string) string {
 	if path == "" {
 		path = "."
@@ -810,6 +1001,14 @@ func decodeEscaped(input string) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(unquoted), nil
+}
+
+func bracketedPasteEnabled(emulator terminal.Emulator) bool {
+	type modeReporter interface {
+		BracketedPasteMode() bool
+	}
+	reporter, ok := emulator.(modeReporter)
+	return ok && reporter.BracketedPasteMode()
 }
 
 func event(kind string, name string, info string) artifacts.Event {

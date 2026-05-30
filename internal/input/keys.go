@@ -36,3 +36,7 @@ func KeyBytes(key string) ([]byte, error) {
 		return nil, fmt.Errorf("unsupported key %q", key)
 	}
 }
+
+func BracketedPasteBytes(text string) []byte {
+	return []byte("\x1b[200~" + text + "\x1b[201~")
+}

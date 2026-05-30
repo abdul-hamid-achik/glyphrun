@@ -62,6 +62,16 @@ outcomes:
 	if _, err := os.Stat(filepath.Join(result.RunDir, "agent_context.md")); err != nil {
 		t.Fatal(err)
 	}
+	contextData, err := os.ReadFile(filepath.Join(result.RunDir, "agent_context.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contextData), "## Recent Events") {
+		t.Fatalf("agent context missing recent events:\n%s", string(contextData))
+	}
+	if result.Artifacts["environmentDiagnostic"] != "diagnostics/environment.md" {
+		t.Fatalf("environment diagnostic artifact missing: %#v", result.Artifacts)
+	}
 }
 
 func TestRunSpecSkipsConditionalStep(t *testing.T) {
@@ -272,6 +282,90 @@ outcomes:
 	}
 	if _, err := os.Stat(filepath.Join(result.RunDir, "agent_context.md")); !os.IsNotExist(err) {
 		t.Fatalf("agent context should not exist, err=%v", err)
+	}
+}
+
+func TestRunSpecOutcomeLevelNormalization(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "outcome-normalize.yml")
+	if err := os.WriteFile(specPath, []byte(`version: 1
+name: outcome_normalize
+intent: outcome-specific normalization can hide volatile terminal text.
+target:
+  cmd: ["/bin/sh", "-lc", "printf 'build run-123\n'"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: normalized
+    description: the volatile run id is normalized for this outcome only
+    normalize:
+      replace:
+        - regex: "run-[0-9]+"
+          with: "run-<id>"
+    verify:
+      screen:
+        contains: "build run-<id>"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunSpec(context.Background(), Options{
+		SpecPath:     specPath,
+		ArtifactRoot: filepath.Join(dir, "runs"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != artifacts.StatusPassed {
+		t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+	}
+}
+
+func TestRunSpecTargetTimeoutUsesDocumentedExitCode(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "target-timeout.yml")
+	if err := os.WriteFile(specPath, []byte(`version: 1
+name: target_timeout
+intent: target timeout stops a hung terminal app.
+target:
+  cmd: ["/bin/sh", "-lc", "sleep 5"]
+  timeoutMs: 100
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: clean_exit
+    description: the process exits successfully
+    verify:
+      process:
+        exitCode: 0
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunSpec(context.Background(), Options{
+		SpecPath:     specPath,
+		ArtifactRoot: filepath.Join(dir, "runs"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != artifacts.StatusErrored {
+		t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+	}
+	if result.ExitCode != 3 {
+		t.Fatalf("exit code = %d, want 3", result.ExitCode)
 	}
 }
 

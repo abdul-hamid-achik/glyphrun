@@ -3,19 +3,84 @@
   "$id": "https://glyphrun.dev/schemas/glyphrun.run.v1.schema.json",
   "title": "Glyphrun Run Result v1",
   "type": "object",
-  "required": ["schemaVersion", "runId", "specName", "status", "outcomes", "artifacts", "exitCode"],
+  "required": [
+    "schemaVersion",
+    "runId",
+    "specName",
+    "status",
+    "startedAt",
+    "endedAt",
+    "durationMs",
+    "target",
+    "terminal",
+    "outcomes",
+    "artifacts",
+    "runDir",
+    "exitCode"
+  ],
   "properties": {
     "schemaVersion": { "const": 1 },
-    "runId": { "type": "string" },
-    "specName": { "type": "string" },
+    "runId": { "type": "string", "minLength": 1 },
+    "specName": { "type": "string", "minLength": 1 },
     "status": { "enum": ["passed", "failed", "errored"] },
-    "startedAt": { "type": "string" },
-    "endedAt": { "type": "string" },
-    "durationMs": { "type": "integer" },
-    "outcomes": { "type": "array" },
-    "artifacts": { "type": "object" },
+    "startedAt": { "type": "string", "minLength": 1 },
+    "endedAt": { "type": "string", "minLength": 1 },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "target": { "$ref": "#/$defs/target" },
+    "terminal": { "$ref": "#/$defs/terminal" },
+    "outcomes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/outcome" }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "runDir": { "type": "string", "minLength": 1 },
     "exitCode": { "type": "integer" }
   },
-  "additionalProperties": true
+  "additionalProperties": false,
+  "$defs": {
+    "target": {
+      "type": "object",
+      "required": ["cmd"],
+      "properties": {
+        "cmd": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "cwd": { "type": "string" },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "timeoutMs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "terminal": {
+      "type": "object",
+      "required": ["cols", "rows", "profile"],
+      "properties": {
+        "cols": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 },
+        "profile": { "type": "string", "minLength": 1 },
+        "color": { "type": "string" },
+        "alternateScreen": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "outcome": {
+      "type": "object",
+      "required": ["id", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed"] },
+        "message": { "type": "string" },
+        "evidence": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
 }
-

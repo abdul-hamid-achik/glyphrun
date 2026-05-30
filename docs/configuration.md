@@ -27,4 +27,6 @@ artifacts:
 
 Specs can override target, terminal, artifact, and environment settings locally. Keep secrets out of config and specs; pass them through the environment or setup commands instead.
 
+`target.timeoutMs` wraps the whole target session after the PTY starts. If it expires, Glyphrun exits with code `3` and writes diagnostics before cleaning up the process.
+
 Use `glyph doctor --format md` to confirm the active config, artifact root, schema source, and PTY availability.

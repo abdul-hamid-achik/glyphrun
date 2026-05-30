@@ -84,7 +84,7 @@ func RenderRunMarkdown(result RunResult) string {
 	return b.String()
 }
 
-func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string) string {
+func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string, recentEvents []Event) string {
 	var b strings.Builder
 	passed, failed := outcomeCounts(result.Outcomes)
 	fmt.Fprintf(&b, "# Glyphrun Agent Context\n\n")
@@ -93,8 +93,13 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string) strin
 	fmt.Fprintf(&b, "- run: `%s`\n", result.RunID)
 	fmt.Fprintf(&b, "- status: %s\n", result.Status)
 	fmt.Fprintf(&b, "- target: `%s`\n", shellJoin(result.Target.Cmd))
+	fmt.Fprintf(&b, "- command run: `glyph run <spec> --format json`\n")
+	if result.Target.Cwd != "" {
+		fmt.Fprintf(&b, "- target cwd: `%s`\n", result.Target.Cwd)
+	}
 	fmt.Fprintf(&b, "- terminal: %dx%d %s\n", result.Terminal.Cols, result.Terminal.Rows, result.Terminal.Profile)
 	fmt.Fprintf(&b, "- duration: %dms\n", result.DurationMS)
+	fmt.Fprintf(&b, "- exit code: %d\n", result.ExitCode)
 	fmt.Fprintf(&b, "- outcomes: %d passed, %d failed\n", passed, failed)
 	fmt.Fprintf(&b, "- run dir: %s\n\n", result.RunDir)
 	b.WriteString("## Intent\n\n")
@@ -125,6 +130,28 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string) strin
 		if result.Artifacts["failureDiagnostic"] != "" {
 			fmt.Fprintf(&b, "- diagnostic: `%s`\n", result.Artifacts["failureDiagnostic"])
 		}
+		if result.Artifacts["finalScreenText"] != "" {
+			fmt.Fprintf(&b, "- final screen: `%s`\n", result.Artifacts["finalScreenText"])
+		}
+		if result.Artifacts["frames"] != "" {
+			fmt.Fprintf(&b, "- frame timeline: `%s`\n", result.Artifacts["frames"])
+		}
+		if result.Artifacts["rawPtyLog"] != "" {
+			fmt.Fprintf(&b, "- raw PTY log: `%s`\n", result.Artifacts["rawPtyLog"])
+		}
+	}
+	if len(recentEvents) > 0 {
+		b.WriteString("\n## Recent Events\n\n")
+		for _, event := range recentEvents {
+			fmt.Fprintf(&b, "- %s %s", event.TS, event.Type)
+			if event.Name != "" {
+				fmt.Fprintf(&b, " `%s`", event.Name)
+			}
+			if event.Info != "" {
+				fmt.Fprintf(&b, ": %s", event.Info)
+			}
+			b.WriteByte('\n')
+		}
 	}
 	b.WriteString("\n## Final Screen\n\n```text\n")
 	b.WriteString(finalScreen)
@@ -135,6 +162,13 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string) strin
 	}
 	b.WriteString("\n## Suggested Commands\n\n")
 	fmt.Fprintf(&b, "- `glyph context %s --format md`\n", result.RunID)
+	if result.Artifacts["failureDiagnostic"] != "" {
+		fmt.Fprintf(&b, "- `sed -n '1,180p' %s/%s`\n", result.RunDir, result.Artifacts["failureDiagnostic"])
+	}
+	if result.Artifacts["finalScreenText"] != "" {
+		fmt.Fprintf(&b, "- `sed -n '1,160p' %s/%s`\n", result.RunDir, result.Artifacts["finalScreenText"])
+	}
+	fmt.Fprintf(&b, "- `tail -n 20 %s/%s`\n", result.RunDir, result.Artifacts["events"])
 	fmt.Fprintf(&b, "- `glyph run <spec> --format json`\n")
 	return b.String()
 }
@@ -158,6 +192,7 @@ func orderedArtifactKeys(artifacts map[string]string) []string {
 	preferred := []string{
 		"agentContext",
 		"failureDiagnostic",
+		"environmentDiagnostic",
 		"finalScreenText",
 		"finalScreenJSON",
 		"events",
@@ -192,6 +227,8 @@ func artifactLabel(key string) string {
 		return "agent context"
 	case "failureDiagnostic":
 		return "failure diagnostic"
+	case "environmentDiagnostic":
+		return "environment diagnostic"
 	case "finalScreenText":
 		return "final screen text"
 	case "finalScreenJSON":

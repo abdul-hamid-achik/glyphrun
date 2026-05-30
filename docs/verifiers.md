@@ -34,4 +34,20 @@ outcomes:
 
 Screen verifiers support `contains`, `notContains`, and `regex`. Cell verifiers can check characters and style attributes such as foreground color, background color, bold, dim, italic, underline, and reverse.
 
+Outcomes can set their own `timeoutMs` and `normalize` block when a single assertion needs different polling or text cleanup than the rest of the spec:
+
+```yaml
+outcomes:
+  - id: stable_build_id
+    description: volatile build ids are normalized for this assertion
+    timeoutMs: 10000
+    normalize:
+      replace:
+        - regex: "build-[0-9]+"
+          with: "build-<id>"
+    verify:
+      screen:
+        contains: "build-<id>"
+```
+
 Use trusted `command` verifiers only for local checks you would be comfortable running from a shell script.

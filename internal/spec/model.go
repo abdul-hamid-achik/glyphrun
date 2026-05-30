@@ -74,9 +74,11 @@ type ResizeStep struct {
 }
 
 type Outcome struct {
-	ID          string `yaml:"id" json:"id"`
-	Description string `yaml:"description" json:"description"`
-	Verify      Verify `yaml:"verify" json:"verify"`
+	ID          string     `yaml:"id" json:"id"`
+	Description string     `yaml:"description" json:"description"`
+	Verify      Verify     `yaml:"verify" json:"verify"`
+	TimeoutMS   int        `yaml:"timeoutMs,omitempty" json:"timeoutMs,omitempty"`
+	Normalize   *Normalize `yaml:"normalize,omitempty" json:"normalize,omitempty"`
 }
 
 type Verify struct {
@@ -138,8 +140,9 @@ type IdleCondition struct {
 }
 
 type SnapshotCondition struct {
-	Name string `yaml:"name" json:"name"`
-	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	Name      string     `yaml:"name" json:"name"`
+	Mode      string     `yaml:"mode,omitempty" json:"mode,omitempty"`
+	Normalize *Normalize `yaml:"normalize,omitempty" json:"normalize,omitempty"`
 }
 
 type CommandCondition struct {

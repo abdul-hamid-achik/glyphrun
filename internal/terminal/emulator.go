@@ -20,6 +20,8 @@ type SimpleEmulator struct {
 	escMode bool
 	escBuf  []byte
 	style   Style
+
+	bracketedPaste bool
 }
 
 func NewEmulator(cols, rows int) *SimpleEmulator {
@@ -82,6 +84,12 @@ func (e *SimpleEmulator) Screen() Screen {
 	defer e.mu.RUnlock()
 	snap := e.snapshotLocked()
 	return snapshotScreen{snapshot: snap}
+}
+
+func (e *SimpleEmulator) BracketedPasteMode() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.bracketedPaste
 }
 
 func (e *SimpleEmulator) feedRune(r rune) {
@@ -208,6 +216,8 @@ func (e *SimpleEmulator) applyPrivateMode(body string) {
 				e.cursor.X = 0
 				e.cursor.Y = 0
 			}
+		case "2004":
+			e.bracketedPaste = enable
 		}
 	}
 }
