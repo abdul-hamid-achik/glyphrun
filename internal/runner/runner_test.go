@@ -369,6 +369,154 @@ outcomes:
 	}
 }
 
+func TestRunSpecEnforcesAlternateScreenPolicy(t *testing.T) {
+	t.Run("require passes when target enters alternate screen", func(t *testing.T) {
+		dir := t.TempDir()
+		specPath := filepath.Join(dir, "alternate-require.yml")
+		if err := os.WriteFile(specPath, []byte(`version: 1
+name: alternate_require
+intent: target enters alternate screen mode.
+target:
+  cmd: ["/bin/sh", "-lc", "printf '\\033[?1049hready\\n\\033[?1049l'"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+  alternateScreen: require
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 2000
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: ready_visible
+    description: ready is visible
+    verify:
+      screen:
+        contains: "ready"
+`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		result, err := RunSpec(context.Background(), Options{
+			SpecPath:     specPath,
+			ArtifactRoot: filepath.Join(dir, "runs"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Status != artifacts.StatusPassed {
+			t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+		}
+	})
+
+	t.Run("require fails when target does not enter alternate screen", func(t *testing.T) {
+		dir := t.TempDir()
+		specPath := filepath.Join(dir, "alternate-require-missing.yml")
+		if err := os.WriteFile(specPath, []byte(`version: 1
+name: alternate_require_missing
+intent: target must enter alternate screen mode.
+target:
+  cmd: ["/bin/sh", "-lc", "printf 'ready\\n'"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+  alternateScreen: require
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 2000
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: ready_visible
+    description: ready is visible
+    verify:
+      screen:
+        contains: "ready"
+`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		result, err := RunSpec(context.Background(), Options{
+			SpecPath:     specPath,
+			ArtifactRoot: filepath.Join(dir, "runs"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Status != artifacts.StatusFailed {
+			t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+		}
+		if result.ExitCode != 1 {
+			t.Fatalf("exit code = %d, want 1", result.ExitCode)
+		}
+		diagnostic, err := os.ReadFile(filepath.Join(result.RunDir, "diagnostics", "failure.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(diagnostic), "alternateScreen=require") {
+			t.Fatalf("failure diagnostic missing policy failure:\n%s", string(diagnostic))
+		}
+	})
+
+	t.Run("forbid fails when target enters alternate screen", func(t *testing.T) {
+		dir := t.TempDir()
+		specPath := filepath.Join(dir, "alternate-forbid.yml")
+		if err := os.WriteFile(specPath, []byte(`version: 1
+name: alternate_forbid
+intent: target must stay on the main screen.
+target:
+  cmd: ["/bin/sh", "-lc", "printf '\\033[?1049hready\\n\\033[?1049l'"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+  alternateScreen: forbid
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 2000
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: ready_visible
+    description: ready is visible
+    verify:
+      screen:
+        contains: "ready"
+`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		result, err := RunSpec(context.Background(), Options{
+			SpecPath:     specPath,
+			ArtifactRoot: filepath.Join(dir, "runs"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Status != artifacts.StatusFailed {
+			t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+		}
+		events, err := os.ReadFile(filepath.Join(result.RunDir, "events.ndjson"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(events), "terminal.policy.failed") {
+			t.Fatalf("events missing terminal policy failure:\n%s", string(events))
+		}
+	})
+}
+
 func TestRunSpecChecksCellStyle(t *testing.T) {
 	dir := t.TempDir()
 	specPath := filepath.Join(dir, "style.yml")

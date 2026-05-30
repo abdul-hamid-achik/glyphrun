@@ -81,6 +81,8 @@ Use config for shared terminal defaults, artifact behavior, variables, and redac
 ` + "`target.timeoutMs`" + ` wraps the whole target session after the PTY starts and exits with code ` + "`3`" + ` when it expires.
 
 Use ` + "`glyph init [dir] --cmd <target> --ready <text>`" + ` to create ` + "`glyphrun.config.yml`" + `, ` + "`specs/glyphrun/smoke.yml`" + `, and ` + "`.gitignore`" + ` artifact entries.
+
+Use ` + "`terminal.alternateScreen: require`" + ` when a full-screen TUI must enter alternate screen mode, or ` + "`forbid`" + ` when a command must stay on the main terminal screen. The default is ` + "`auto`" + `.
 `,
 	"troubleshooting": `# Troubleshooting
 

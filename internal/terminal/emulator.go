@@ -21,7 +21,9 @@ type SimpleEmulator struct {
 	escBuf  []byte
 	style   Style
 
-	bracketedPaste bool
+	bracketedPaste      bool
+	alternateScreen     bool
+	alternateScreenUsed bool
 }
 
 func NewEmulator(cols, rows int) *SimpleEmulator {
@@ -90,6 +92,18 @@ func (e *SimpleEmulator) BracketedPasteMode() bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.bracketedPaste
+}
+
+func (e *SimpleEmulator) AlternateScreenMode() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.alternateScreen
+}
+
+func (e *SimpleEmulator) AlternateScreenUsed() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.alternateScreenUsed
 }
 
 func (e *SimpleEmulator) feedRune(r rune) {
@@ -211,7 +225,9 @@ func (e *SimpleEmulator) applyPrivateMode(body string) {
 		case "25":
 			e.cursor.Visible = enable
 		case "1049":
+			e.alternateScreen = enable
 			if enable {
+				e.alternateScreenUsed = true
 				e.clear()
 				e.cursor.X = 0
 				e.cursor.Y = 0

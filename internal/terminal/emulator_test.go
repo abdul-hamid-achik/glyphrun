@@ -68,3 +68,31 @@ func TestSimpleEmulatorTracksBracketedPasteMode(t *testing.T) {
 		t.Fatal("bracketed paste should be disabled")
 	}
 }
+
+func TestSimpleEmulatorTracksAlternateScreenMode(t *testing.T) {
+	em := NewEmulator(20, 3)
+	if em.AlternateScreenMode() || em.AlternateScreenUsed() {
+		t.Fatal("alternate screen should start disabled and unused")
+	}
+	if _, err := em.Feed([]byte("main\x1b[?1049halt")); err != nil {
+		t.Fatal(err)
+	}
+	if !em.AlternateScreenMode() {
+		t.Fatal("alternate screen should be active")
+	}
+	if !em.AlternateScreenUsed() {
+		t.Fatal("alternate screen should be marked used")
+	}
+	if strings.Contains(em.Screen().Text(), "main") {
+		t.Fatalf("entering alternate screen should clear current screen: %q", em.Screen().Text())
+	}
+	if _, err := em.Feed([]byte("\x1b[?1049l")); err != nil {
+		t.Fatal(err)
+	}
+	if em.AlternateScreenMode() {
+		t.Fatal("alternate screen should be inactive after reset")
+	}
+	if !em.AlternateScreenUsed() {
+		t.Fatal("alternate screen usage should remain recorded")
+	}
+}

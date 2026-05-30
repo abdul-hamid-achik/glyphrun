@@ -195,7 +195,15 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 			break
 		}
 	}
-	return state.finish(started, status, outcomes, ""), nil
+	diagnostic := ""
+	if policyFailure := state.terminalPolicyFailure(); policyFailure != "" {
+		_ = writer.AppendEvent(event("terminal.policy.failed", "alternateScreen", policyFailure))
+		if status == artifacts.StatusPassed {
+			status = artifacts.StatusFailed
+			diagnostic = policyFailure
+		}
+	}
+	return state.finish(started, status, outcomes, diagnostic), nil
 }
 
 type runState struct {
@@ -730,6 +738,25 @@ func (s *runState) terminalError() error {
 	return s.termErr
 }
 
+func (s *runState) terminalPolicyFailure() string {
+	mode := strings.ToLower(strings.TrimSpace(s.spec.Terminal.AlternateScreen))
+	if mode == "" || mode == "auto" {
+		return ""
+	}
+	_, used := alternateScreenState(s.emulator)
+	switch mode {
+	case "require":
+		if !used {
+			return "terminal.alternateScreen=require but target never entered alternate screen mode"
+		}
+	case "forbid":
+		if used {
+			return "terminal.alternateScreen=forbid but target entered alternate screen mode"
+		}
+	}
+	return ""
+}
+
 func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcomes []artifacts.OutcomeResult, diagnostic string, exitCodeOverride ...int) artifacts.RunResult {
 	if outcomes == nil {
 		outcomes = []artifacts.OutcomeResult{}
@@ -1009,6 +1036,18 @@ func bracketedPasteEnabled(emulator terminal.Emulator) bool {
 	}
 	reporter, ok := emulator.(modeReporter)
 	return ok && reporter.BracketedPasteMode()
+}
+
+func alternateScreenState(emulator terminal.Emulator) (active bool, used bool) {
+	type modeReporter interface {
+		AlternateScreenMode() bool
+		AlternateScreenUsed() bool
+	}
+	reporter, ok := emulator.(modeReporter)
+	if !ok {
+		return false, false
+	}
+	return reporter.AlternateScreenMode(), reporter.AlternateScreenUsed()
 }
 
 func event(kind string, name string, info string) artifacts.Event {

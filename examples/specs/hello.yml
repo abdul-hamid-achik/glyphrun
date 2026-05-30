@@ -12,6 +12,7 @@ terminal:
   cols: 80
   rows: 24
   profile: xterm-256color
+  alternateScreen: require
 
 preconditions:
   commands:
@@ -42,4 +43,3 @@ outcomes:
     verify:
       process:
         exitCode: 0
-

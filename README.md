@@ -245,6 +245,8 @@ Specs can override relevant settings locally. Secrets should be passed through e
 
 Outcomes can set `timeoutMs` and `normalize` when a single assertion needs longer polling or custom volatile-text cleanup. `target.timeoutMs` wraps the whole PTY session and maps to exit code `3` when it expires.
 
+`terminal.alternateScreen` supports `auto`, `require`, and `forbid`. Use `require` for full-screen TUIs that should enter alternate screen mode, and `forbid` for commands that should stay on the main terminal screen.
+
 ## Project Layout
 
 ```text
