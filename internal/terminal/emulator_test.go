@@ -35,3 +35,17 @@ func TestSimpleEmulatorCursorMovementAndStyles(t *testing.T) {
 		t.Fatal("cursor should be hidden")
 	}
 }
+
+func TestSimpleEmulatorIgnoresOSCTitleSequences(t *testing.T) {
+	em := NewEmulator(20, 3)
+	if _, err := em.Feed([]byte("\x1b]2;LOCAL AGENT\ahello\x1b]2;\a")); err != nil {
+		t.Fatal(err)
+	}
+	text := em.Screen().Text()
+	if strings.Contains(text, "2;") || strings.Contains(text, "LOCAL AGENT") {
+		t.Fatalf("OSC title leaked into screen: %q", text)
+	}
+	if !strings.Contains(text, "hello") {
+		t.Fatalf("screen text = %q", text)
+	}
+}

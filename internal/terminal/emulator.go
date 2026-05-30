@@ -122,6 +122,9 @@ func escapeComplete(buf []byte, r rune) bool {
 	if len(buf) == 0 {
 		return false
 	}
+	if buf[0] == ']' {
+		return r == '\a' || strings.HasSuffix(string(buf), "\x1b\\")
+	}
 	if buf[0] != '[' {
 		return true
 	}
@@ -133,6 +136,9 @@ func escapeComplete(buf []byte, r rune) bool {
 
 func (e *SimpleEmulator) applyEscape(seq string) {
 	if seq == "" {
+		return
+	}
+	if strings.HasPrefix(seq, "]") {
 		return
 	}
 	if !strings.HasPrefix(seq, "[") {
