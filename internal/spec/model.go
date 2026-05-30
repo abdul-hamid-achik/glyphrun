@@ -114,11 +114,11 @@ type CellCondition struct {
 type Style struct {
 	Fg        string `yaml:"fg,omitempty" json:"fg,omitempty"`
 	Bg        string `yaml:"bg,omitempty" json:"bg,omitempty"`
-	Bold      bool   `yaml:"bold,omitempty" json:"bold,omitempty"`
-	Dim       bool   `yaml:"dim,omitempty" json:"dim,omitempty"`
-	Italic    bool   `yaml:"italic,omitempty" json:"italic,omitempty"`
-	Underline bool   `yaml:"underline,omitempty" json:"underline,omitempty"`
-	Reverse   bool   `yaml:"reverse,omitempty" json:"reverse,omitempty"`
+	Bold      *bool  `yaml:"bold,omitempty" json:"bold,omitempty"`
+	Dim       *bool  `yaml:"dim,omitempty" json:"dim,omitempty"`
+	Italic    *bool  `yaml:"italic,omitempty" json:"italic,omitempty"`
+	Underline *bool  `yaml:"underline,omitempty" json:"underline,omitempty"`
+	Reverse   *bool  `yaml:"reverse,omitempty" json:"reverse,omitempty"`
 }
 
 type CursorCondition struct {

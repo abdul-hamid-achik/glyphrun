@@ -1,5 +1,7 @@
 # Glyphrun
 
+[![CI](https://github.com/abdul-hamid-achik/glyphrun/actions/workflows/ci.yml/badge.svg)](https://github.com/abdul-hamid-achik/glyphrun/actions/workflows/ci.yml)
+
 Glyphrun is a local-first behavior runner for terminal applications and interactive CLI workflows. It launches a target command inside a real pseudo-terminal, drives it from YAML or JSON steps, evaluates outcomes against a deterministic virtual terminal screen, and writes a self-contained artifact pack for humans and coding agents.
 
 The command-line binary is `glyph`.
@@ -122,6 +124,10 @@ glyph mcp                           Start the MCP stdio server
 ```
 
 Agent-callable commands support `--format json|yaml|md`. JSON and YAML modes do not prompt interactively.
+
+## MCP
+
+Run `glyph mcp` to start the stdio MCP server. The MCP tools mirror the CLI surface for docs, doctor checks, spec verification, spec scaffolding, runs, snapshot updates, diffs, and agent context lookup.
 
 ## Artifact Packs
 

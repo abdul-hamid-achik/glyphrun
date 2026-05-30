@@ -204,3 +204,58 @@ outcomes:
 		t.Fatalf("agent context should not exist, err=%v", err)
 	}
 }
+
+func TestRunSpecChecksCellStyle(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "style.yml")
+	if err := os.WriteFile(specPath, []byte(`version: 1
+name: style_demo
+intent: styled terminal cells can be asserted.
+target:
+  cmd: ["/bin/sh", "-lc", "printf '\\033[1m>\\033[0m ready\\n'"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      screen:
+        contains: "> ready"
+      timeoutMs: 2000
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: prompt_bold
+    description: the prompt marker is bold
+    verify:
+      cell:
+        x: 0
+        y: 0
+        char: ">"
+        style:
+          bold: true
+  - id: next_cell_plain
+    description: the next cell is not bold after reset
+    verify:
+      cell:
+        x: 1
+        y: 0
+        char: " "
+        style:
+          bold: false
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunSpec(context.Background(), Options{
+		SpecPath:     specPath,
+		ArtifactRoot: filepath.Join(dir, "runs"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != artifacts.StatusPassed {
+		t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+	}
+}

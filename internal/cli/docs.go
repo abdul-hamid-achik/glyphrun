@@ -33,7 +33,7 @@ Call ` + "`glyph explain --format json`" + ` first, then ` + "`glyph spec verify
 `,
 	"mcp": `# MCP
 
-MCP is reserved for a later phase. Tools should mirror the CLI and call the same internal command handlers.
+Run ` + "`glyph mcp`" + ` to start the stdio MCP server. The current server exposes tools for explain, docs, doctor, spec verification, spec scaffolding, runs, snapshot updates, diffs, and context lookup.
 `,
 	"configuration": `# Configuration
 

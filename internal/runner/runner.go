@@ -319,6 +319,11 @@ func (s *runState) checkVerify(ctx context.Context, verify spec.Verify) (bool, s
 		if verify.Cell.Char != "" && cell.Char != verify.Cell.Char {
 			return false, fmt.Sprintf("expected cell %d,%d to be %q, got %q", verify.Cell.X, verify.Cell.Y, verify.Cell.Char, cell.Char)
 		}
+		if verify.Cell.Style != nil {
+			if ok, message := checkStyle(cell.Style, *verify.Cell.Style); !ok {
+				return false, fmt.Sprintf("cell %d,%d style mismatch: %s", verify.Cell.X, verify.Cell.Y, message)
+			}
+		}
 		return true, "cell matched"
 	case verify.Cursor != nil:
 		cursor := screen.Cursor()
@@ -648,6 +653,31 @@ func checkScreen(text string, cond spec.ScreenCondition) (bool, string) {
 	default:
 		return false, "screen condition is empty"
 	}
+}
+
+func checkStyle(actual terminal.Style, expected spec.Style) (bool, string) {
+	if expected.Fg != "" && actual.Fg != expected.Fg {
+		return false, fmt.Sprintf("expected fg %q, got %q", expected.Fg, actual.Fg)
+	}
+	if expected.Bg != "" && actual.Bg != expected.Bg {
+		return false, fmt.Sprintf("expected bg %q, got %q", expected.Bg, actual.Bg)
+	}
+	if expected.Bold != nil && actual.Bold != *expected.Bold {
+		return false, fmt.Sprintf("expected bold=%v, got %v", *expected.Bold, actual.Bold)
+	}
+	if expected.Dim != nil && actual.Dim != *expected.Dim {
+		return false, fmt.Sprintf("expected dim=%v, got %v", *expected.Dim, actual.Dim)
+	}
+	if expected.Italic != nil && actual.Italic != *expected.Italic {
+		return false, fmt.Sprintf("expected italic=%v, got %v", *expected.Italic, actual.Italic)
+	}
+	if expected.Underline != nil && actual.Underline != *expected.Underline {
+		return false, fmt.Sprintf("expected underline=%v, got %v", *expected.Underline, actual.Underline)
+	}
+	if expected.Reverse != nil && actual.Reverse != *expected.Reverse {
+		return false, fmt.Sprintf("expected reverse=%v, got %v", *expected.Reverse, actual.Reverse)
+	}
+	return true, "style matched"
 }
 
 func checkProcess(state ptyrunner.ExitState, cond spec.ProcessCondition) (bool, string) {

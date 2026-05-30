@@ -117,9 +117,18 @@ func validateVerify(v Verify) error {
 		if v.Region.Width <= 0 || v.Region.Height <= 0 {
 			return fmt.Errorf("region width and height must be positive")
 		}
+		if err := validateRegionCondition(*v.Region); err != nil {
+			return err
+		}
 	}
 	if v.Cell != nil {
 		count++
+		if v.Cell.Char == "" && v.Cell.Style == nil {
+			return fmt.Errorf("cell verifier must contain char or style")
+		}
+		if v.Cell.Style != nil && !v.Cell.Style.hasAssertions() {
+			return fmt.Errorf("cell.style must contain at least one assertion")
+		}
 	}
 	if v.Cursor != nil {
 		count++
@@ -145,6 +154,26 @@ func validateVerify(v Verify) error {
 	return nil
 }
 
+func validateRegionCondition(cond RegionCondition) error {
+	count := 0
+	if cond.Contains != "" {
+		count++
+	}
+	if cond.NotContains != "" {
+		count++
+	}
+	if cond.Regex != "" {
+		count++
+		if _, err := regexp.Compile(cond.Regex); err != nil {
+			return fmt.Errorf("region.regex is invalid: %w", err)
+		}
+	}
+	if count != 1 {
+		return fmt.Errorf("region condition must contain exactly one assertion")
+	}
+	return nil
+}
+
 func validateScreenCondition(cond ScreenCondition) error {
 	count := 0
 	if cond.Contains != "" {
@@ -163,6 +192,16 @@ func validateScreenCondition(cond ScreenCondition) error {
 		return fmt.Errorf("screen condition must contain exactly one assertion")
 	}
 	return nil
+}
+
+func (s Style) hasAssertions() bool {
+	return s.Fg != "" ||
+		s.Bg != "" ||
+		s.Bold != nil ||
+		s.Dim != nil ||
+		s.Italic != nil ||
+		s.Underline != nil ||
+		s.Reverse != nil
 }
 
 type ContractHashMismatchError struct {
