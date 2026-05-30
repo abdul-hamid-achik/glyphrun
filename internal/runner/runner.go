@@ -78,10 +78,15 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	for idx, step := range resolved.Steps {
 		name := fmt.Sprintf("step.%d", idx+1)
 		_ = writer.AppendEvent(event("step.started", name, describeStep(step)))
-		if err := state.executeStep(ctx, step); err != nil {
+		result, err := state.executeStep(ctx, step)
+		if err != nil {
 			_ = writer.AppendEvent(event("step.failed", name, err.Error()))
 			result := state.evaluateOutcomes(ctx)
 			return state.finish(started, artifacts.StatusFailed, result, fmt.Sprintf("step %d failed: %v", idx+1, err)), nil
+		}
+		if result.Skipped {
+			_ = writer.AppendEvent(event("step.skipped", name, result.Message))
+			continue
 		}
 		_ = writer.AppendEvent(event("step.finished", name, ""))
 	}
@@ -169,35 +174,46 @@ func (s *runState) startTarget() error {
 	return nil
 }
 
-func (s *runState) executeStep(ctx context.Context, step spec.Step) error {
+type stepExecutionResult struct {
+	Skipped bool
+	Message string
+}
+
+func (s *runState) executeStep(ctx context.Context, step spec.Step) (stepExecutionResult, error) {
+	if step.When != nil {
+		ok, message := s.checkVerify(ctx, *step.When)
+		if !ok {
+			return stepExecutionResult{Skipped: true, Message: message}, nil
+		}
+	}
 	switch {
 	case step.Press != "":
 		data, err := input.KeyBytes(step.Press)
 		if err != nil {
-			return err
+			return stepExecutionResult{}, err
 		}
-		return s.writeInput(data)
+		return stepExecutionResult{}, s.writeInput(data)
 	case step.Type != "":
-		return s.writeInput([]byte(step.Type))
+		return stepExecutionResult{}, s.writeInput([]byte(step.Type))
 	case step.Paste != "":
-		return s.writeInput([]byte(step.Paste))
+		return stepExecutionResult{}, s.writeInput([]byte(step.Paste))
 	case step.Send != nil:
 		data, err := decodeEscaped(step.Send.Bytes)
 		if err != nil {
-			return err
+			return stepExecutionResult{}, err
 		}
-		return s.writeInput(data)
+		return stepExecutionResult{}, s.writeInput(data)
 	case step.Wait != nil:
-		return s.waitFor(ctx, *step.Wait)
+		return stepExecutionResult{}, s.waitFor(ctx, *step.Wait)
 	case step.Resize != nil:
 		if err := s.session.Resize(step.Resize.Cols, step.Resize.Rows); err != nil {
-			return err
+			return stepExecutionResult{}, err
 		}
-		return s.emulator.Resize(step.Resize.Cols, step.Resize.Rows)
+		return stepExecutionResult{}, s.emulator.Resize(step.Resize.Cols, step.Resize.Rows)
 	case step.Snapshot != "":
-		return s.captureSnapshot(step.Snapshot)
+		return stepExecutionResult{}, s.captureSnapshot(step.Snapshot)
 	default:
-		return fmt.Errorf("unsupported step")
+		return stepExecutionResult{}, fmt.Errorf("unsupported step")
 	}
 }
 

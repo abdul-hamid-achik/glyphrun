@@ -2,6 +2,8 @@
 
 The v1 step vocabulary is `press`, `type`, `paste`, `send`, `wait`, `resize`, `snapshot`, and `use`.
 
+Every step can include a `when` guard. The guard uses the same verifier shape as an outcome and skips the step when false.
+
 Common patterns:
 
 ```yaml
@@ -16,6 +18,11 @@ steps:
       cols: 120
       rows: 36
   - snapshot: after_submit
+  - when:
+      screen:
+        contains: "optional prompt"
+    press: "enter"
+  - use: quit_cleanly
   - wait:
       process:
         exitCode: 0
@@ -24,3 +31,5 @@ steps:
 Use `wait` to synchronize on screen text, process state, snapshots, or trusted commands. Prefer visible screen conditions over sleeps.
 
 Use `snapshot` to capture named terminal states inside the artifact pack. Use `glyph snapshot update <spec>` when a committed snapshot intentionally changes.
+
+Use `use` with `imports` to reuse action files. Actions are best for repeated mechanics; keep behavior assertions in `outcomes`.

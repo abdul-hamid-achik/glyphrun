@@ -7,6 +7,7 @@ Glyphrun is a local-first terminal behavior spec runner. Specs declare `intent +
 - Run `glyph agent --format md` when entering a Glyphrun-enabled repository for the first time.
 - Run `glyph explain --format json` before assuming the current CLI/spec surface.
 - Use `glyph docs <topic> --format json` for focused authoring guidance.
+- Use `glyph docs snippets --format md` before creating reusable action files or conditional steps.
 - Use `glyph spec verify <spec> --format json` before running a spec.
 - Use `glyph run <spec> --format json` for acceptance checks.
 - Use `glyph context latest --format md` after a failure.

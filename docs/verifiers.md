@@ -26,6 +26,10 @@ outcomes:
         char: "W"
         style:
           bold: true
+  - id: binary_exists
+    verify:
+      command:
+        run: "test -x ./bin/app"
 ```
 
 Screen verifiers support `contains`, `notContains`, and `regex`. Cell verifiers can check characters and style attributes such as foreground color, background color, bold, dim, italic, underline, and reverse.

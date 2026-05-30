@@ -1,0 +1,39 @@
+version: 1
+name: hello_reusable_action
+
+intent: |
+  a reusable action can wait for the hello demo and quit with q.
+
+imports:
+  - ../actions/wait_for_hello_and_quit.yml
+
+target:
+  cmd: ["${vars.helloBin}"]
+  cwd: "."
+
+preconditions:
+  commands:
+    - run: "go build -o ./examples/apps/hello/hello ./examples/apps/hello"
+      timeoutMs: 30000
+
+steps:
+  - use: wait_for_hello_and_quit
+
+outcomes:
+  - id: welcome_visible
+    description: the rendered terminal screen contains the welcome text
+    verify:
+      screen:
+        contains: "hello from glyphrun"
+
+  - id: clean_exit
+    description: q exits the application with status code 0
+    verify:
+      process:
+        exitCode: 0
+
+  - id: binary_was_built
+    description: the precondition built the hello demo binary
+    verify:
+      command:
+        run: "test -x ./examples/apps/hello/hello"

@@ -138,7 +138,10 @@ func tools() []map[string]any {
 			"required":   []string{"runA", "runB"},
 			"properties": map[string]any{"runA": map[string]any{"type": "string"}, "runB": map[string]any{"type": "string"}},
 		}),
-		tool("glyph_spec_scaffold", "Return a starter Glyphrun spec.", map[string]any{"type": "object", "properties": map[string]any{}}),
+		tool("glyph_spec_scaffold", "Return a starter Glyphrun spec or reusable action.", map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"spec", "action"}}},
+		}),
 	}
 }
 
@@ -152,8 +155,8 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		return toolText(map[string]any{
 			"project":   "glyphrun",
 			"binary":    "glyph",
-			"commands":  []string{"run", "spec verify", "snapshot update", "diff", "context", "docs", "explain", "doctor", "mcp"},
-			"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use"},
+			"commands":  []string{"run", "spec verify", "spec scaffold", "spec scaffold --kind action", "snapshot update", "diff", "context", "docs", "agent", "explain", "doctor", "mcp"},
+			"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use", "when"},
 			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command"},
 		})
 	case "glyph_docs":
@@ -249,13 +252,30 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		}
 		return toolText(diff)
 	case "glyph_spec_scaffold":
-		return map[string]any{"content": []map[string]string{{"type": "text", "text": scaffoldSpec()}}}, nil
+		return map[string]any{"content": []map[string]string{{"type": "text", "text": scaffoldSpec(stringArg(params.Arguments, "kind", "spec"))}}}, nil
 	default:
 		return nil, &responseError{Code: -32602, Message: "unknown tool: " + params.Name}
 	}
 }
 
-func scaffoldSpec() string {
+func scaffoldSpec(kind string) string {
+	if kind == "action" {
+		return `version: 1
+name: wait_for_ready_and_quit
+
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 5000
+  - snapshot: ready
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000
+`
+	}
 	return `version: 1
 name: hello_quits
 

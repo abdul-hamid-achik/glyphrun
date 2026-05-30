@@ -6,6 +6,7 @@ Built-in docs are available through `glyph docs <topic>`.
 glyph docs overview --format md
 glyph docs quickstart --format md
 glyph docs authoring --format md
+glyph docs snippets --format md
 glyph docs steps --format md
 glyph docs verifiers --format md
 glyph docs artifacts --format md

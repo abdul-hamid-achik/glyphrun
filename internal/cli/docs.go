@@ -30,11 +30,19 @@ Run ` + "`glyph spec verify <spec> --format json`" + ` before running a spec. Us
 
 Good specs assert user-visible behavior. Avoid coupling outcomes to implementation details, timing artifacts, or raw ANSI bytes.
 `,
+	"snippets": `# Reusable Actions
+
+Create reusable terminal step snippets with ` + "`glyph spec scaffold --kind action`" + `. Import them from specs with ` + "`imports`" + ` and call them with ` + "`use`" + `.
+
+Use ` + "`when`" + ` on a step to run it only when a verifier is currently true. This is useful for optional TUI prompts, warnings, login walls, and other state that may or may not appear.
+
+Use trusted ` + "`command`" + ` verifiers for Bash checks such as ` + "`test -x ./bin/app`" + `.
+`,
 	"steps": `# Steps
 
 Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + "`send`" + `, ` + "`wait`" + `, ` + "`resize`" + `, ` + "`snapshot`" + `, and imported ` + "`use`" + ` actions.
 
-Prefer ` + "`wait`" + ` steps that synchronize on visible screen or process state. Use ` + "`snapshot`" + ` to capture named terminal states in the artifact pack.
+Every step can include a ` + "`when`" + ` guard that uses the same verifier shape as an outcome. Prefer ` + "`wait`" + ` steps that synchronize on visible screen or process state. Use ` + "`snapshot`" + ` to capture named terminal states in the artifact pack.
 `,
 	"verifiers": `# Verifiers
 
@@ -80,6 +88,7 @@ Use ` + "`glyph context latest --format md`" + ` after a failure. Inspect ` + "`
 - overview
 - quickstart
 - authoring
+- snippets
 - steps
 - verifiers
 - artifacts

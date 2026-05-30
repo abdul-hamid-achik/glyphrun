@@ -46,6 +46,7 @@ type Command struct {
 }
 
 type Step struct {
+	When     *Verify     `yaml:"when,omitempty" json:"when,omitempty"`
 	Press    string      `yaml:"press,omitempty" json:"press,omitempty"`
 	Type     string      `yaml:"type,omitempty" json:"type,omitempty"`
 	Paste    string      `yaml:"paste,omitempty" json:"paste,omitempty"`

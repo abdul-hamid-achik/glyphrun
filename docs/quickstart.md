@@ -24,3 +24,10 @@ glyph context latest --format md
 ```
 
 Use `--format json` or `--format yaml` for automation. Use `--format md` for readable terminal output and artifact summaries.
+
+Try the reusable action and conditional examples:
+
+```bash
+glyph run examples/specs/reusable_action.yml --format md
+glyph run examples/specs/conditional_step.yml --format md
+```

@@ -76,3 +76,24 @@ func TestMarkdownColorCanBeForcedAndDisabled(t *testing.T) {
 		t.Fatalf("expected no ANSI output, got %q", stdout.String())
 	}
 }
+
+func TestSpecScaffoldAction(t *testing.T) {
+	opts := &globalOptions{format: "md"}
+	cmd := newRootCommand(opts)
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetArgs([]string{"spec", "scaffold", "--kind", "action"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("scaffold action failed: %v", err)
+	}
+	out := stdout.String()
+	for _, want := range []string{
+		"name: wait_for_ready_and_quit",
+		"steps:",
+		"snapshot: ready",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("action scaffold missing %q:\n%s", want, out)
+		}
+	}
+}

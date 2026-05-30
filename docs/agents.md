@@ -8,6 +8,7 @@ Agents should use stable Glyphrun surfaces only: `glyph agent`, `glyph explain`,
 glyph agent --format md
 glyph explain --format json
 glyph docs agents --format md
+glyph docs snippets --format md
 glyph spec verify <spec> --format json
 glyph run <spec> --format json
 glyph context latest --format md

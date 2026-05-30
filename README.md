@@ -67,6 +67,7 @@ For a guided command map:
 ```bash
 glyph agent --format md
 glyph docs topics --format md
+glyph docs snippets --format md
 glyph explain --format json
 ```
 
@@ -126,7 +127,7 @@ Run and verify:
 ```text
 glyph run <spec...>                 Run one or more behavior specs
 glyph spec verify <spec> [--stamp]  Validate a spec and optionally stamp its contract hash
-glyph spec scaffold                 Print a starter spec
+glyph spec scaffold [--kind spec]   Print a starter spec or reusable action
 glyph snapshot update <spec...>     Refresh committed terminal snapshots
 glyph diff <runA> <runB>            Compare two run artifact directories
 glyph record -- <command...>        Capture a PTY session as an artifact pack
@@ -151,12 +152,49 @@ For agents, start with:
 glyph agent --format md
 glyph explain --format json
 glyph docs agents --format md
+glyph docs snippets --format md
 glyph spec verify <spec> --format json
 glyph run <spec> --format json
 glyph context latest --format md
 ```
 
 The agent contract is simple: treat `intent` and `outcomes` as the behavior contract, treat `steps` as repairable navigation hints, and use `glyph context latest` after failures before editing code.
+
+## Reusable Actions And Bash Checks
+
+Glyphrun supports reusable action files for repeated TUI mechanics:
+
+```yaml
+imports:
+  - ../actions/wait_for_hello_and_quit.yml
+
+steps:
+  - use: wait_for_hello_and_quit
+```
+
+Create an action starter with:
+
+```bash
+glyph spec scaffold --kind action
+```
+
+Steps can also be conditional:
+
+```yaml
+steps:
+  - when:
+      screen:
+        contains: "optional prompt"
+    press: "enter"
+```
+
+For shell-level assertions, use the trusted `command` verifier:
+
+```yaml
+verify:
+  command:
+    run: "test -x ./bin/app"
+```
 
 ## MCP
 

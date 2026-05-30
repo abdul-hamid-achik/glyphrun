@@ -73,11 +73,14 @@ func newSpecVerifyCommand(opts *globalOptions) *cobra.Command {
 }
 
 func newSpecScaffoldCommand() *cobra.Command {
-	return &cobra.Command{
+	var kind string
+	cmd := &cobra.Command{
 		Use:   "scaffold",
 		Short: "Print a starter spec",
-		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Print(`version: 1
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch kind {
+			case "spec":
+				cmd.Print(`version: 1
 name: hello_quits
 
 intent: |
@@ -108,6 +111,29 @@ outcomes:
       screen:
         contains: "ready"
 `)
+				return nil
+			case "action":
+				cmd.Print(`version: 1
+name: wait_for_ready_and_quit
+
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 5000
+  - snapshot: ready
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000
+`)
+				return nil
+			default:
+				return exitError{code: 2, err: fmt.Errorf("unsupported --kind %q", kind)}
+			}
 		},
 	}
+	cmd.Flags().StringVar(&kind, "kind", "spec", "starter kind: spec, action")
+	return cmd
 }

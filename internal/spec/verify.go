@@ -41,6 +41,11 @@ func Validate(s Spec) error {
 }
 
 func validateStep(step Step) error {
+	if step.When != nil {
+		if err := validateVerify(*step.When); err != nil {
+			return fmt.Errorf("when: %w", err)
+		}
+	}
 	count := 0
 	if step.Press != "" {
 		count++

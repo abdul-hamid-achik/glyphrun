@@ -1,0 +1,14 @@
+version: 1
+name: wait_for_hello_and_quit
+
+steps:
+  - wait:
+      screen:
+        contains: "hello from glyphrun"
+      timeoutMs: 3000
+  - snapshot: home
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000

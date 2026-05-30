@@ -118,6 +118,7 @@
         { "required": ["use"] }
       ],
       "properties": {
+        "when": { "$ref": "#/$defs/verify" },
         "press": { "type": "string", "minLength": 1 },
         "type": { "type": "string", "minLength": 1 },
         "paste": { "type": "string", "minLength": 1 },

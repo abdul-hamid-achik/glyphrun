@@ -91,6 +91,44 @@ outcomes:
 	}
 }
 
+func TestParseFileAcceptsConditionalStep(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "conditional.yml")
+	err := os.WriteFile(path, []byte(`version: 1
+name: conditional_step
+intent: conditional steps can skip repair-only input.
+target:
+  cmd: ["/bin/echo", "ready"]
+steps:
+  - when:
+      screen:
+        notContains: "ready"
+    type: "only when not ready"
+  - wait:
+      process:
+        exitCode: 0
+outcomes:
+  - id: clean_exit
+    description: command exits
+    verify:
+      process:
+        exitCode: 0
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseFile(path, ParseOptions{
+		ProjectRoot:     repoRoot(t),
+		DefaultTerminal: Terminal{Cols: 80, Rows: 24, Profile: "xterm-256color"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Resolved.Steps[0].When == nil || parsed.Resolved.Steps[0].When.Screen == nil {
+		t.Fatalf("conditional step was not parsed: %#v", parsed.Resolved.Steps[0])
+	}
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()

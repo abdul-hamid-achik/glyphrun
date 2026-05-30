@@ -1,0 +1,43 @@
+version: 1
+name: hello_conditional_step
+
+intent: |
+  a conditional step can skip optional TUI input when the guard is false.
+
+target:
+  cmd: ["${vars.helloBin}"]
+  cwd: "."
+
+preconditions:
+  commands:
+    - run: "go build -o ./examples/apps/hello/hello ./examples/apps/hello"
+      timeoutMs: 30000
+
+steps:
+  - wait:
+      screen:
+        contains: "hello from glyphrun"
+      timeoutMs: 3000
+  - when:
+      screen:
+        contains: "optional prompt"
+    press: "enter"
+  - snapshot: home
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000
+
+outcomes:
+  - id: welcome_visible
+    description: the rendered terminal screen contains the welcome text
+    verify:
+      screen:
+        contains: "hello from glyphrun"
+
+  - id: clean_exit
+    description: q exits the application with status code 0
+    verify:
+      process:
+        exitCode: 0

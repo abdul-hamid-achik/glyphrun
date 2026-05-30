@@ -19,6 +19,7 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph run <spec...>",
 					"glyph spec verify <spec>",
 					"glyph spec scaffold",
+					"glyph spec scaffold --kind action",
 					"glyph snapshot update <spec...>",
 					"glyph diff <runA> <runB>",
 					"glyph record -- <command...>",
@@ -54,9 +55,9 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 
 - binary: ` + "`glyph`" + `
 - agent guide: ` + "`glyph agent --format md`" + `
-- docs: ` + "`glyph docs agents --format md`" + `, ` + "`glyph docs authoring --format md`" + `
+- docs: ` + "`glyph docs agents --format md`" + `, ` + "`glyph docs authoring --format md`" + `, ` + "`glyph docs snippets --format md`" + `
 - context: ` + "`glyph context latest --format md`" + `
-- steps: press, type, paste, send, wait, resize, snapshot, use
+- steps: press, type, paste, send, wait, resize, snapshot, use, when guards
 - verifiers: screen, region, cell, cursor, process, snapshot, command
 - formats: json, yaml, md
 - artifacts: run summaries, agent context, events, final screen, raw PTY log, frames, snapshots, outcomes, diagnostics

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
@@ -60,6 +61,72 @@ outcomes:
 	}
 	if _, err := os.Stat(filepath.Join(result.RunDir, "agent_context.md")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRunSpecSkipsConditionalStep(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "conditional.yml")
+	err := os.WriteFile(specPath, []byte(`version: 1
+name: conditional_skip
+intent: a conditional step is skipped when its guard is false.
+target:
+  cmd: ["/bin/sh", "-lc", "printf 'ready\n'; sleep 0.1"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 2000
+  - when:
+      screen:
+        contains: "missing"
+    type: "SHOULD_NOT_RUN"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: ready_visible
+    description: ready is visible
+    verify:
+      screen:
+        contains: "ready"
+  - id: clean_exit
+    description: process exits
+    verify:
+      process:
+        exitCode: 0
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunSpec(context.Background(), Options{
+		SpecPath:     specPath,
+		ArtifactRoot: filepath.Join(dir, "runs"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != artifacts.StatusPassed {
+		t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+	}
+	input, err := os.ReadFile(filepath.Join(result.RunDir, "raw/input.raw.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(input) != "" {
+		t.Fatalf("conditional input should have been skipped, got %q", string(input))
+	}
+	events, err := os.ReadFile(filepath.Join(result.RunDir, "events.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(events), `"type":"step.skipped"`) {
+		t.Fatalf("events missing step.skipped:\n%s", string(events))
 	}
 }
 
