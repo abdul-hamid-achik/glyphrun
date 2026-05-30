@@ -17,11 +17,13 @@ glyph doctor --format md
 Create and run a starter spec:
 
 ```bash
-glyph spec scaffold > specs/smoke.yml
-glyph spec verify specs/smoke.yml --format json
-glyph run specs/smoke.yml --format md
+glyph init --cmd ./bin/app --ready "ready" --format md
+glyph spec verify specs/glyphrun/smoke.yml --format json
+glyph run specs/glyphrun/smoke.yml --format md
 glyph context latest --format md
 ```
+
+If you only want the YAML printed to stdout, use `glyph spec scaffold > specs/smoke.yml`.
 
 Use `--format json` or `--format yaml` for automation. Use `--format md` for readable terminal output and artifact summaries.
 

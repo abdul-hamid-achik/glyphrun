@@ -12,9 +12,9 @@ Start with ` + "`glyph agent --format md`" + ` for the agent workflow, or ` + "`
 	"quickstart": `# Quickstart
 
 1. Run ` + "`glyph doctor --format md`" + `.
-2. Create a spec with ` + "`glyph spec scaffold > specs/smoke.yml`" + `.
-3. Validate it with ` + "`glyph spec verify specs/smoke.yml --format json`" + `.
-4. Run it with ` + "`glyph run specs/smoke.yml --format md --progress auto`" + `.
+2. Initialize a project with ` + "`glyph init --cmd ./bin/app --ready ready --format md`" + `, or print a spec with ` + "`glyph spec scaffold > specs/smoke.yml`" + `.
+3. Validate it with ` + "`glyph spec verify specs/glyphrun/smoke.yml --format json`" + `.
+4. Run it with ` + "`glyph run specs/glyphrun/smoke.yml --format md --progress auto`" + `.
 5. Inspect failures with ` + "`glyph context latest --format md`" + `.
 `,
 	"authoring": `# Authoring
@@ -79,6 +79,8 @@ Glyphrun reads ` + "`glyphrun.config.yml`" + ` by walking up from the spec path.
 Use config for shared terminal defaults, artifact behavior, variables, and redaction rules. Use ` + "`glyph doctor --format md`" + ` to confirm the active config and artifact root.
 
 ` + "`target.timeoutMs`" + ` wraps the whole target session after the PTY starts and exits with code ` + "`3`" + ` when it expires.
+
+Use ` + "`glyph init [dir] --cmd <target> --ready <text>`" + ` to create ` + "`glyphrun.config.yml`" + `, ` + "`specs/glyphrun/smoke.yml`" + `, and ` + "`.gitignore`" + ` artifact entries.
 `,
 	"troubleshooting": `# Troubleshooting
 

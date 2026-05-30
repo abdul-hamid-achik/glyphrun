@@ -156,7 +156,7 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		return toolText(map[string]any{
 			"project":   "glyphrun",
 			"binary":    "glyph",
-			"commands":  []string{"run", "spec verify", "spec scaffold", "spec scaffold --kind action", "snapshot update", "diff", "context", "docs", "agent", "explain", "doctor", "mcp"},
+			"commands":  []string{"init", "run", "spec verify", "spec scaffold", "spec scaffold --kind action", "snapshot update", "diff", "context", "docs", "agent", "explain", "doctor", "mcp"},
 			"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use", "when"},
 			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command"},
 			"progress":  []string{"auto", "always", "never"},

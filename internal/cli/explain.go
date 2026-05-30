@@ -16,6 +16,7 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 				"project":       "glyphrun",
 				"binary":        "glyph",
 				"commands": []string{
+					"glyph init [dir]",
 					"glyph run <spec...>",
 					"glyph spec verify <spec>",
 					"glyph spec scaffold",
@@ -57,6 +58,7 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 - binary: ` + "`glyph`" + `
 - agent guide: ` + "`glyph agent --format md`" + `
 - docs: ` + "`glyph docs agents --format md`" + `, ` + "`glyph docs authoring --format md`" + `, ` + "`glyph docs snippets --format md`" + `
+- init: ` + "`glyph init --cmd ./bin/app --ready ready`" + `
 - context: ` + "`glyph context latest --format md`" + `
 - steps: press, type, paste, send, wait, resize, snapshot, use, when guards
 - verifiers: screen, region, cell, cursor, process, snapshot, command

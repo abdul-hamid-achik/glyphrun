@@ -62,6 +62,7 @@ func newRootCommand(opts *globalOptions) *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.environment, "env", "", "config environment")
 
 	cmd.AddCommand(newRunCommand(opts))
+	cmd.AddCommand(newInitCommand(opts))
 	cmd.AddCommand(newSpecCommand(opts))
 	cmd.AddCommand(newSnapshotCommand(opts))
 	cmd.AddCommand(newDiffCommand(opts))

@@ -56,6 +56,14 @@ go build -o ~/.local/bin/glyph ./cmd/glyph
 glyph doctor --format md
 ```
 
+To add Glyphrun to another terminal project:
+
+```bash
+glyph init --cmd ./bin/app --ready "ready" --format md
+glyph spec verify specs/glyphrun/smoke.yml --format json
+glyph run specs/glyphrun/smoke.yml --format md --progress auto
+```
+
 After a run, inspect the newest agent-readable context:
 
 ```bash
@@ -125,6 +133,7 @@ Run and verify:
 ## CLI Commands
 
 ```text
+glyph init [dir]                    Create config, .gitignore entries, and a starter smoke spec
 glyph run <spec...>                 Run one or more behavior specs; add --progress for live status
 glyph spec verify <spec> [--stamp]  Validate a spec and optionally stamp its contract hash
 glyph spec scaffold [--kind spec]   Print a starter spec or reusable action
