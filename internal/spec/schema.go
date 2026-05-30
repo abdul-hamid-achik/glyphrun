@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	embeddedschemas "github.com/abdul-hamid-achik/glyphrun/schemas"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 )
@@ -22,13 +23,19 @@ func ValidateSourceSchema(source []byte, path string, opts ParseOptions) error {
 		}
 		schemaRoot = filepath.Join(projectRoot, schemaRoot)
 	}
-	schemaPath := filepath.Join(schemaRoot, "glyphrun.spec.v1.schema.json")
+	schemaName := "glyphrun.spec.v1.schema.json"
+	schemaPath := filepath.Join(schemaRoot, schemaName)
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		embedded, ok := embeddedschemas.Get(schemaName)
+		if !ok {
 			return nil
 		}
-		return err
+		schemaBytes = embedded
+		schemaPath = "embedded://" + schemaName
 	}
 	substituted, err := SubstitutePlaceholders(string(source), path, opts)
 	if err != nil {

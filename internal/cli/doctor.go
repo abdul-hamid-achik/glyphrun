@@ -34,12 +34,20 @@ func newDoctorCommand(opts *globalOptions) *cobra.Command {
 			}
 			add("PTY availability", ptyErr == nil, detailOrOK(ptyErr))
 			cfgPath, _ := config.FindConfig(".")
-			add("config", cfgPath != "", cfgPath)
+			if cfgPath == "" {
+				add("config", true, "not found; using defaults")
+			} else {
+				add("config", true, cfgPath)
+			}
 			rt, err := config.LoadRuntime(".", opts.configPath, opts.environment)
 			if err != nil {
 				add("config valid", false, err.Error())
 			} else {
-				add("config valid", true, rt.ConfigPath)
+				configDetail := rt.ConfigPath
+				if configDetail == "" {
+					configDetail = "defaults"
+				}
+				add("config valid", true, configDetail)
 				root := opts.artifactRoot
 				if root == "" {
 					root = rt.Config.ArtifactRoot
@@ -53,7 +61,11 @@ func newDoctorCommand(opts *globalOptions) *cobra.Command {
 			_, taskErr := os.Stat("Taskfile.yml")
 			add("Taskfile", taskErr == nil, "Taskfile.yml")
 			_, schemaErr := os.Stat("schemas/glyphrun.spec.v1.schema.json")
-			add("schema files", schemaErr == nil, "schemas/glyphrun.spec.v1.schema.json")
+			if schemaErr == nil {
+				add("schema files", true, "schemas/glyphrun.spec.v1.schema.json")
+			} else {
+				add("schema files", true, "embedded")
+			}
 			emulator := gote.New(80, 24)
 			add("terminal emulator", emulator != nil, "internal terminal adapter")
 			ok := true

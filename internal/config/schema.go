@@ -5,19 +5,26 @@ import (
 	"os"
 	"path/filepath"
 
+	embeddedschemas "github.com/abdul-hamid-achik/glyphrun/schemas"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 )
 
 func ValidateConfigSchema(data []byte, configPath string) error {
 	projectRoot := filepath.Dir(configPath)
-	schemaPath := filepath.Join(projectRoot, DefaultSchemaRoot, "glyphrun.config.v1.schema.json")
+	schemaName := "glyphrun.config.v1.schema.json"
+	schemaPath := filepath.Join(projectRoot, DefaultSchemaRoot, schemaName)
 	schemaBytes, err := os.ReadFile(schemaPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		embedded, ok := embeddedschemas.Get(schemaName)
+		if !ok {
 			return nil
 		}
-		return err
+		schemaBytes = embedded
+		schemaPath = "embedded://" + schemaName
 	}
 	var document any
 	if err := yaml.Unmarshal(data, &document); err != nil {
