@@ -19,7 +19,7 @@ Start with ` + "`glyph agent --format md`" + ` for the agent workflow, or ` + "`
 1. Run ` + "`glyph doctor --format md`" + `.
 2. Create a spec with ` + "`glyph spec scaffold > specs/smoke.yml`" + `.
 3. Validate it with ` + "`glyph spec verify specs/smoke.yml --format json`" + `.
-4. Run it with ` + "`glyph run specs/smoke.yml --format md`" + `.
+4. Run it with ` + "`glyph run specs/smoke.yml --format md --progress auto`" + `.
 5. Inspect failures with ` + "`glyph context latest --format md`" + `.
 `,
 	"authoring": `# Authoring
@@ -82,6 +82,8 @@ Use config for shared terminal defaults, artifact behavior, variables, and redac
 	"troubleshooting": `# Troubleshooting
 
 Use ` + "`glyph context latest --format md`" + ` after a failure. Inspect ` + "`screens/final.txt`" + `, ` + "`raw/pty.raw.log`" + `, ` + "`frames/frames.ndjson`" + `, and ` + "`diagnostics/failure.md`" + `.
+
+Use ` + "`glyph run <spec> --format md --progress always`" + ` for live step/outcome progress during long TUI runs. Progress is written to stderr.
 `,
 	"topics": `# Docs Topics
 

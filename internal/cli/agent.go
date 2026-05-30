@@ -26,6 +26,7 @@ func newAgentCommand(opts *globalOptions) *cobra.Command {
 					"glyph docs snippets --format md",
 					"glyph spec verify <spec> --format json",
 					"glyph run <spec> --format json",
+					"glyph run <spec> --format md --progress auto",
 					"glyph context latest --format md",
 					"glyph diff <runA> <runB> --format md",
 				},
@@ -62,6 +63,7 @@ func renderAgentGuideMarkdown() string {
 	b.WriteString("- `glyph spec verify <spec> --format json`\n")
 	b.WriteString("- `glyph run <spec> --format json`\n")
 	b.WriteString("- `glyph run <spec> --format md`\n")
+	b.WriteString("- `glyph run <spec> --format md --progress auto`\n")
 	b.WriteString("- `glyph context latest --format md`\n\n")
 	b.WriteString("## Failure Workflow\n\n")
 	b.WriteString("- inspect `glyph context latest --format md`\n")

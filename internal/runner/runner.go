@@ -36,6 +36,26 @@ type Options struct {
 	Environment     string
 	ArtifactRoot    string
 	UpdateSnapshots bool
+	Listener        ProgressListener
+}
+
+type ProgressStatus string
+
+const (
+	ProgressPassed  ProgressStatus = "passed"
+	ProgressFailed  ProgressStatus = "failed"
+	ProgressSkipped ProgressStatus = "skipped"
+)
+
+type ProgressListener interface {
+	OnRunStart(s spec.Spec, runID string, runDir string)
+	OnPreconditionStart(index int, command spec.Command)
+	OnPreconditionFinish(index int, command spec.Command, status ProgressStatus, duration time.Duration, message string)
+	OnStepStart(index int, step spec.Step)
+	OnStepFinish(index int, step spec.Step, status ProgressStatus, duration time.Duration, message string)
+	OnOutcomesStart(total int)
+	OnOutcomeFinish(outcome spec.Outcome, result artifacts.OutcomeResult)
+	OnRunEnd(result artifacts.RunResult)
 }
 
 func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
@@ -65,7 +85,10 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	_ = writer.AppendEvent(event("run.started", resolved.Name, ""))
 	_ = writer.WriteResolvedSpec(resolved)
 
-	state := newRunState(resolved, runtime, writer, opts.UpdateSnapshots)
+	state := newRunState(resolved, runtime, writer, opts.UpdateSnapshots, opts.Listener)
+	if opts.Listener != nil {
+		opts.Listener.OnRunStart(resolved, runID, runDir)
+	}
 	if err := state.runPreconditions(ctx); err != nil {
 		return state.finish(started, artifacts.StatusErrored, nil, fmt.Sprintf("precondition failed: %v", err)), nil
 	}
@@ -78,15 +101,28 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	for idx, step := range resolved.Steps {
 		name := fmt.Sprintf("step.%d", idx+1)
 		_ = writer.AppendEvent(event("step.started", name, describeStep(step)))
+		stepStart := time.Now()
+		if state.listener != nil {
+			state.listener.OnStepStart(idx, step)
+		}
 		result, err := state.executeStep(ctx, step)
 		if err != nil {
 			_ = writer.AppendEvent(event("step.failed", name, err.Error()))
+			if state.listener != nil {
+				state.listener.OnStepFinish(idx, step, ProgressFailed, time.Since(stepStart), err.Error())
+			}
 			result := state.evaluateOutcomes(ctx)
 			return state.finish(started, artifacts.StatusFailed, result, fmt.Sprintf("step %d failed: %v", idx+1, err)), nil
 		}
 		if result.Skipped {
 			_ = writer.AppendEvent(event("step.skipped", name, result.Message))
+			if state.listener != nil {
+				state.listener.OnStepFinish(idx, step, ProgressSkipped, time.Since(stepStart), result.Message)
+			}
 			continue
+		}
+		if state.listener != nil {
+			state.listener.OnStepFinish(idx, step, ProgressPassed, time.Since(stepStart), "")
 		}
 		_ = writer.AppendEvent(event("step.finished", name, ""))
 	}
@@ -109,6 +145,7 @@ type runState struct {
 	emulator        terminal.Emulator
 	session         *ptyrunner.Session
 	updateSnapshots bool
+	listener        ProgressListener
 
 	mu        sync.Mutex
 	rawPTY    []byte
@@ -117,21 +154,32 @@ type runState struct {
 	snapshots map[string]terminal.ScreenSnapshot
 }
 
-func newRunState(s spec.Spec, rt config.Runtime, writer *artifacts.Writer, updateSnapshots bool) *runState {
+func newRunState(s spec.Spec, rt config.Runtime, writer *artifacts.Writer, updateSnapshots bool, listener ProgressListener) *runState {
 	return &runState{
 		spec:            s,
 		runtime:         rt,
 		writer:          writer,
 		emulator:        gote.New(s.Terminal.Cols, s.Terminal.Rows),
 		updateSnapshots: updateSnapshots,
+		listener:        listener,
 		snapshots:       map[string]terminal.ScreenSnapshot{},
 	}
 }
 
 func (s *runState) runPreconditions(ctx context.Context) error {
-	for _, command := range s.spec.Preconditions.Commands {
+	for idx, command := range s.spec.Preconditions.Commands {
+		start := time.Now()
+		if s.listener != nil {
+			s.listener.OnPreconditionStart(idx, command)
+		}
 		if err := s.runShellCommand(ctx, command.Run, command.Cwd, command.TimeoutMS); err != nil {
+			if s.listener != nil {
+				s.listener.OnPreconditionFinish(idx, command, ProgressFailed, time.Since(start), err.Error())
+			}
 			return err
+		}
+		if s.listener != nil {
+			s.listener.OnPreconditionFinish(idx, command, ProgressPassed, time.Since(start), "")
 		}
 	}
 	return nil
@@ -279,10 +327,16 @@ func (s *runState) checkWait(wait spec.WaitStep) (bool, string) {
 }
 
 func (s *runState) evaluateOutcomes(ctx context.Context) []artifacts.OutcomeResult {
+	if s.listener != nil {
+		s.listener.OnOutcomesStart(len(s.spec.Outcomes))
+	}
 	results := make([]artifacts.OutcomeResult, 0, len(s.spec.Outcomes))
 	for _, outcome := range s.spec.Outcomes {
 		result := s.evaluateOutcome(ctx, outcome)
 		results = append(results, result)
+		if s.listener != nil {
+			s.listener.OnOutcomeFinish(outcome, result)
+		}
 		_ = s.writer.WriteOutcome(result, map[string]any{
 			"id":     outcome.ID,
 			"verify": outcome.Verify,
@@ -636,6 +690,9 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		_ = s.writer.AppendEvent(event("run.failed", s.spec.Name, diagnostic))
 	} else {
 		_ = s.writer.AppendEvent(event("run.errored", s.spec.Name, diagnostic))
+	}
+	if s.listener != nil {
+		s.listener.OnRunEnd(result)
 	}
 	return result
 }

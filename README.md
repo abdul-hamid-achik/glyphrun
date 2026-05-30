@@ -125,7 +125,7 @@ Run and verify:
 ## CLI Commands
 
 ```text
-glyph run <spec...>                 Run one or more behavior specs
+glyph run <spec...>                 Run one or more behavior specs; add --progress for live status
 glyph spec verify <spec> [--stamp]  Validate a spec and optionally stamp its contract hash
 glyph spec scaffold [--kind spec]   Print a starter spec or reusable action
 glyph snapshot update <spec...>     Refresh committed terminal snapshots
@@ -145,6 +145,15 @@ Agent-callable commands support `--format json|yaml|md`. JSON and YAML modes do 
 ## Human And Agent DX
 
 For humans, `--format md` prints a compact report with run status, target command, terminal size, outcome counts, failure focus, key artifact paths, and suggested next commands. Markdown output is colorized on real terminals. Set `GLYPHRUN_COLOR=always` to force color, `GLYPHRUN_COLOR=never` or `--no-color` to disable it, and `NO_COLOR=1` to follow the common no-color convention.
+
+`glyph run` also supports live progress for local terminal use:
+
+```bash
+glyph run examples/specs/hello.yml --format md --progress auto
+glyph run examples/specs/hello.yml --format json --progress always
+```
+
+Progress is written to stderr so JSON/YAML stdout stays machine-readable. Use `--progress never` or `GLYPHRUN_PROGRESS=never` to disable it; use `GLYPHRUN_PROGRESS=always` to force it.
 
 For agents, start with:
 

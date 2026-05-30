@@ -14,6 +14,7 @@ import (
 func newRunCommand(opts *globalOptions) *cobra.Command {
 	var parallel int
 	var updateSnapshots bool
+	var progress string
 	cmd := &cobra.Command{
 		Use:   "run <spec...>",
 		Short: "Run terminal behavior specs",
@@ -23,7 +24,11 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
-			results, exitCode, err := runSpecs(context.Background(), args, parallel, opts, updateSnapshots)
+			listener, err := makeRunProgressListener(cmd, opts, format, parallel, progress)
+			if err != nil {
+				return exitError{code: 2, err: err}
+			}
+			results, exitCode, err := runSpecs(context.Background(), args, parallel, opts, updateSnapshots, listener)
 			if err != nil {
 				return classifyRunError(err)
 			}
@@ -57,10 +62,11 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 	}
 	cmd.Flags().IntVar(&parallel, "parallel", 1, "number of specs to run concurrently")
 	cmd.Flags().BoolVar(&updateSnapshots, "update-snapshots", false, "update committed snapshots")
+	cmd.Flags().StringVar(&progress, "progress", "auto", "live progress: auto, always, never")
 	return cmd
 }
 
-func runSpecs(ctx context.Context, specPaths []string, parallel int, opts *globalOptions, updateSnapshots bool) ([]artifacts.RunResult, int, error) {
+func runSpecs(ctx context.Context, specPaths []string, parallel int, opts *globalOptions, updateSnapshots bool, listener runner.ProgressListener) ([]artifacts.RunResult, int, error) {
 	if parallel < 1 {
 		parallel = 1
 	}
@@ -82,6 +88,7 @@ func runSpecs(ctx context.Context, specPaths []string, parallel int, opts *globa
 					Environment:     opts.environment,
 					ArtifactRoot:    opts.artifactRoot,
 					UpdateSnapshots: updateSnapshots,
+					Listener:        listener,
 				})
 				results[idx] = result
 				errs[idx] = err

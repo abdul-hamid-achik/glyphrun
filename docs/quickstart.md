@@ -25,6 +25,14 @@ glyph context latest --format md
 
 Use `--format json` or `--format yaml` for automation. Use `--format md` for readable terminal output and artifact summaries.
 
+Use live progress while iterating locally:
+
+```bash
+glyph run specs/smoke.yml --format md --progress auto
+```
+
+Progress goes to stderr. The final report stays on stdout.
+
 Try the reusable action and conditional examples:
 
 ```bash

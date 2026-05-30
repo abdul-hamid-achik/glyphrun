@@ -31,9 +31,10 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph doctor",
 					"glyph mcp",
 				},
-				"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use"},
+				"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use", "when"},
 				"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command"},
 				"formats":   []string{"json", "yaml", "md"},
+				"progress":  []string{"auto", "always", "never"},
 				"artifacts": []string{
 					"run.json",
 					"run.yaml",
@@ -60,6 +61,7 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 - steps: press, type, paste, send, wait, resize, snapshot, use, when guards
 - verifiers: screen, region, cell, cursor, process, snapshot, command
 - formats: json, yaml, md
+- progress: ` + "`glyph run <spec> --progress auto|always|never`" + `
 - artifacts: run summaries, agent context, events, final screen, raw PTY log, frames, snapshots, outcomes, diagnostics
 `
 			})

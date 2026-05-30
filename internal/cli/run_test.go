@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -71,6 +72,31 @@ func TestRunCommandParallelPreservesAllResults(t *testing.T) {
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte(`"specName": "a"`)) || !bytes.Contains(stdout.Bytes(), []byte(`"specName": "b"`)) {
 		t.Fatalf("stdout missing batch results: %s", stdout.String())
+	}
+}
+
+func TestRunCommandProgressWritesToStderr(t *testing.T) {
+	dir := t.TempDir()
+	specPath := writePassingCLISpec(t, dir, "progress")
+	opts := &globalOptions{format: "json", artifactRoot: filepath.Join(dir, "runs")}
+	cmd := newRootCommand(opts)
+	var stdout, stderr bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{"run", specPath, "--format", "json", "--progress", "always"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("run failed: %v\nstdout=%s\nstderr=%s", err, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `"status": "passed"`) {
+		t.Fatalf("stdout missing structured run result: %s", stdout.String())
+	}
+	for _, want := range []string{"Glyphrun progress", "Steps", "Outcomes", "PASSED"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("progress stderr missing %q:\n%s", want, stderr.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "Steps") {
+		t.Fatalf("progress leaked into stdout:\n%s", stdout.String())
 	}
 }
 

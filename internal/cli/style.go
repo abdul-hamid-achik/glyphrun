@@ -47,6 +47,10 @@ func colorEnabled(w io.Writer, opts *globalOptions) bool {
 	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
 		return false
 	}
+	return isTerminalWriter(w)
+}
+
+func isTerminalWriter(w io.Writer) bool {
 	file, ok := w.(*os.File)
 	if !ok {
 		return false
