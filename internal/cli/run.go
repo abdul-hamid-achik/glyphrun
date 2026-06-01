@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
@@ -101,14 +102,23 @@ func runSpecs(ctx context.Context, specPaths []string, parallel int, opts *globa
 	close(jobs)
 	wg.Wait()
 
+	// Aggregate errors across all specs instead of bailing on the first.
+	// Workers have already finished (wg.Wait above), so this collects the
+	// full picture for parallel runs. Each error is annotated with the
+	// spec path so multi-error output is identifiable.
 	exitCode := 0
+	var collected []error
 	for idx, err := range errs {
 		if err != nil {
-			return nil, 0, err
+			collected = append(collected, fmt.Errorf("%s: %w", specPaths[idx], err))
+			continue
 		}
 		if results[idx].ExitCode > exitCode {
 			exitCode = results[idx].ExitCode
 		}
+	}
+	if len(collected) > 0 {
+		return results, exitCode, errors.Join(collected...)
 	}
 	return results, exitCode, nil
 }
