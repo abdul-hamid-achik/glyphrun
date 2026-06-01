@@ -196,7 +196,18 @@ func mergeConfig(base Config, overlay Config) Config {
 	if overlay.Terminal.Rows != 0 {
 		base.Terminal.Rows = overlay.Terminal.Rows
 	}
-	base.Terminal.Normalize = overlay.Terminal.Normalize
+	// Normalize: do not clobber the struct wholesale — defaults set in
+	// Defaults() (TrimRight, NormalizeLineEndings) must survive when the
+	// user's config omits a normalize: block or sets only some fields.
+	// The bool fields are re-applied by applyExplicitConfigFields from
+	// the raw YAML so user-set values still win. Here we only need to
+	// merge the slice fields, which have no zero-value ambiguity.
+	if len(overlay.Terminal.Normalize.Replace) > 0 {
+		base.Terminal.Normalize.Replace = overlay.Terminal.Normalize.Replace
+	}
+	if len(overlay.Terminal.Normalize.IgnoreRegions) > 0 {
+		base.Terminal.Normalize.IgnoreRegions = overlay.Terminal.Normalize.IgnoreRegions
+	}
 	if overlay.Artifacts.MaxRawLogBytes != 0 {
 		base.Artifacts.MaxRawLogBytes = overlay.Artifacts.MaxRawLogBytes
 	}
