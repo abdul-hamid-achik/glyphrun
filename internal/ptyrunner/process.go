@@ -102,7 +102,10 @@ func (s *Session) LastOutputAt() time.Time {
 func (s *Session) Cleanup(timeout time.Duration) ExitState {
 	state := s.ExitState()
 	if state.Exited {
-		_ = s.ptmx.Close()
+		if !s.waitForOutput(timeout) {
+			_ = s.ptmx.Close()
+			_ = s.waitForOutput(time.Second)
+		}
 		return state
 	}
 	if s.cmd.Process != nil {
@@ -110,7 +113,10 @@ func (s *Session) Cleanup(timeout time.Duration) ExitState {
 	}
 	select {
 	case state = <-s.done:
-		_ = s.ptmx.Close()
+		if !s.waitForOutput(timeout) {
+			_ = s.ptmx.Close()
+			_ = s.waitForOutput(time.Second)
+		}
 		return state
 	case <-time.After(timeout):
 	}
@@ -123,7 +129,17 @@ func (s *Session) Cleanup(timeout time.Duration) ExitState {
 		state = ExitState{Exited: true, ExitCode: -1}
 	}
 	_ = s.ptmx.Close()
+	_ = s.waitForOutput(time.Second)
 	return state
+}
+
+func (s *Session) waitForOutput(timeout time.Duration) bool {
+	select {
+	case <-s.outputDone:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 func (s *Session) readLoop(onOutput func([]byte), onError func(error)) {
@@ -157,7 +173,6 @@ func (s *Session) waitLoop() {
 	s.mu.Unlock()
 	s.done <- state
 	close(s.done)
-	_ = s.ptmx.Close()
 }
 
 func exitCode(err error) int {

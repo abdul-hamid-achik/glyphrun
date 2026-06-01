@@ -74,6 +74,61 @@ outcomes:
 	}
 }
 
+func TestRunSpecCapturesFastProcessOutput(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "fast.yml")
+	err := os.WriteFile(specPath, []byte(`version: 1
+name: fast_output
+intent: a very short-lived target prints output before exiting.
+target:
+  cmd: ["/bin/sh", "-lc", "printf dev"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      screen:
+        contains: "dev"
+      timeoutMs: 2000
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: output_visible
+    description: output from a fast process is captured
+    verify:
+      screen:
+        contains: "dev"
+  - id: clean_exit
+    description: process exits
+    verify:
+      process:
+        exitCode: 0
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunSpec(context.Background(), Options{
+		SpecPath:     specPath,
+		ArtifactRoot: filepath.Join(dir, "runs"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != artifacts.StatusPassed {
+		t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+	}
+	raw, err := os.ReadFile(filepath.Join(result.RunDir, "raw/pty.raw.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "dev") {
+		t.Fatalf("raw PTY log missing fast output: %q", string(raw))
+	}
+}
+
 func TestRunSpecSkipsConditionalStep(t *testing.T) {
 	dir := t.TempDir()
 	specPath := filepath.Join(dir, "conditional.yml")

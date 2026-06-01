@@ -30,6 +30,8 @@ steps:
 
 Use `wait` to synchronize on screen text, process state, snapshots, or trusted commands. Prefer visible screen conditions over sleeps.
 
+`press` accepts printable single characters plus common terminal keys: `enter`, `tab`, `shift+tab`, `esc`, `backspace`, `delete`, `space`, arrow keys, `pgup`, `pgdown`, `home`, `end`, and `ctrl+<letter>`/`c-<letter>` aliases such as `ctrl+c`, `ctrl+u`, and `c-m`.
+
 Use `snapshot` to capture named terminal states inside the artifact pack. Use `glyph snapshot update <spec>` when a committed snapshot intentionally changes.
 
 Use `paste` for multi-character clipboard-style input. Glyphrun sends bracketed paste delimiters only after the target enables terminal mode `?2004`; otherwise it writes the literal text.
