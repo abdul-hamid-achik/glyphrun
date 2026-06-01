@@ -626,3 +626,75 @@ outcomes:
 		t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
 	}
 }
+
+func TestRunSpecMarksTruncatedRawLog(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	cfg := `version: 1
+artifactRoot: .glyphrun/runs
+artifacts:
+  rawLog: true
+  maxRawLogBytes: 256
+`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	specPath := filepath.Join(dir, "big.yml")
+	if err := os.WriteFile(specPath, []byte(`version: 1
+name: big_output
+intent: a target producing more output than the raw log cap should be marked truncated.
+target:
+  cmd: ["/bin/sh", "-lc", "head -c 10000 < /dev/zero | tr '\\0' 'X'"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 5000
+outcomes:
+  - id: clean_exit
+    description: the target exits cleanly
+    verify:
+      process:
+        exitCode: 0
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunSpec(context.Background(), Options{
+		SpecPath:     specPath,
+		ConfigPath:   cfgPath,
+		ArtifactRoot: filepath.Join(dir, "runs"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(result.RunDir, "raw/pty.raw.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "[glyphrun: raw PTY log truncated at 256 bytes") {
+		t.Fatalf("raw log missing truncation marker, len=%d, tail=%q", len(raw), tailOf(string(raw), 200))
+	}
+	if int64(len(raw)) > 512 {
+		// marker is ~70 bytes; allow a comfortable margin but still well under
+		// the cap, proving we stopped accepting data once the cap was hit.
+		t.Fatalf("raw log grew past cap+marker: len=%d", len(raw))
+	}
+	events, err := os.ReadFile(filepath.Join(result.RunDir, "events.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(events), `"pty.truncated"`) {
+		t.Fatalf("events missing pty.truncated event:\n%s", string(events))
+	}
+}
+
+func tailOf(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[len(s)-n:]
+}

@@ -221,6 +221,12 @@ type runState struct {
 	frames    []terminal.Frame
 	termErr   error
 	snapshots map[string]terminal.ScreenSnapshot
+
+	// rawPTYTruncated is set the first time a PTY output chunk is
+	// dropped because rawPTY has already hit MaxRawLogBytes. finish()
+	// appends a marker to the artifact and emits a pty.truncated event
+	// so the loss is visible in events.ndjson and agent_context.md.
+	rawPTYTruncated bool
 }
 
 func newRunState(s spec.Spec, rt config.Runtime, writer *artifacts.Writer, updateSnapshots bool, listener ProgressListener) *runState {
@@ -274,7 +280,19 @@ func (s *runState) startTarget() error {
 		OnOutput: func(data []byte) {
 			s.mu.Lock()
 			max := s.runtime.Config.Artifacts.MaxRawLogBytes
-			if max <= 0 || int64(len(s.rawPTY)+len(data)) <= max {
+			if max > 0 {
+				used := int64(len(s.rawPTY))
+				if used >= max {
+					// Already at cap — drop the chunk but remember it.
+					s.rawPTYTruncated = true
+				} else if used+int64(len(data)) > max {
+					// Take what fits, then mark truncated.
+					s.rawPTY = append(s.rawPTY, data[:max-used]...)
+					s.rawPTYTruncated = true
+				} else {
+					s.rawPTY = append(s.rawPTY, data...)
+				}
+			} else {
 				s.rawPTY = append(s.rawPTY, data...)
 			}
 			s.mu.Unlock()
@@ -829,7 +847,14 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	rawPTY := append([]byte(nil), s.rawPTY...)
 	inputLog := append([]byte(nil), s.inputLog...)
 	frames := append([]terminal.Frame(nil), s.frames...)
+	rawPTYTruncated := s.rawPTYTruncated
 	s.mu.Unlock()
+	if rawPTYTruncated {
+		max := s.runtime.Config.Artifacts.MaxRawLogBytes
+		marker := fmt.Sprintf("\n[glyphrun: raw PTY log truncated at %d bytes; later output was dropped]\n", max)
+		rawPTY = append(rawPTY, []byte(marker)...)
+		_ = s.writer.AppendEvent(event("pty.truncated", "", fmt.Sprintf("raw PTY log truncated at %d bytes", max)))
+	}
 	if s.runtime.Config.Artifacts.RawLog {
 		_ = s.writer.WriteRawPTY(rawPTY)
 		_ = s.writer.WriteInputLog(inputLog)
