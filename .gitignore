@@ -5,3 +5,6 @@ examples/apps/hello/hello
 examples/apps/reporter/reporter
 reports/
 spec.md
+
+# GoReleaser build output
+dist/

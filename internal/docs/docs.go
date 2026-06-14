@@ -434,6 +434,15 @@ Run specs in CI and surface the results on the pull request:
 A reusable composite action lives at ` + "`.github/actions/glyphrun`" + ` and an example workflow at ` + "`examples/github/glyphrun-pr.yml`" + `. ` + "`glyph comment`" + ` writes to stdout by default, so it also pipes straight into ` + "`gh pr comment -F -`" + `.
 `,
 
+	"distribution": `# Distribution & Releasing
+
+Glyphrun ships cross-platform binaries via GoReleaser.
+
+Install a published release with Homebrew (` + "`brew install abdul-hamid-achik/tap/glyph`" + `), by downloading an archive from the GitHub Releases page, or from source with ` + "`go install github.com/abdul-hamid-achik/glyphrun/cmd/glyph@latest`" + `.
+
+Cut a release by pushing a ` + "`v*`" + ` tag: ` + "`.github/workflows/release.yml`" + ` runs GoReleaser to build the darwin/linux × amd64/arm64 matrix, publish a GitHub Release with checksums, and update the Homebrew cask. Validate first with ` + "`goreleaser check`" + ` and ` + "`goreleaser build --snapshot --clean`" + `.
+`,
+
 	"topics": `# Docs Topics
 
 - overview
@@ -458,6 +467,7 @@ A reusable composite action lives at ` + "`.github/actions/glyphrun`" + ` and an
 - capture-policy
 - count-verifier
 - github
+- distribution
 - install
 - topics
 `,

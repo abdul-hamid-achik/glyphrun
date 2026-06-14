@@ -59,6 +59,17 @@ go build -o ./bin/glyph ./cmd/glyph
 ./bin/glyph run examples/specs/hello.yml --format md
 ```
 
+To install a published release (no checkout needed):
+
+```bash
+brew install abdul-hamid-achik/tap/glyph          # macOS / Linux
+go install github.com/abdul-hamid-achik/glyphrun/cmd/glyph@latest
+# or download a prebuilt archive from the Releases page
+```
+
+See [Distribution & Releasing](docs/distribution.md) for the release process and
+Homebrew tap setup.
+
 To install the CLI globally from this checkout:
 
 ```bash

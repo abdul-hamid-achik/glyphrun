@@ -1,0 +1,80 @@
+# GoReleaser configuration for the `glyph` binary.
+# Validate locally with:  goreleaser check
+# Dry-run a build with:    goreleaser build --snapshot --clean
+# A real release runs from CI on a pushed `v*` tag (see .github/workflows/release.yml).
+version: 2
+
+project_name: glyph
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: glyph
+    main: ./cmd/glyph
+    binary: glyph
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    # Match the ldflags the version package documents so `glyph --version`
+    # reports the release tag, commit, and date.
+    ldflags:
+      - -s -w
+      - -X github.com/abdul-hamid-achik/glyphrun/internal/version.Version={{ .Tag }}
+      - -X github.com/abdul-hamid-achik/glyphrun/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/abdul-hamid-achik/glyphrun/internal/version.BuildDate={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: glyph
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+
+homebrew_casks:
+  - name: glyph
+    # The tap repo must exist and CI must provide HOMEBREW_TAP_TOKEN (a PAT with
+    # write access to it). See docs/distribution.md / the release workflow.
+    repository:
+      owner: abdul-hamid-achik
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: "https://github.com/abdul-hamid-achik/glyphrun"
+    description: "Local-first behavior runner for terminal applications and interactive CLIs"
+    # Strip the quarantine attribute so the unsigned binary runs without the
+    # macOS Gatekeeper prompt after `brew install`.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/glyph"]
+          end
+
+release:
+  github:
+    owner: abdul-hamid-achik
+    name: glyphrun

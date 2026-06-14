@@ -15,6 +15,7 @@ glyph docs mcp --format md
 glyph docs configuration --format md
 glyph docs troubleshooting --format md
 glyph docs github --format md
+glyph docs distribution --format md
 glyph docs topics --format md
 ```
 
