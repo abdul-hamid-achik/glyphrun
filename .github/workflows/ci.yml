@@ -39,7 +39,20 @@ jobs:
       - name: Doctor
         run: ./bin/glyph doctor --format json
 
+      - name: Version
+        run: ./bin/glyph --version
+
       - name: Example
         run: |
           go build -o ./examples/apps/hello/hello ./examples/apps/hello
           ./bin/glyph run examples/specs/hello.yml --format md
+
+      - name: Count example
+        run: |
+          chmod +x ./examples/apps/count_target/run.sh
+          ./bin/glyph run examples/specs/count_cells.yml --format md
+
+      - name: JUnit example
+        run: |
+          mkdir -p reports
+          ./bin/glyph run examples/specs/junit_xml_demo.yml --junit reports/glyph.xml --format md
