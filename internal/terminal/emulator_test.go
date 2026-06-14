@@ -94,6 +94,127 @@ func TestSimpleEmulatorColorResets(t *testing.T) {
 	}
 }
 
+// rowText reads a screen row as trimmed text, independent of snapshot joining.
+func rowText(s Screen, y, cols int) string {
+	var b strings.Builder
+	for x := 0; x < cols; x++ {
+		b.WriteString(s.Cell(x, y).Char)
+	}
+	return strings.TrimRight(b.String(), " ")
+}
+
+func TestSimpleEmulatorInsertChars(t *testing.T) {
+	em := NewEmulator(6, 1)
+	// "abcdef", move to column 3 (CSI 3G -> x=2), insert one blank.
+	if _, err := em.Feed([]byte("abcdef\x1b[3G\x1b[@")); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowText(em.Screen(), 0, 6); got != "ab cde" {
+		t.Fatalf("ICH row = %q, want %q", got, "ab cde")
+	}
+}
+
+func TestSimpleEmulatorDeleteChars(t *testing.T) {
+	em := NewEmulator(6, 1)
+	// "abcdef", move to column 3 (x=2), delete one char.
+	if _, err := em.Feed([]byte("abcdef\x1b[3G\x1b[P")); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowText(em.Screen(), 0, 6); got != "abdef" {
+		t.Fatalf("DCH row = %q, want %q", got, "abdef")
+	}
+}
+
+func TestSimpleEmulatorScrollRegionLineFeed(t *testing.T) {
+	em := NewEmulator(3, 4)
+	// Scroll region rows 2-3 (0-based 1-2); fill all rows; LF at bottom margin
+	// scrolls only within the region.
+	seq := "\x1b[2;3r" + // set region (homes cursor to 0,0)
+		"AAA" + "\x1b[2;1HBBB" + "\x1b[3;1HCCC" + "\x1b[4;1HDDD" +
+		"\x1b[3;1H" + "\n" // cursor to region bottom, line feed
+	if _, err := em.Feed([]byte(seq)); err != nil {
+		t.Fatal(err)
+	}
+	s := em.Screen()
+	for y, want := range []string{"AAA", "CCC", "", "DDD"} {
+		if got := rowText(s, y, 3); got != want {
+			t.Errorf("after scroll: row %d = %q, want %q", y, got, want)
+		}
+	}
+}
+
+func TestSimpleEmulatorReverseIndexAtTop(t *testing.T) {
+	em := NewEmulator(3, 3)
+	// Fill rows, home cursor, reverse index (ESC M) scrolls the screen down.
+	if _, err := em.Feed([]byte("AAA\x1b[2;1HBBB\x1b[3;1HCCC\x1b[H\x1bM")); err != nil {
+		t.Fatal(err)
+	}
+	s := em.Screen()
+	for y, want := range []string{"", "AAA", "BBB"} {
+		if got := rowText(s, y, 3); got != want {
+			t.Errorf("after RI: row %d = %q, want %q", y, got, want)
+		}
+	}
+}
+
+func TestSimpleEmulatorInsertLines(t *testing.T) {
+	em := NewEmulator(3, 4)
+	// Fill rows; move to row 2 (y=1); insert one blank line.
+	if _, err := em.Feed([]byte("AAA\x1b[2;1HBBB\x1b[3;1HCCC\x1b[4;1HDDD\x1b[2;1H\x1b[L")); err != nil {
+		t.Fatal(err)
+	}
+	s := em.Screen()
+	for y, want := range []string{"AAA", "", "BBB", "CCC"} { // DDD pushed off
+		if got := rowText(s, y, 3); got != want {
+			t.Errorf("after IL: row %d = %q, want %q", y, got, want)
+		}
+	}
+}
+
+func TestSimpleEmulatorDeleteLines(t *testing.T) {
+	em := NewEmulator(3, 4)
+	// Fill rows; move to row 2 (y=1); delete that line.
+	if _, err := em.Feed([]byte("AAA\x1b[2;1HBBB\x1b[3;1HCCC\x1b[4;1HDDD\x1b[2;1H\x1b[M")); err != nil {
+		t.Fatal(err)
+	}
+	s := em.Screen()
+	for y, want := range []string{"AAA", "CCC", "DDD", ""} {
+		if got := rowText(s, y, 3); got != want {
+			t.Errorf("after DL: row %d = %q, want %q", y, got, want)
+		}
+	}
+}
+
+func TestSimpleEmulatorSaveRestoreCursor(t *testing.T) {
+	em := NewEmulator(5, 3)
+	// Move to (x=2,y=1), set bold+red, save (ESC 7). Move home, reset SGR.
+	// Restore (ESC 8) and type: the glyph lands at the saved spot with the
+	// saved style.
+	if _, err := em.Feed([]byte("\x1b[2;3H\x1b[1;31m\x1b7\x1b[H\x1b[0m\x1b8Z")); err != nil {
+		t.Fatal(err)
+	}
+	cell := em.Screen().Cell(2, 1)
+	if cell.Char != "Z" || !cell.Style.Bold || cell.Style.Fg != "red" {
+		t.Fatalf("restored cell = %#v, want Z bold red at (2,1)", cell)
+	}
+}
+
+func TestSimpleEmulatorOriginMode(t *testing.T) {
+	em := NewEmulator(4, 5)
+	// Region rows 2-4 (0-based 1-3), origin mode on. CUP 1;1 maps to the
+	// region top; an out-of-region row clamps to the bottom margin.
+	if _, err := em.Feed([]byte("\x1b[2;4r\x1b[?6h\x1b[1;1HX\x1b[10;1HY")); err != nil {
+		t.Fatal(err)
+	}
+	s := em.Screen()
+	if got := s.Cell(0, 1).Char; got != "X" {
+		t.Errorf("origin CUP 1;1 wrote to %q, want X at row 1", got)
+	}
+	if got := s.Cell(0, 3).Char; got != "Y" {
+		t.Errorf("origin CUP 10;1 should clamp to bottom margin (row 3), got %q", got)
+	}
+}
+
 func TestSimpleEmulatorIgnoresOSCTitleSequences(t *testing.T) {
 	em := NewEmulator(20, 3)
 	if _, err := em.Feed([]byte("\x1b]2;LOCAL AGENT\ahello\x1b]2;\a")); err != nil {

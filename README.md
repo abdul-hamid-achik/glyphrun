@@ -21,7 +21,16 @@ Glyphrun is designed around four stable surfaces:
 
 Glyphrun is feature-complete for the v0.1 surface: PTY execution, spec parsing and validation, contract hashes, snapshots, structured output, artifact packs, recording and replay, run diffs, an MCP stdio server, file and script verifiers, an artifact pipeline (`download` / `transform` / `batch`), per-spec redaction, retention and `glyph clean`, `count:` verifier, per-spec capture policy, BATS import and export, JUnit output, and a `glyph list` catalog. Exit codes 1–7 are reserved with distinct meanings (see [Exit Codes](#exit-codes)).
 
-Some terminal features are intentionally still future work: full xterm parity, mouse protocols, Sixel / images, terminal hyperlinks, and Windows ConPTY support.
+The virtual terminal handles the common xterm control set: cursor movement and
+absolute positioning, line/screen erase, SGR attributes and the full 16/256/
+truecolor palette, alternate screen and bracketed paste, deferred autowrap,
+scroll regions (DECSTBM) with region-aware line feed and reverse index, insert/
+delete line (IL/DL), insert/delete character (ICH/DCH), scroll up/down (SU/SD),
+save/restore cursor (DECSC/DECRC), and origin mode (DECOM).
+
+Some terminal features are intentionally still future work: remaining xterm edge
+cases, mouse protocols, Sixel / images, terminal hyperlinks, and Windows ConPTY
+support.
 
 ## Requirements
 

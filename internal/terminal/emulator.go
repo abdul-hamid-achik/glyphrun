@@ -33,6 +33,22 @@ type SimpleEmulator struct {
 	bracketedPaste      bool
 	alternateScreen     bool
 	alternateScreenUsed bool
+
+	// scrollTop/scrollBottom bound the DECSTBM scroll region (inclusive,
+	// 0-based). Line feeds, reverse index, IL/DL, and SU/SD all operate within
+	// this region. They default to the full screen.
+	scrollTop    int
+	scrollBottom int
+	// originMode (DECOM) makes cursor row addressing relative to scrollTop and
+	// confines the cursor to the scroll region.
+	originMode bool
+
+	// Saved cursor/style state for DECSC/DECRC (ESC 7 / ESC 8) and the
+	// SCO save/restore (CSI s / CSI u).
+	savedCursor Cursor
+	savedStyle  Style
+	savedOrigin bool
+	hasSaved    bool
 }
 
 func NewEmulator(cols, rows int) *SimpleEmulator {
@@ -64,6 +80,9 @@ func (e *SimpleEmulator) Resize(cols, rows int) error {
 	}
 	e.cursor = Cursor{X: 0, Y: 0, Visible: true}
 	e.pendingWrap = false
+	e.scrollTop = 0
+	e.scrollBottom = rows - 1
+	e.originMode = false
 	return nil
 }
 
@@ -177,6 +196,20 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		return
 	}
 	if !strings.HasPrefix(seq, "[") {
+		// Non-CSI ("ESC <byte>") sequences.
+		switch seq {
+		case "7": // DECSC — save cursor
+			e.saveCursor()
+		case "8": // DECRC — restore cursor
+			e.restoreCursor()
+		case "D": // IND — index (line feed, no carriage return)
+			e.index()
+		case "M": // RI — reverse index
+			e.reverseIndex()
+		case "E": // NEL — next line (CR + index)
+			e.cursor.X = 0
+			e.index()
+		}
 		return
 	}
 	body := strings.TrimPrefix(seq, "[")
@@ -205,7 +238,12 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 			}
 		}
 		e.pendingWrap = false
-		e.cursor.Y = clamp(row-1, 0, e.rows-1)
+		if e.originMode {
+			// Row is relative to the scroll region and confined to it.
+			e.cursor.Y = clamp(e.scrollTop+row-1, e.scrollTop, e.scrollBottom)
+		} else {
+			e.cursor.Y = clamp(row-1, 0, e.rows-1)
+		}
 		e.cursor.X = clamp(col-1, 0, e.cols-1)
 		return
 	}
@@ -259,6 +297,51 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		}
 		return
 	}
+	if strings.HasSuffix(body, "r") {
+		// DECSTBM — set top/bottom scroll margins.
+		e.setScrollRegion(strings.TrimSuffix(body, "r"))
+		return
+	}
+	if strings.HasSuffix(body, "L") {
+		// IL — insert blank lines at the cursor within the scroll region.
+		e.insertLines(csiNumber(strings.TrimSuffix(body, "L"), 1))
+		return
+	}
+	if strings.HasSuffix(body, "M") {
+		// DL — delete lines at the cursor within the scroll region.
+		e.deleteLines(csiNumber(strings.TrimSuffix(body, "M"), 1))
+		return
+	}
+	if strings.HasSuffix(body, "@") {
+		// ICH — insert blank characters at the cursor.
+		e.insertChars(csiNumber(strings.TrimSuffix(body, "@"), 1))
+		return
+	}
+	if strings.HasSuffix(body, "P") {
+		// DCH — delete characters at the cursor.
+		e.deleteChars(csiNumber(strings.TrimSuffix(body, "P"), 1))
+		return
+	}
+	if strings.HasSuffix(body, "S") {
+		// SU — scroll the region up.
+		e.scrollUp(csiNumber(strings.TrimSuffix(body, "S"), 1))
+		return
+	}
+	if strings.HasSuffix(body, "T") {
+		// SD — scroll the region down.
+		e.scrollDown(csiNumber(strings.TrimSuffix(body, "T"), 1))
+		return
+	}
+	if strings.HasSuffix(body, "s") {
+		// SCOSC — save cursor (SCO variant of DECSC).
+		e.saveCursor()
+		return
+	}
+	if strings.HasSuffix(body, "u") {
+		// SCORC — restore cursor (SCO variant of DECRC).
+		e.restoreCursor()
+		return
+	}
 	if strings.HasSuffix(body, "m") {
 		e.applySGR(strings.TrimSuffix(body, "m"))
 		return
@@ -270,6 +353,17 @@ func (e *SimpleEmulator) applyPrivateMode(body string) {
 	args := strings.TrimSuffix(strings.TrimSuffix(strings.TrimPrefix(body, "?"), "h"), "l")
 	for _, arg := range strings.Split(args, ";") {
 		switch arg {
+		case "6":
+			// DECOM — origin mode. Toggling it homes the cursor to the
+			// (region) origin.
+			e.originMode = enable
+			e.pendingWrap = false
+			e.cursor.X = 0
+			if enable {
+				e.cursor.Y = e.scrollTop
+			} else {
+				e.cursor.Y = 0
+			}
 		case "25":
 			e.cursor.Visible = enable
 		case "1049":
@@ -456,24 +550,227 @@ func (e *SimpleEmulator) putRune(r rune) {
 	}
 }
 
+// newLine is a line feed with carriage return (the screen's '\n' handling):
+// move to column 0 and index down one line, scrolling within the region at the
+// bottom margin.
 func (e *SimpleEmulator) newLine() {
 	e.pendingWrap = false
 	e.cursor.X = 0
-	e.cursor.Y++
-	if e.cursor.Y >= e.rows {
-		copy(e.cells[0:], e.cells[1:])
-		y := e.rows - 1
-		e.cells[y] = make([]Cell, e.cols)
-		for x := 0; x < e.cols; x++ {
+	e.index()
+}
+
+// index (IND) moves the cursor down one line. At the bottom margin it scrolls
+// the scroll region up instead of moving past it.
+func (e *SimpleEmulator) index() {
+	e.pendingWrap = false
+	switch {
+	case e.cursor.Y == e.scrollBottom:
+		e.scrollUp(1)
+	case e.cursor.Y < e.rows-1:
+		e.cursor.Y++
+	}
+}
+
+// reverseIndex (RI) moves the cursor up one line. At the top margin it scrolls
+// the scroll region down.
+func (e *SimpleEmulator) reverseIndex() {
+	e.pendingWrap = false
+	switch {
+	case e.cursor.Y == e.scrollTop:
+		e.scrollDown(1)
+	case e.cursor.Y > 0:
+		e.cursor.Y--
+	}
+}
+
+// setScrollRegion implements DECSTBM. An empty or invalid region resets to the
+// full screen; either way the cursor is homed to the (region) origin.
+func (e *SimpleEmulator) setScrollRegion(args string) {
+	top, bottom := 1, e.rows
+	if args != "" {
+		parts := strings.Split(args, ";")
+		if len(parts) > 0 && parts[0] != "" {
+			top, _ = strconv.Atoi(parts[0])
+		}
+		if len(parts) > 1 && parts[1] != "" {
+			bottom, _ = strconv.Atoi(parts[1])
+		}
+	}
+	t := clamp(top-1, 0, e.rows-1)
+	b := clamp(bottom-1, 0, e.rows-1)
+	if t >= b {
+		e.scrollTop = 0
+		e.scrollBottom = e.rows - 1
+	} else {
+		e.scrollTop = t
+		e.scrollBottom = b
+	}
+	e.pendingWrap = false
+	e.cursor.X = 0
+	if e.originMode {
+		e.cursor.Y = e.scrollTop
+	} else {
+		e.cursor.Y = 0
+	}
+}
+
+// scrollUp moves the scroll region's lines up by n, blanking the lines that
+// scroll in at the bottom margin.
+func (e *SimpleEmulator) scrollUp(n int) {
+	top, bot := e.scrollTop, e.scrollBottom
+	if n <= 0 || top < 0 || bot >= e.rows || top > bot {
+		return
+	}
+	if n > bot-top+1 {
+		n = bot - top + 1
+	}
+	for y := top; y <= bot; y++ {
+		if y+n <= bot {
+			copy(e.cells[y], e.cells[y+n])
+		} else {
+			e.blankRow(y)
+		}
+	}
+	e.reindex()
+}
+
+// scrollDown moves the scroll region's lines down by n, blanking the lines that
+// scroll in at the top margin.
+func (e *SimpleEmulator) scrollDown(n int) {
+	top, bot := e.scrollTop, e.scrollBottom
+	if n <= 0 || top < 0 || bot >= e.rows || top > bot {
+		return
+	}
+	if n > bot-top+1 {
+		n = bot - top + 1
+	}
+	for y := bot; y >= top; y-- {
+		if y-n >= top {
+			copy(e.cells[y], e.cells[y-n])
+		} else {
+			e.blankRow(y)
+		}
+	}
+	e.reindex()
+}
+
+// insertLines (IL) opens n blank lines at the cursor row, pushing lines below
+// it down within the scroll region. A no-op when the cursor is outside the
+// region.
+func (e *SimpleEmulator) insertLines(n int) {
+	if e.cursor.Y < e.scrollTop || e.cursor.Y > e.scrollBottom {
+		return
+	}
+	top, bot := e.cursor.Y, e.scrollBottom
+	if n > bot-top+1 {
+		n = bot - top + 1
+	}
+	for y := bot; y >= top; y-- {
+		if y-n >= top {
+			copy(e.cells[y], e.cells[y-n])
+		} else {
+			e.blankRow(y)
+		}
+	}
+	e.reindex()
+	e.cursor.X = 0
+	e.pendingWrap = false
+}
+
+// deleteLines (DL) removes n lines at the cursor row, pulling lines below it up
+// within the scroll region. A no-op when the cursor is outside the region.
+func (e *SimpleEmulator) deleteLines(n int) {
+	if e.cursor.Y < e.scrollTop || e.cursor.Y > e.scrollBottom {
+		return
+	}
+	top, bot := e.cursor.Y, e.scrollBottom
+	if n > bot-top+1 {
+		n = bot - top + 1
+	}
+	for y := top; y <= bot; y++ {
+		if y+n <= bot {
+			copy(e.cells[y], e.cells[y+n])
+		} else {
+			e.blankRow(y)
+		}
+	}
+	e.reindex()
+	e.cursor.X = 0
+	e.pendingWrap = false
+}
+
+// insertChars (ICH) opens n blank cells at the cursor, shifting the rest of the
+// line right; cells pushed past the right edge are lost.
+func (e *SimpleEmulator) insertChars(n int) {
+	y := e.cursor.Y
+	if y < 0 || y >= e.rows || n <= 0 {
+		return
+	}
+	for x := e.cols - 1; x >= e.cursor.X; x-- {
+		if src := x - n; src >= e.cursor.X {
+			e.cells[y][x] = e.cells[y][src]
+			e.cells[y][x].X = x
+		} else {
 			e.cells[y][x] = Cell{X: x, Y: y, Char: " ", Width: 1}
 		}
-		for yy := 0; yy < e.rows; yy++ {
-			for x := 0; x < e.cols; x++ {
-				e.cells[yy][x].X = x
-				e.cells[yy][x].Y = yy
-			}
+	}
+	e.pendingWrap = false
+}
+
+// deleteChars (DCH) removes n cells at the cursor, shifting the rest of the
+// line left and blanking the right edge.
+func (e *SimpleEmulator) deleteChars(n int) {
+	y := e.cursor.Y
+	if y < 0 || y >= e.rows || n <= 0 {
+		return
+	}
+	for x := e.cursor.X; x < e.cols; x++ {
+		if src := x + n; src < e.cols {
+			e.cells[y][x] = e.cells[y][src]
+			e.cells[y][x].X = x
+		} else {
+			e.cells[y][x] = Cell{X: x, Y: y, Char: " ", Width: 1}
 		}
-		e.cursor.Y = e.rows - 1
+	}
+	e.pendingWrap = false
+}
+
+func (e *SimpleEmulator) saveCursor() {
+	e.savedCursor = e.cursor
+	e.savedStyle = e.style
+	e.savedOrigin = e.originMode
+	e.hasSaved = true
+}
+
+func (e *SimpleEmulator) restoreCursor() {
+	e.pendingWrap = false
+	if !e.hasSaved {
+		e.cursor.X = 0
+		e.cursor.Y = 0
+		return
+	}
+	e.cursor = e.savedCursor
+	e.style = e.savedStyle
+	e.originMode = e.savedOrigin
+}
+
+func (e *SimpleEmulator) blankRow(y int) {
+	if y < 0 || y >= e.rows {
+		return
+	}
+	for x := 0; x < e.cols; x++ {
+		e.cells[y][x] = Cell{X: x, Y: y, Char: " ", Width: 1}
+	}
+}
+
+// reindex restores each cell's X/Y after a row-level move (copy shuffles whole
+// rows, which carry stale coordinates).
+func (e *SimpleEmulator) reindex() {
+	for y := 0; y < e.rows; y++ {
+		for x := 0; x < e.cols; x++ {
+			e.cells[y][x].X = x
+			e.cells[y][x].Y = y
+		}
 	}
 }
 
