@@ -184,11 +184,22 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		_ = writer.AppendEvent(event("step.finished", name, ""))
 	}
 
+	// If the target timeout already expired before we reached outcome
+	// evaluation, classify the run as a timeout directly. Running
+	// evaluateOutcomes here would poll once, immediately observe the
+	// cancelled context, and write a spurious outcome.failed event and
+	// artifact for every outcome — noise that misrepresents a global
+	// timeout as per-outcome failures.
+	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		return state.finish(started, artifacts.StatusErrored, nil, targetTimeoutMessage(resolved.Target.TimeoutMS), exitTimedOut), nil
+	}
 	outcomes := state.evaluateOutcomes(runCtx)
 	if err := state.terminalError(); err != nil {
 		return state.finish(started, artifacts.StatusErrored, outcomes, err.Error(), exitCodeForError(err)), nil
 	}
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		// Deadline fired during outcome evaluation; keep the partial
+		// outcome results but report the run as a timeout.
 		return state.finish(started, artifacts.StatusErrored, outcomes, targetTimeoutMessage(resolved.Target.TimeoutMS), exitTimedOut), nil
 	}
 	status := artifacts.StatusPassed

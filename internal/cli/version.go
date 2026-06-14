@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/abdul-hamid-achik/glyphrun/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -19,25 +16,18 @@ func newVersionCommand(opts *globalOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			format, err := resolveFormat(opts.format)
 			if err != nil {
-				return err
+				return exitError{code: 2, err: err}
 			}
-			switch format {
-			case formatJSON:
-				payload := map[string]string{
-					"version":   version.Version,
-					"commit":    version.Commit,
-					"buildDate": version.BuildDate,
-				}
-				data, err := json.MarshalIndent(payload, "", "  ")
-				if err != nil {
-					return err
-				}
-				fmt.Fprintln(cmd.OutOrStdout(), string(data))
-			case formatYAML:
-				fmt.Fprintf(cmd.OutOrStdout(), "version: %s\ncommit: %s\nbuildDate: %s\n", version.Version, version.Commit, version.BuildDate)
-			case formatMD:
-				fmt.Fprintln(cmd.OutOrStdout(), version.Full())
+			value := struct {
+				Version   string `json:"version" yaml:"version"`
+				Commit    string `json:"commit" yaml:"commit"`
+				BuildDate string `json:"buildDate" yaml:"buildDate"`
+			}{version.Version, version.Commit, version.BuildDate}
+			output, err := emitForCLI(cmd, opts, format, value, version.Full)
+			if err != nil {
+				return exitError{code: 2, err: err}
 			}
+			cmd.Print(output)
 			return nil
 		},
 	}

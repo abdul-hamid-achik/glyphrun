@@ -60,6 +60,30 @@ func resolveContextRunDir(root string, arg string) (string, error) {
 	if arg != "latest" {
 		return resolveRunDir(root, arg)
 	}
+	// `glyph context latest` resolves to the newest run that actually
+	// produced an agent_context.md, skipping runs that died before
+	// writing one.
+	return latestRunDir(root, "agent_context.md")
+}
+
+func resolveRunDir(root string, arg string) (string, error) {
+	if arg == "latest" {
+		return latestRunDir(root, "")
+	}
+	if filepath.IsAbs(arg) {
+		return arg, nil
+	}
+	if strings.ContainsRune(arg, filepath.Separator) {
+		return filepath.Abs(arg)
+	}
+	return filepath.Join(root, arg), nil
+}
+
+// latestRunDir returns the newest run directory under root. Run
+// directory names are timestamped, so a reverse lexical sort matches
+// chronological order. When requireFile is non-empty, only directories
+// containing that file are considered.
+func latestRunDir(root string, requireFile string) (string, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
 		return "", err
@@ -74,44 +98,16 @@ func resolveContextRunDir(root string, arg string) (string, error) {
 			continue
 		}
 		path := filepath.Join(root, entry.Name())
-		if _, err := os.Stat(filepath.Join(path, "agent_context.md")); err == nil {
-			dirs = append(dirs, candidate{path: path, name: entry.Name()})
+		if requireFile != "" {
+			if _, err := os.Stat(filepath.Join(path, requireFile)); err != nil {
+				continue
+			}
 		}
+		dirs = append(dirs, candidate{path: path, name: entry.Name()})
 	}
 	sort.Slice(dirs, func(i, j int) bool { return dirs[i].name > dirs[j].name })
 	if len(dirs) == 0 {
 		return "", os.ErrNotExist
 	}
 	return dirs[0].path, nil
-}
-
-func resolveRunDir(root string, arg string) (string, error) {
-	if arg == "latest" {
-		entries, err := os.ReadDir(root)
-		if err != nil {
-			return "", err
-		}
-		type candidate struct {
-			path string
-			name string
-		}
-		var dirs []candidate
-		for _, entry := range entries {
-			if entry.IsDir() {
-				dirs = append(dirs, candidate{path: filepath.Join(root, entry.Name()), name: entry.Name()})
-			}
-		}
-		sort.Slice(dirs, func(i, j int) bool { return dirs[i].name > dirs[j].name })
-		if len(dirs) == 0 {
-			return "", os.ErrNotExist
-		}
-		return dirs[0].path, nil
-	}
-	if filepath.IsAbs(arg) {
-		return arg, nil
-	}
-	if strings.ContainsRune(arg, filepath.Separator) {
-		return filepath.Abs(arg)
-	}
-	return filepath.Join(root, arg), nil
 }
