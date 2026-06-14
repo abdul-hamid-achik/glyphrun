@@ -35,7 +35,9 @@ Use trusted ` + "`command`" + ` verifiers for Bash checks such as ` + "`test -x 
 `,
 	"steps": `# Steps
 
-Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + "`send`" + `, ` + "`wait`" + `, ` + "`resize`" + `, ` + "`snapshot`" + `, imported ` + "`use`" + ` actions, ` + "`when`" + ` guards, and the artifact-pipeline steps ` + "`download`" + `, ` + "`transform`" + `, and ` + "`batch`" + ` (see ` + "`artifacts-pipeline`" + `).
+Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + "`send`" + `, ` + "`mouse`" + `, ` + "`wait`" + `, ` + "`resize`" + `, ` + "`snapshot`" + `, imported ` + "`use`" + ` actions, ` + "`when`" + ` guards, and the artifact-pipeline steps ` + "`download`" + `, ` + "`transform`" + `, and ` + "`batch`" + ` (see ` + "`artifacts-pipeline`" + `).
+
+` + "`mouse: { x, y, button?, action? }`" + ` sends a mouse event at the 0-based cell (button: left/middle/right/wheelUp/wheelDown; action: click/press/release/move). The runner encodes it as SGR (1006) or legacy X10 depending on the mode the target enabled.
 
 Every step can include a ` + "`when`" + ` guard that uses the same verifier shape as an outcome. Prefer ` + "`wait`" + ` steps that synchronize on visible screen or process state. Use ` + "`snapshot`" + ` to capture named terminal states in the artifact pack.
 

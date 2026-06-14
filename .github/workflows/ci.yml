@@ -57,6 +57,11 @@ jobs:
           go build -o ./examples/apps/hello/hello ./examples/apps/hello
           ./bin/glyph run examples/specs/link_verifier.yml --format md
 
+      - name: Mouse example
+        run: |
+          go build -o ./examples/apps/mouseapp/mouseapp ./examples/apps/mouseapp
+          ./bin/glyph run examples/specs/mouse_click.yml --format md
+
       - name: JUnit example
         run: |
           mkdir -p reports

@@ -162,6 +162,7 @@
         { "required": ["type"] },
         { "required": ["paste"] },
         { "required": ["send"] },
+        { "required": ["mouse"] },
         { "required": ["wait"] },
         { "required": ["resize"] },
         { "required": ["snapshot"] },
@@ -180,6 +181,17 @@
           "required": ["bytes"],
           "properties": {
             "bytes": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        "mouse": {
+          "type": "object",
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "integer", "minimum": 0 },
+            "y": { "type": "integer", "minimum": 0 },
+            "button": { "enum": ["left", "middle", "right", "wheelUp", "wheelDown"] },
+            "action": { "enum": ["click", "press", "release", "move"] }
           },
           "additionalProperties": false
         },

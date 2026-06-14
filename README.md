@@ -239,7 +239,7 @@ Agent-callable commands support `--format json|yaml|md`. JSON and YAML modes do 
 
 ## Steps
 
-Supported v1 steps: `press`, `type`, `paste`, `send`, `wait`, `resize`, `snapshot`, `download`, `transform`, `batch`, and imported `use` actions. Every step can carry a `when` guard that uses the same verifier shape as an outcome — useful for optional TUI prompts, login walls, or transient menus.
+Supported v1 steps: `press`, `type`, `paste`, `send`, `mouse`, `wait`, `resize`, `snapshot`, `download`, `transform`, `batch`, and imported `use` actions. `mouse: { x, y, button?, action? }` sends a mouse event at a 0-based cell, encoded as SGR (1006) or legacy X10 depending on the mode the target enabled. Every step can carry a `when` guard that uses the same verifier shape as an outcome — useful for optional TUI prompts, login walls, or transient menus.
 
 `download`, `transform`, and `batch` are the artifact pipeline:
 

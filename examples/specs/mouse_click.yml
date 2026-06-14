@@ -1,0 +1,37 @@
+version: 1
+name: mouse_click
+intent: |
+    a user can click a cell and the app receives the click at that position.
+target:
+    cmd: ["${vars.mouseBin}"]
+    cwd: "."
+terminal:
+    cols: 80
+    rows: 24
+    profile: xterm-256color
+steps:
+    - wait:
+        screen:
+            contains: "click somewhere"
+    - mouse:
+        x: 10
+        y: 5
+    - wait:
+        screen:
+            contains: "clicked at 11,6"
+    - press: "q"
+    - wait:
+        process:
+            exitCode: 0
+outcomes:
+    - id: click_received
+      description: the app reports the click at the 1-based cell the step targeted
+      verify:
+        screen:
+            contains: "clicked at 11,6"
+    - id: clean_exit
+      description: q exits the application cleanly
+      verify:
+        process:
+            exitCode: 0
+contractHash: sha256:28bbbb708f3812596f44ea0a8bcf6250376770cb8664a8c79a69348c1d676444

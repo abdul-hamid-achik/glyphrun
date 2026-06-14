@@ -1,6 +1,8 @@
 # Steps
 
-The v1 step vocabulary is `press`, `type`, `paste`, `send`, `wait`, `resize`, `snapshot`, `use`, `when`, and the artifact-pipeline steps `download`, `transform`, and `batch`.
+The v1 step vocabulary is `press`, `type`, `paste`, `send`, `mouse`, `wait`, `resize`, `snapshot`, `use`, `when`, and the artifact-pipeline steps `download`, `transform`, and `batch`.
+
+`mouse: { x, y, button?, action? }` sends a mouse event at the 0-based cell `(x, y)`. `button` is one of `left` (default), `middle`, `right`, `wheelUp`, `wheelDown`; `action` is `click` (default), `press`, `release`, or `move`. The runner encodes the event as SGR (1006) when the target enabled that mode, otherwise as the legacy X10 encoding.
 
 Every step can include a `when` guard. The guard uses the same verifier shape as an outcome and skips the step when false.
 

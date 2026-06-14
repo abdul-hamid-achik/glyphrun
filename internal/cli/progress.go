@@ -220,6 +220,12 @@ func stepSummary(step spec.Step) string {
 		return prefix + "paste " + strconvQuote(step.Paste)
 	case step.Send != nil:
 		return prefix + "send bytes"
+	case step.Mouse != nil:
+		button := step.Mouse.Button
+		if button == "" {
+			button = "left"
+		}
+		return fmt.Sprintf("%smouse %s %d,%d", prefix, button, step.Mouse.X, step.Mouse.Y)
 	case step.Wait != nil:
 		return prefix + "wait " + waitSummary(*step.Wait)
 	case step.Resize != nil:

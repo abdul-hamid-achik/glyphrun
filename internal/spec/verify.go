@@ -81,6 +81,12 @@ func validateStep(step Step) error {
 			return fmt.Errorf("send.bytes is required")
 		}
 	}
+	if step.Mouse != nil {
+		count++
+		if err := validateMouse(*step.Mouse); err != nil {
+			return err
+		}
+	}
 	if step.Wait != nil {
 		count++
 		if err := validateWait(*step.Wait); err != nil {
@@ -134,6 +140,23 @@ func (s Step) IsArtifactProducing() bool {
 		return true
 	}
 	return false
+}
+
+func validateMouse(m MouseStep) error {
+	if m.X < 0 || m.Y < 0 {
+		return fmt.Errorf("mouse x and y must be non-negative")
+	}
+	switch m.Button {
+	case "", "left", "middle", "right", "wheelUp", "wheelDown":
+	default:
+		return fmt.Errorf("mouse.button must be one of: left, middle, right, wheelUp, wheelDown")
+	}
+	switch m.Action {
+	case "", "click", "press", "release", "move":
+	default:
+		return fmt.Errorf("mouse.action must be one of: click, press, release, move")
+	}
+	return nil
 }
 
 func validateDownload(d DownloadStep) error {

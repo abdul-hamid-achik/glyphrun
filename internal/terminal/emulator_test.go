@@ -215,6 +215,28 @@ func TestSimpleEmulatorOriginMode(t *testing.T) {
 	}
 }
 
+func TestSimpleEmulatorTracksMouseModes(t *testing.T) {
+	em := NewEmulator(20, 3)
+	if em.MouseTrackingMode() || em.MouseSGRMode() {
+		t.Fatal("mouse modes should start disabled")
+	}
+	if _, err := em.Feed([]byte("\x1b[?1000h\x1b[?1006h")); err != nil {
+		t.Fatal(err)
+	}
+	if !em.MouseTrackingMode() {
+		t.Error("expected mouse tracking enabled after ?1000h")
+	}
+	if !em.MouseSGRMode() {
+		t.Error("expected SGR mouse encoding enabled after ?1006h")
+	}
+	if _, err := em.Feed([]byte("\x1b[?1000l\x1b[?1006l")); err != nil {
+		t.Fatal(err)
+	}
+	if em.MouseTrackingMode() || em.MouseSGRMode() {
+		t.Error("expected mouse modes disabled after reset")
+	}
+}
+
 func TestSimpleEmulatorTracksOSC8Hyperlinks(t *testing.T) {
 	em := NewEmulator(40, 1)
 	// "go ⟨docs⟩ end" where docs links to the project URL.

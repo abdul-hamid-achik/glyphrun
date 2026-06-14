@@ -383,6 +383,12 @@ func (s *runState) executeStep(ctx context.Context, step spec.Step) (stepExecuti
 			return stepExecutionResult{}, err
 		}
 		return stepExecutionResult{}, s.writeInput(data)
+	case step.Mouse != nil:
+		data, err := input.MouseBytes(step.Mouse.X, step.Mouse.Y, step.Mouse.Button, step.Mouse.Action, mouseSGREnabled(s.emulator))
+		if err != nil {
+			return stepExecutionResult{}, err
+		}
+		return stepExecutionResult{}, s.writeInput(data)
 	case step.Wait != nil:
 		return stepExecutionResult{}, s.waitFor(ctx, *step.Wait)
 	case step.Resize != nil:
@@ -1954,6 +1960,14 @@ func decodeEscaped(input string) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(unquoted), nil
+}
+
+func mouseSGREnabled(emulator terminal.Emulator) bool {
+	type modeReporter interface {
+		MouseSGRMode() bool
+	}
+	reporter, ok := emulator.(modeReporter)
+	return ok && reporter.MouseSGRMode()
 }
 
 func bracketedPasteEnabled(emulator terminal.Emulator) bool {

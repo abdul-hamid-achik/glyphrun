@@ -128,6 +128,7 @@ type Step struct {
 	Type      string         `yaml:"type,omitempty" json:"type,omitempty"`
 	Paste     string         `yaml:"paste,omitempty" json:"paste,omitempty"`
 	Send      *SendStep      `yaml:"send,omitempty" json:"send,omitempty"`
+	Mouse     *MouseStep     `yaml:"mouse,omitempty" json:"mouse,omitempty"`
 	Wait      *WaitStep      `yaml:"wait,omitempty" json:"wait,omitempty"`
 	Resize    *ResizeStep    `yaml:"resize,omitempty" json:"resize,omitempty"`
 	Snapshot  string         `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
@@ -166,6 +167,16 @@ type TransformStep struct {
 
 type SendStep struct {
 	Bytes string `yaml:"bytes" json:"bytes"`
+}
+
+// MouseStep sends a mouse event to the target at the 0-based cell (X, Y). The
+// runner encodes it as SGR (1006) or legacy X10 depending on the mode the
+// target enabled. Button defaults to "left"; Action defaults to "click".
+type MouseStep struct {
+	X      int    `yaml:"x" json:"x"`
+	Y      int    `yaml:"y" json:"y"`
+	Button string `yaml:"button,omitempty" json:"button,omitempty"`
+	Action string `yaml:"action,omitempty" json:"action,omitempty"`
 }
 
 type WaitStep struct {

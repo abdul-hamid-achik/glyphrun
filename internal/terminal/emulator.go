@@ -39,6 +39,12 @@ type SimpleEmulator struct {
 	// SGR attributes it is not reset by SGR 0.
 	link string
 
+	// mouseTracking is set when the target requests mouse reporting (private
+	// modes 1000/1002/1003). mouseSGR is set for the SGR extended encoding
+	// (1006). They let the runner gate and encode `mouse:` steps correctly.
+	mouseTracking bool
+	mouseSGR      bool
+
 	// scrollTop/scrollBottom bound the DECSTBM scroll region (inclusive,
 	// 0-based). Line feeds, reverse index, IL/DL, and SU/SD all operate within
 	// this region. They default to the full screen.
@@ -400,10 +406,31 @@ func (e *SimpleEmulator) applyPrivateMode(body string) {
 				e.cursor.X = 0
 				e.cursor.Y = 0
 			}
+		case "1000", "1002", "1003":
+			// Mouse tracking: normal (1000), button-event (1002), any-event
+			// (1003). We track whether any mode is on, not which.
+			e.mouseTracking = enable
+		case "1006":
+			// SGR extended mouse encoding.
+			e.mouseSGR = enable
 		case "2004":
 			e.bracketedPaste = enable
 		}
 	}
+}
+
+// MouseTrackingMode reports whether the target requested mouse reporting.
+func (e *SimpleEmulator) MouseTrackingMode() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mouseTracking
+}
+
+// MouseSGRMode reports whether the target enabled the SGR (1006) mouse encoding.
+func (e *SimpleEmulator) MouseSGRMode() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mouseSGR
 }
 
 func (e *SimpleEmulator) applySGR(args string) {
