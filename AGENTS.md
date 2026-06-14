@@ -51,9 +51,9 @@ The "no per-agent code paths" rule applies: any surface that touches a coding ag
 
 ### Common Tasks
 
-- **Add a new step kind**: extend `spec.Step` in `internal/spec/model.go`, add a case in `validateStep` (`internal/spec/verify.go`), add a case in `executeStep` (`internal/runner/runner.go`), add a `stepSummary` branch in `internal/cli/progress.go`. Add a JSON-schema `oneOf` branch in `schemas/glyphrun.spec.v1.schema.json`. Add an example spec under `examples/specs/`.
-- **Add a new verifier**: same shape as a new step kind, but on the outcome side. The dispatch lives in `checkVerify` in `internal/runner/runner.go`.
-- **Add a new CLI command**: create `internal/cli/<name>.go`, register in `newRootCommand` in `internal/cli/root.go`. Always accept `--format` and route through `resolveFormat` + `emitForCLI`. JSON/YAML output must never prompt or read stdin.
+- **Add a new step kind**: extend `spec.Step` in `internal/spec/model.go`, add a case in `validateStep` (`internal/spec/verify.go`), add a case in `executeStep` (`internal/runner/runner.go`), add a `stepSummary` branch in `internal/cli/progress.go`. Add a JSON-schema `oneOf` branch in `schemas/glyphrun.spec.v1.schema.json`. Add an example spec under `examples/specs/`. Update the docs vocabulary in **both** `internal/docs/docs.go` (served by `glyph docs`) and the mirror in `docs/steps.md`, and refresh the `glyph explain` lists in `internal/cli/explain.go`.
+- **Add a new verifier**: same shape as a new step kind, but on the outcome side. The dispatch lives in `checkVerify` in `internal/runner/runner.go`. Update the verifier vocabulary in `internal/docs/docs.go`, `docs/verifiers.md`, and `internal/cli/explain.go`.
+- **Add a new CLI command**: create `internal/cli/<name>.go`, register in `newRootCommand` in `internal/cli/root.go`. Always accept `--format` and route through `resolveFormat` + `emitForCLI`. JSON/YAML output must never prompt or read stdin. Add the command to the `commands` list in `internal/cli/explain.go`.
 - **Add a new artifact field**: extend `artifacts.RunResult` (`internal/artifacts/types.go`), populate in `runner.finish`, and surface in `RenderRunMarkdown` and `RenderAgentContext`. Update `schemas/glyphrun.run.v1.schema.json`.
 - **Add a new redaction pattern**: append to `Defaults().Redaction.Patterns` in `internal/config/config.go`. The redactor compiles them on construction.
 

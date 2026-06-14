@@ -31,9 +31,14 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph explain",
 					"glyph doctor",
 					"glyph mcp",
+					"glyph list",
+					"glyph import bats <file>",
+					"glyph export bats <spec>",
+					"glyph clean",
+					"glyph version",
 				},
-				"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use", "when"},
-				"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command"},
+				"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use", "when", "download", "transform", "batch"},
+				"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count"},
 				"formats":   []string{"json", "yaml", "md"},
 				"progress":  []string{"auto", "always", "never"},
 				"artifacts": []string{
@@ -60,8 +65,8 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 - docs: ` + "`glyph docs agents --format md`" + `, ` + "`glyph docs authoring --format md`" + `, ` + "`glyph docs snippets --format md`" + `
 - init: ` + "`glyph init --cmd ./bin/app --ready ready`" + `
 - context: ` + "`glyph context latest --format md`" + `
-- steps: press, type, paste, send, wait, resize, snapshot, use, when guards
-- verifiers: screen, region, cell, cursor, process, snapshot, command
+- steps: press, type, paste, send, wait, resize, snapshot, use, when guards, download, transform, batch
+- verifiers: screen, region, cell, cursor, process, snapshot, command, file, script, count
 - formats: json, yaml, md
 - progress: ` + "`glyph run <spec> --progress auto|always|never`" + `
 - artifacts: run summaries, agent context, events, final screen, raw PTY log, frames, snapshots, outcomes, diagnostics

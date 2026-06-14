@@ -35,7 +35,7 @@ Use trusted ` + "`command`" + ` verifiers for Bash checks such as ` + "`test -x 
 `,
 	"steps": `# Steps
 
-Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + "`send`" + `, ` + "`wait`" + `, ` + "`resize`" + `, ` + "`snapshot`" + `, and imported ` + "`use`" + ` actions.
+Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + "`send`" + `, ` + "`wait`" + `, ` + "`resize`" + `, ` + "`snapshot`" + `, imported ` + "`use`" + ` actions, ` + "`when`" + ` guards, and the artifact-pipeline steps ` + "`download`" + `, ` + "`transform`" + `, and ` + "`batch`" + ` (see ` + "`artifacts-pipeline`" + `).
 
 Every step can include a ` + "`when`" + ` guard that uses the same verifier shape as an outcome. Prefer ` + "`wait`" + ` steps that synchronize on visible screen or process state. Use ` + "`snapshot`" + ` to capture named terminal states in the artifact pack.
 
@@ -43,7 +43,7 @@ Every step can include a ` + "`when`" + ` guard that uses the same verifier shap
 `,
 	"verifiers": `# Verifiers
 
-Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, and trusted ` + "`command`" + `.
+Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, and trusted ` + "`command`" + `.
 
 Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes. Process verifiers can check exit state and exit code.
 
@@ -52,6 +52,8 @@ Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + 
 ` + "`script`" + ` runs an external Node module (or shell script) that returns ` + "`{ ok, evidence }`" + ` as JSON on stdout. Use the ` + "`run`" + ` form for inline bodies and the ` + "`file`" + ` form for external scripts. Fixtures resolve to ` + "`ctx.fixtures`" + ` in the script; large evidence payloads are written to ` + "`outcomes/<id>.raw.json`" + `.
 
 Outcomes can set ` + "`timeoutMs`" + ` and ` + "`normalize`" + ` when a single assertion needs longer polling or custom volatile-text cleanup.
+
+` + "`count`" + ` asserts how many cells on the screen, or within a region, match a character or pattern (see ` + "`count-verifier`" + `).
 
 See also: ` + "`file-script-verifiers`" + ` for end-to-end examples of ` + "`file`" + ` and ` + "`script`" + `.
 `,

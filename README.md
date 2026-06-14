@@ -365,6 +365,7 @@ Specs override what they need: `target.timeoutMs` wraps the whole PTY session an
 | 1 | At least one outcome failed |
 | 2 | Runtime error before outcomes could run |
 | 3 | `target.timeoutMs` expired |
+| 4 | Spec parse, validation, or config load error |
 | 5 | Required alternate-screen mode was not entered |
 | 6 | Contract hash mismatch (run refused before the PTY started) |
 | 7 | Reserved |
