@@ -19,9 +19,9 @@ Glyphrun is designed around four stable surfaces:
 
 ## Status
 
-This repository contains a working MVP. It supports PTY execution, spec parsing and validation, contract hashes, snapshots, structured output, artifact packs, basic recording/replay, run diffs, and an MCP stdio server.
+Glyphrun is feature-complete for the v0.1 surface: PTY execution, spec parsing and validation, contract hashes, snapshots, structured output, artifact packs, recording and replay, run diffs, an MCP stdio server, file and script verifiers, an artifact pipeline (`download` / `transform` / `batch`), per-spec redaction, retention and `glyph clean`, `count:` verifier, per-spec capture policy, BATS import and export, JUnit output, and a `glyph list` catalog. Exit codes 1–7 are reserved with distinct meanings (see [Exit Codes](#exit-codes)).
 
-Some terminal features are intentionally still future work: full xterm parity, mouse protocols, Sixel/images, terminal hyperlinks, and Windows ConPTY support.
+Some terminal features are intentionally still future work: full xterm parity, mouse protocols, Sixel / images, terminal hyperlinks, and Windows ConPTY support.
 
 ## Requirements
 
@@ -45,6 +45,7 @@ Without `task`, use the underlying Go commands:
 go mod tidy
 go test ./...
 go build -o ./bin/glyph ./cmd/glyph
+./bin/glyph --version
 ./bin/glyph doctor --format json
 ./bin/glyph run examples/specs/hello.yml --format md
 ```
@@ -52,8 +53,20 @@ go build -o ./bin/glyph ./cmd/glyph
 To install the CLI globally from this checkout:
 
 ```bash
-go build -o ~/.local/bin/glyph ./cmd/glyph
-glyph doctor --format md
+task install
+# → builds with version metadata, copies to /opt/homebrew/bin/glyph
+# → prints `glyph --version` as confirmation
+```
+
+Without `task`:
+
+```bash
+go build \
+  -ldflags "-X github.com/abdul-hamid-achik/glyphrun/internal/version.Version=v0.1.0 \
+             -X github.com/abdul-hamid-achik/glyphrun/internal/version.Commit=$(git rev-parse --short HEAD) \
+             -X github.com/abdul-hamid-achik/glyphrun/internal/version.BuildDate=$(date -u +%Y-%m-%d)" \
+  -o /opt/homebrew/bin/glyph ./cmd/glyph
+glyph --version
 ```
 
 To add Glyphrun to another terminal project:
@@ -67,7 +80,7 @@ glyph run specs/glyphrun/smoke.yml --format md --progress auto
 After a run, inspect the newest agent-readable context:
 
 ```bash
-./bin/glyph context latest --format md
+glyph context latest --format md
 ```
 
 For a guided command map:
@@ -125,31 +138,154 @@ outcomes:
 Run and verify:
 
 ```bash
-./bin/glyph spec verify examples/specs/hello.yml --format json
-./bin/glyph run examples/specs/hello.yml --format json
-./bin/glyph snapshot update examples/specs/hello.yml --format md
+glyph spec verify examples/specs/hello.yml --format json
+glyph run examples/specs/hello.yml --format json
+glyph snapshot update examples/specs/hello.yml --format md
 ```
 
 ## CLI Commands
 
 ```text
-glyph init [dir]                    Create config, .gitignore entries, and a starter smoke spec
-glyph run <spec...>                 Run one or more behavior specs; add --progress for live status
-glyph spec verify <spec> [--stamp]  Validate a spec and optionally stamp its contract hash
-glyph spec scaffold [--kind spec]   Print a starter spec or reusable action
-glyph snapshot update <spec...>     Refresh committed terminal snapshots
-glyph diff <runA> <runB>            Compare two run artifact directories
-glyph record -- <command...>        Capture a PTY session as an artifact pack
-glyph replay <run>                  Replay or print a recorded PTY log
-glyph context <run|latest>          Print agent-focused failure/run context
-glyph docs [topic]                  Print built-in docs
-glyph agent                         Print the recommended agent workflow
-glyph explain                       Explain project concepts and command flow
-glyph doctor                        Check local setup
-glyph mcp                           Start the MCP stdio server
+glyph init [dir]                       Create config, .gitignore entries, and a starter smoke spec
+glyph run <spec...>                    Run one or more behavior specs; --progress for live status
+                                       --rerun-failed re-plays the most recent failures
+                                       --junit <path> writes a JUnit XML report
+glyph spec verify <spec> [--stamp]     Validate a spec and optionally stamp its contract hash
+glyph spec scaffold [--kind spec|action] Print a starter spec or reusable action
+glyph snapshot update <spec...>        Refresh committed terminal snapshots
+glyph diff <runA> <runB>               Compare two run artifact directories
+glyph record -- <command...>           Capture a PTY session as an artifact pack
+glyph replay <run>                     Replay or print a recorded PTY log
+glyph context <run|latest>             Print agent-focused failure/run context
+glyph list <dir-or-file>...             Catalog specs with --feature/--tag/--owner filters
+glyph clean --keep N | --all           Prune old run directories; --format json for CI
+glyph import bats <file> [--out path]   Convert a BATS file into a glyphrun spec
+glyph export bats <spec> [--out path]  Emit a BATS file from a glyphrun spec
+glyph docs [topic]                     Print built-in docs (try `topics` for the index)
+glyph version                          Print the binary's version, commit, and build date
+glyph agent                            Print the recommended agent workflow
+glyph explain                          Explain project concepts and command flow
+glyph doctor                           Check local setup
+glyph mcp                              Start the MCP stdio server
 ```
 
+`glyph --version` and `glyph version --format json|yaml` are the same surface; the flag is the quick form, the subcommand is the programmatic one.
+
 Agent-callable commands support `--format json|yaml|md`. JSON and YAML modes do not prompt interactively. Markdown is the default human report format.
+
+## Verifiers
+
+| Verifier | What it checks |
+|---|---|
+| `screen: { contains \| notContains \| regex }` | Substring or regex match against the normalized screen text |
+| `region: { x, y, width, height, contains \| notContains \| regex }` | Same, restricted to a sub-region |
+| `cell: { x, y, char, style }` | A specific cell's character and optional style attributes |
+| `cursor: { x, y, visible }` | Cursor position and visibility |
+| `process: { exitCode \| exited }` | Target process exit state |
+| `snapshot: { name, mode? }` | A snapshot captured earlier in the spec |
+| `file: { glob, contains?, timeoutMs? }` | A file matching the glob exists (optionally contains a needle) |
+| `script: { runtime?, run \| file, fixtures?, timeoutMs? }` | An external Node module or shell script that returns `{ ok, evidence }` |
+| `command: { run, cwd?, timeoutMs? }` | A trusted shell command (`test -x ./bin/app`) |
+| `count: { region?, matches?, equals \| atLeast \| atMost \| between }` | Cell-level count over a region (Cairn's `count: { role }` analogue) |
+
+`count.matches` is a single rune or the literal `"nonEmpty"`. The comparator is exactly one of `equals` / `atLeast` / `atMost` / `between`. The verifier returns `{ matched, comparator, expected }` as evidence, written to `outcomes/<id>.raw.json`.
+
+## Steps
+
+Supported v1 steps: `press`, `type`, `paste`, `send`, `wait`, `resize`, `snapshot`, `download`, `transform`, `batch`, and imported `use` actions. Every step can carry a `when` guard that uses the same verifier shape as an outcome — useful for optional TUI prompts, login walls, or transient menus.
+
+`download`, `transform`, and `batch` are the artifact pipeline:
+
+- `download` copies a file the target wrote into the run dir, optionally waiting for it to stabilize. Set `assign: <name>` to make it addressable as `${artifacts.<name>.path}` in later steps.
+- `transform` runs a Node module or shell script whose stdout becomes a new artifact. Pair it with `download` for "fetch + process" workflows.
+- `batch` queues a list of `press` / `type` / `paste` / `send` sub-steps into a single PTY write so transient TUI state (a focused menu, a command palette, a hover popover) survives.
+
+`paste` sends bracketed paste delimiters only after the target enables terminal mode `?2004`; otherwise it writes literal text.
+
+## Reusable Actions And Conditional Steps
+
+Glyphrun supports reusable action files for repeated TUI mechanics:
+
+```yaml
+imports:
+  - ../actions/wait_for_hello_and_quit.yml
+
+steps:
+  - use: wait_for_hello_and_quit
+```
+
+Create an action starter with:
+
+```bash
+glyph spec scaffold --kind action
+```
+
+Steps can also be conditional:
+
+```yaml
+steps:
+  - when:
+      screen:
+        contains: "optional prompt"
+    press: "enter"
+```
+
+## Per-Spec Redaction
+
+A spec can declare its own redaction values on top of the project config:
+
+```yaml
+redaction:
+  values:
+    - "[email protected]"
+    - "fixture-api-key-abc123"
+```
+
+Values shorter than 4 characters are dropped, and the list is sorted longest-first so substrings are not shadowed. The `redaction:` block is part of the contract hash; changing it invalidates the stamp. See `glyph docs redaction-block` for the full shape.
+
+## Contract Hash
+
+Specs carry a `contractHash` stamped over `intent`, `outcomes`, and `redaction:`. `glyph run` refuses to start a spec whose on-disk content does not match the hash, exiting with code `6`. This catches silent contract drift: a contributor edits an outcome to make a flaky test pass, the hash stops matching, the run aborts, and the change shows up in review.
+
+```bash
+glyph spec verify <spec> --stamp    # regenerate the hash after an intentional contract change
+glyph run <spec>                    # compares the stamp; mismatches are exit 6
+```
+
+## Run Hygiene
+
+Retention, last-failed tracking, and explicit cleanup are first-class commands:
+
+```yaml
+# glyphrun.config.yml
+artifacts:
+  retention:
+    keepRuns: 20
+```
+
+```bash
+glyph clean --keep 10      # keep the 10 most recent runs, prune the rest
+glyph clean --all          # wipe everything under the artifact root
+
+glyph run <spec> --rerun-failed    # replay only the specs in .last-failed.txt
+```
+
+Auto-prune runs after every successful run (best-effort; logged as `retention.pruned` in `events.ndjson`). The current run is always kept; the cap applies to historical runs only.
+
+## Per-Spec Capture Policy
+
+Each artifact channel (snapshots, frames, raw log, final screen, agent context) can be set to `always`, `on-failure`, or `never`. The project config sets the defaults, and a spec can override individual channels:
+
+```yaml
+artifacts:
+  frames: never
+  rawLog: always
+  finalScreen: always
+```
+
+Useful for two cases: expensive specs that emit thousands of frames per second (turn frames off in the spec, keep them on for the rest), and critical specs that you always want to debug (force `agentContext: always` and `rawLog: always` so the failure surface is there even on pass).
+
+The `artifacts:` block is part of the contract hash.
 
 ## Human And Agent DX
 
@@ -178,49 +314,13 @@ glyph context latest --format md
 
 The agent contract is simple: treat `intent` and `outcomes` as the behavior contract, treat `steps` as repairable navigation hints, and use `glyph context latest` after failures before editing code.
 
-## Reusable Actions And Bash Checks
-
-Glyphrun supports reusable action files for repeated TUI mechanics:
-
-```yaml
-imports:
-  - ../actions/wait_for_hello_and_quit.yml
-
-steps:
-  - use: wait_for_hello_and_quit
-```
-
-Create an action starter with:
-
-```bash
-glyph spec scaffold --kind action
-```
-
-Steps can also be conditional:
-
-```yaml
-steps:
-  - when:
-      screen:
-        contains: "optional prompt"
-    press: "enter"
-```
-
-For shell-level assertions, use the trusted `command` verifier:
-
-```yaml
-verify:
-  command:
-    run: "test -x ./bin/app"
-```
-
 ## MCP
 
-Run `glyph mcp` to start the stdio MCP server. The MCP tools mirror the CLI surface for docs, doctor checks, spec verification, spec scaffolding, runs, snapshot updates, diffs, and agent context lookup.
+Run `glyph mcp` to start the stdio MCP server. The MCP tools mirror the CLI surface for docs, doctor checks, spec verification, spec scaffolding, runs, snapshot updates, diffs, agent context lookup, and the catalog (`glyph list`).
 
 ## Artifact Packs
 
-Every `glyph run` writes a run directory under `.glyphrun/runs/` by default. Depending on config and spec settings, a pack can include:
+Every `glyph run` writes a run directory under `.glyphrun/runs/` by default. Depending on config and the spec's capture policy, a pack can include:
 
 - `run.json`, `run.yaml`, and `run.md`
 - `agent_context.md`
@@ -228,10 +328,11 @@ Every `glyph run` writes a run directory under `.glyphrun/runs/` by default. Dep
 - `spec.resolved.yml`
 - `screens/final.txt` and `screens/final.json`
 - `frames/frames.ndjson`
-- `raw/pty.raw.log`
+- `raw/pty.raw.log` and `raw/input.raw.log`
 - `snapshots/*.txt` and `snapshots/*.json`
-- `outcomes/results.*`
+- `outcomes/results.*` and `outcomes/<id>.raw.json` (verifier evidence)
 - `diagnostics/failure.md` and `diagnostics/environment.md`
+- `.last-failed.txt` (consumed by `--rerun-failed`)
 
 Run artifacts are ignored by Git. Committed snapshots can live under `.glyphrun/snapshots/` when you choose to update them.
 
@@ -239,29 +340,51 @@ The most useful files during debugging are `run.md`, `agent_context.md`, `diagno
 
 ## Configuration
 
-Glyphrun reads `glyphrun.config.yml` from the working tree. Config can define shared variables, default terminal size/profile, artifact behavior, redaction rules, and text normalization.
+Glyphrun reads `glyphrun.config.yml` from the working tree. Config can define shared variables, default terminal size and profile, artifact behavior, retention, capture defaults, and redaction rules.
 
-Specs can override relevant settings locally. Secrets should be passed through environment variables or external setup, not hard-coded in specs.
+```yaml
+artifacts:
+  snapshots: true
+  frames: true
+  rawLog: false
+  finalScreen: true
+  agentContext: true
+  retention:
+    keepRuns: 20
+redaction:
+  values: ["$HOME/.config/private-token"]
+```
 
-Outcomes can set `timeoutMs` and `normalize` when a single assertion needs longer polling or custom volatile-text cleanup. `target.timeoutMs` wraps the whole PTY session and maps to exit code `3` when it expires.
+Specs override what they need: `target.timeoutMs` wraps the whole PTY session and maps to exit code `3` when it expires. `terminal.alternateScreen` supports `auto`, `require`, and `forbid`. Outcomes can set their own `timeoutMs` and `normalize` when a single assertion needs longer polling or custom volatile-text cleanup.
 
-`terminal.alternateScreen` supports `auto`, `require`, and `forbid`. Use `require` for full-screen TUIs that should enter alternate screen mode, and `forbid` for commands that should stay on the main terminal screen.
+## Exit Codes
+
+| Code | Meaning |
+|---:|---|
+| 0 | All outcomes passed |
+| 1 | At least one outcome failed |
+| 2 | Runtime error before outcomes could run |
+| 3 | `target.timeoutMs` expired |
+| 5 | Required alternate-screen mode was not entered |
+| 6 | Contract hash mismatch (run refused before the PTY started) |
+| 7 | Reserved |
 
 ## Project Layout
 
 ```text
 cmd/glyph/              CLI entrypoint
 internal/cli/           Cobra command handlers
-internal/spec/          Spec model, parsing, validation, stamping
+internal/spec/          Spec model, parsing, validation, contract hash
 internal/config/        Config loading and schema validation
 internal/ptyrunner/     PTY process backend
 internal/terminal/      Virtual terminal emulator
 internal/runner/        Step execution and outcome evaluation
-internal/artifacts/     Artifact writer, markdown, redaction, diffs
+internal/artifacts/     Artifact writer, markdown, redaction, retention, last-failed
+internal/version/       Build-time version metadata
 internal/mcp/           MCP stdio server
 schemas/                JSON schemas for specs, config, and run output
 docs/                   Built-in documentation topics
-examples/               Small runnable terminal app and spec
+examples/               Runnable terminal apps and specs
 ```
 
 ## Development
@@ -270,6 +393,7 @@ examples/               Small runnable terminal app and spec
 task verify
 task example
 task context
+task install
 ```
 
 `task verify` runs formatting, vetting, tests, build, and `glyph doctor`. The same checks can be run manually with:
@@ -286,7 +410,7 @@ go build -o ./bin/glyph ./cmd/glyph
 
 Glyphrun specs are trusted local automation, similar to shell scripts or Playwright tests. A spec can launch commands, pass environment variables, and write artifacts. Do not run untrusted specs.
 
-Artifacts are redacted by default using configured patterns, but raw PTY logs can still contain sensitive output if the target app prints it. Review artifact packs before sharing them.
+Artifacts are redacted by default using configured patterns, and a spec can add per-spec redaction values on top of the project config. The redactor's minimum value length is 4 characters; longer values are matched first. Raw PTY logs can still contain sensitive output if the target app prints it, so review artifact packs before sharing them.
 
 ## License
 
