@@ -21,6 +21,15 @@ type SimpleEmulator struct {
 	escBuf  []byte
 	style   Style
 
+	// pendingWrap implements the VT100 deferred-autowrap quirk: writing a
+	// glyph into the last column does NOT advance to the next row. Instead
+	// the cursor stays on the last column with this flag set, and the wrap
+	// only happens when the next glyph is printed. Real terminals (xterm,
+	// etc.) behave this way, and full-screen TUIs (e.g. Bubble Tea) rely on
+	// it to paint the bottom-right cell without scrolling. Without it, any
+	// frame that fills the full terminal width drifts by a row.
+	pendingWrap bool
+
 	bracketedPaste      bool
 	alternateScreen     bool
 	alternateScreenUsed bool
@@ -54,6 +63,7 @@ func (e *SimpleEmulator) Resize(cols, rows int) error {
 		}
 	}
 	e.cursor = Cursor{X: 0, Y: 0, Visible: true}
+	e.pendingWrap = false
 	return nil
 }
 
@@ -121,10 +131,12 @@ func (e *SimpleEmulator) feedRune(r rune) {
 		e.escMode = true
 		e.escBuf = nil
 	case '\r':
+		e.pendingWrap = false
 		e.cursor.X = 0
 	case '\n':
 		e.newLine()
 	case '\b':
+		e.pendingWrap = false
 		if e.cursor.X > 0 {
 			e.cursor.X--
 		}
@@ -191,24 +203,56 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 				col, _ = strconv.Atoi(parts[1])
 			}
 		}
+		e.pendingWrap = false
 		e.cursor.Y = clamp(row-1, 0, e.rows-1)
 		e.cursor.X = clamp(col-1, 0, e.cols-1)
 		return
 	}
 	if strings.HasSuffix(body, "A") {
+		e.pendingWrap = false
 		e.cursor.Y = clamp(e.cursor.Y-csiNumber(strings.TrimSuffix(body, "A"), 1), 0, e.rows-1)
 		return
 	}
 	if strings.HasSuffix(body, "B") {
+		e.pendingWrap = false
 		e.cursor.Y = clamp(e.cursor.Y+csiNumber(strings.TrimSuffix(body, "B"), 1), 0, e.rows-1)
 		return
 	}
 	if strings.HasSuffix(body, "C") {
+		e.pendingWrap = false
 		e.cursor.X = clamp(e.cursor.X+csiNumber(strings.TrimSuffix(body, "C"), 1), 0, e.cols-1)
 		return
 	}
 	if strings.HasSuffix(body, "D") {
+		e.pendingWrap = false
 		e.cursor.X = clamp(e.cursor.X-csiNumber(strings.TrimSuffix(body, "D"), 1), 0, e.cols-1)
+		return
+	}
+	if strings.HasSuffix(body, "G") {
+		// CHA — cursor horizontal absolute (1-based column).
+		e.pendingWrap = false
+		e.cursor.X = clamp(csiNumber(strings.TrimSuffix(body, "G"), 1)-1, 0, e.cols-1)
+		return
+	}
+	if strings.HasSuffix(body, "d") {
+		// VPA — line position absolute (1-based row), column unchanged.
+		// Bubble Tea's renderer uses this to jump between repaint regions;
+		// without it, diff frames write to the wrong row.
+		e.pendingWrap = false
+		e.cursor.Y = clamp(csiNumber(strings.TrimSuffix(body, "d"), 1)-1, 0, e.rows-1)
+		return
+	}
+	if strings.HasSuffix(body, "X") {
+		// ECH — erase N characters from the cursor without moving it.
+		n := csiNumber(strings.TrimSuffix(body, "X"), 1)
+		if e.cursor.Y >= 0 && e.cursor.Y < e.rows {
+			for i := 0; i < n; i++ {
+				x := e.cursor.X + i
+				if x >= 0 && x < e.cols {
+					e.cells[e.cursor.Y][x] = Cell{X: x, Y: e.cursor.Y, Char: " ", Width: 1}
+				}
+			}
+		}
 		return
 	}
 	if strings.HasSuffix(body, "m") {
@@ -229,6 +273,7 @@ func (e *SimpleEmulator) applyPrivateMode(body string) {
 			if enable {
 				e.alternateScreenUsed = true
 				e.clear()
+				e.pendingWrap = false
 				e.cursor.X = 0
 				e.cursor.Y = 0
 			}
@@ -285,20 +330,27 @@ func (e *SimpleEmulator) putRune(r rune) {
 	if e.cursor.Y < 0 || e.cursor.Y >= e.rows {
 		return
 	}
-	if e.cursor.X >= e.cols {
+	// Resolve a deferred wrap from the previous last-column write before
+	// printing this glyph.
+	if e.pendingWrap {
 		e.newLine()
+		e.pendingWrap = false
 	}
 	if e.cursor.Y >= 0 && e.cursor.Y < e.rows && e.cursor.X >= 0 && e.cursor.X < e.cols {
 		e.cells[e.cursor.Y][e.cursor.X].Char = string(r)
 		e.cells[e.cursor.Y][e.cursor.X].Style = e.style
 	}
-	e.cursor.X++
-	if e.cursor.X >= e.cols {
-		e.newLine()
+	if e.cursor.X >= e.cols-1 {
+		// Last column: stay put and defer the wrap (VT100 autowrap quirk).
+		e.cursor.X = e.cols - 1
+		e.pendingWrap = true
+	} else {
+		e.cursor.X++
 	}
 }
 
 func (e *SimpleEmulator) newLine() {
+	e.pendingWrap = false
 	e.cursor.X = 0
 	e.cursor.Y++
 	if e.cursor.Y >= e.rows {
