@@ -473,6 +473,11 @@ internal/ptyrunner/     PTY process backend
 internal/terminal/      Virtual terminal emulator
 internal/runner/        Step execution and outcome evaluation
 internal/artifacts/     Artifact writer, markdown, redaction, retention, last-failed
+internal/render/        Deterministic SVG rendering of a screen snapshot
+internal/repair/        Failed-run analysis and step-repair proposals
+internal/flaky/         Stability/divergence summary for repeated runs
+internal/scaffold/      Draft spec inference from a recorded session
+internal/ghreport/      GitHub PR-comment Markdown rendering
 internal/version/       Build-time version metadata
 internal/mcp/           MCP stdio server
 schemas/                JSON schemas for specs, config, and run output

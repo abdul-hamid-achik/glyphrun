@@ -1,4 +1,4 @@
-package cli
+package ghreport
 
 import (
 	"strings"
@@ -7,7 +7,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 )
 
-func TestRenderPRCommentPassing(t *testing.T) {
+func TestRenderPassing(t *testing.T) {
 	results := []artifacts.RunResult{{
 		SpecName: "hello_quits",
 		Status:   artifacts.StatusPassed,
@@ -17,7 +17,7 @@ func TestRenderPRCommentPassing(t *testing.T) {
 			{ID: "exit", Status: artifacts.OutcomePassed},
 		},
 	}}
-	md := renderPRComment(results)
+	md := Render(results)
 	for _, want := range []string{"✅ passed", "`hello_quits`", "2✓ 0✗"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("expected %q in comment:\n%s", want, md)
@@ -28,7 +28,7 @@ func TestRenderPRCommentPassing(t *testing.T) {
 	}
 }
 
-func TestRenderPRCommentFailing(t *testing.T) {
+func TestRenderFailing(t *testing.T) {
 	results := []artifacts.RunResult{{
 		SpecName: "broken",
 		Status:   artifacts.StatusFailed,
@@ -39,7 +39,7 @@ func TestRenderPRCommentFailing(t *testing.T) {
 		Artifacts: map[string]string{"finalScreenSVG": "screens/final.svg"},
 		RunDir:    "/tmp/runs/run-broken",
 	}}
-	md := renderPRComment(results)
+	md := Render(results)
 	for _, want := range []string{"❌ failed", "### ❌ broken", "`ready`: not found", "final.svg"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("expected %q in comment:\n%s", want, md)
@@ -47,9 +47,8 @@ func TestRenderPRCommentFailing(t *testing.T) {
 	}
 }
 
-func TestRenderPRCommentEmpty(t *testing.T) {
-	md := renderPRComment(nil)
-	if !strings.Contains(md, "No runs found") {
+func TestRenderEmpty(t *testing.T) {
+	if md := Render(nil); !strings.Contains(md, "No runs found") {
 		t.Errorf("expected empty-state message, got:\n%s", md)
 	}
 }

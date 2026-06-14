@@ -1,4 +1,4 @@
-package cli
+package scaffold
 
 import (
 	"testing"
@@ -48,11 +48,11 @@ func TestDeriveSpecName(t *testing.T) {
 	}
 }
 
-func TestBuildScaffoldSpec(t *testing.T) {
+func TestBuildSpec(t *testing.T) {
 	term := spec.Terminal{Cols: 80, Rows: 24, Profile: "xterm-256color"}
 
 	t.Run("ready and clean exit", func(t *testing.T) {
-		s, ready, needsEdit := buildScaffoldSpec("app_smoke", []string{"./app"}, ".", term, "Welcome to app", ptyrunner.ExitState{Exited: true, ExitCode: 0})
+		s, ready, needsEdit := buildSpec("app_smoke", []string{"./app"}, ".", term, "Welcome to app", ptyrunner.ExitState{Exited: true, ExitCode: 0})
 		if needsEdit {
 			t.Errorf("did not expect needsEdit")
 		}
@@ -68,7 +68,7 @@ func TestBuildScaffoldSpec(t *testing.T) {
 	})
 
 	t.Run("killed process skips clean_exit", func(t *testing.T) {
-		s, _, _ := buildScaffoldSpec("app_smoke", []string{"./app"}, ".", term, "Welcome to app", ptyrunner.ExitState{Exited: true, ExitCode: -1})
+		s, _, _ := buildSpec("app_smoke", []string{"./app"}, ".", term, "Welcome to app", ptyrunner.ExitState{Exited: true, ExitCode: -1})
 		for _, o := range s.Outcomes {
 			if o.ID == "clean_exit" {
 				t.Errorf("killed process should not produce clean_exit outcome")
@@ -77,7 +77,7 @@ func TestBuildScaffoldSpec(t *testing.T) {
 	})
 
 	t.Run("no signal needs edit", func(t *testing.T) {
-		s, ready, needsEdit := buildScaffoldSpec("app_smoke", []string{"./app"}, ".", term, "   \n----", ptyrunner.ExitState{Exited: true, ExitCode: -1})
+		s, ready, needsEdit := buildSpec("app_smoke", []string{"./app"}, ".", term, "   \n----", ptyrunner.ExitState{Exited: true, ExitCode: -1})
 		if !needsEdit {
 			t.Errorf("expected needsEdit when nothing is observable")
 		}

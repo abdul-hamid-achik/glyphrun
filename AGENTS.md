@@ -31,6 +31,11 @@ Package boundaries are part of the contract — do not blur them.
 | `internal/terminal` | Virtual emulator + adapters (`gote`, `fake`). No PTY or spec knowledge. |
 | `internal/runner` | Step execution and outcome evaluation. The orchestrator. |
 | `internal/artifacts` | Writer, markdown, redaction, diffs. No runner state. |
+| `internal/render` | Deterministic SVG rendering of a screen snapshot. Pure. |
+| `internal/repair` | Failed-run analysis → step-repair proposals. No cobra. |
+| `internal/flaky` | Stability/divergence summary for repeated runs. Pure. |
+| `internal/scaffold` | Draft spec inference from a recorded session. |
+| `internal/ghreport` | GitHub PR-comment Markdown rendering. |
 | `internal/mcp` | Stdio MCP server. Thin pass-through to CLI commands. |
 | `internal/config` | Config loading, defaults, schema validation. |
 | `internal/input` | Key name → escape sequence mapping. Pure function. |

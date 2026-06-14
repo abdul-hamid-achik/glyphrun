@@ -15,6 +15,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	"github.com/abdul-hamid-achik/glyphrun/internal/ptyrunner"
 	"github.com/abdul-hamid-achik/glyphrun/internal/render"
+	"github.com/abdul-hamid-achik/glyphrun/internal/scaffold"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal/adapters/gote"
@@ -34,18 +35,18 @@ func newRecordCommand(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
-			result, scaffold, err := recordCommand(context.Background(), opts, args, cwd, timeoutMS, format == formatMD, scaffoldPath)
+			result, scaf, err := recordCommand(context.Background(), opts, args, cwd, timeoutMS, format == formatMD, scaffoldPath)
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
 			var value any = result
 			markdown := func() string { return artifacts.RenderRunMarkdown(result) }
-			if scaffold != nil {
+			if scaf != nil {
 				// Surface the scaffold alongside the run result so both the
 				// JSON and Markdown reports mention the generated spec.
-				value = map[string]any{"schemaVersion": 1, "run": result, "scaffold": scaffold}
+				value = map[string]any{"schemaVersion": 1, "run": result, "scaffold": scaf}
 				markdown = func() string {
-					return artifacts.RenderRunMarkdown(result) + renderScaffoldMarkdown(scaffold)
+					return artifacts.RenderRunMarkdown(result) + renderScaffoldMarkdown(scaf)
 				}
 			}
 			output, err := emitForCLI(cmd, opts, format, value, markdown)
@@ -65,7 +66,7 @@ func newRecordCommand(opts *globalOptions) *cobra.Command {
 	return cmd
 }
 
-func renderScaffoldMarkdown(s *scaffoldResult) string {
+func renderScaffoldMarkdown(s *scaffold.Result) string {
 	var b strings.Builder
 	b.WriteString("\n## Scaffolded Spec\n\n")
 	fmt.Fprintf(&b, "- path: `%s`\n", s.Path)
@@ -81,7 +82,7 @@ func renderScaffoldMarkdown(s *scaffoldResult) string {
 	return b.String()
 }
 
-func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd string, timeoutMS int, echoOutput bool, scaffoldPath string) (artifacts.RunResult, *scaffoldResult, error) {
+func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd string, timeoutMS int, echoOutput bool, scaffoldPath string) (artifacts.RunResult, *scaffold.Result, error) {
 	rt, err := config.LoadRuntime(".", opts.configPath, opts.environment)
 	if err != nil {
 		return artifacts.RunResult{}, nil, err
@@ -185,14 +186,23 @@ func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd 
 	_ = writer.WriteRun(result)
 	_ = writer.AppendEvent(artifacts.Event{TS: ended.Format(time.RFC3339Nano), Type: "record.finished", Name: strings.Join(argv, " "), Info: strconv.Itoa(exit.ExitCode)})
 
-	var scaffold *scaffoldResult
+	var scaffoldResult *scaffold.Result
 	if scaffoldPath != "" {
-		scaffold, err = writeRecordScaffold(opts, scaffoldPath, argv, cwd, result.Terminal, finalSnapshot.Text, exit)
+		scaffoldResult, err = scaffold.FromSession(scaffold.Params{
+			Path:        scaffoldPath,
+			Argv:        argv,
+			Cwd:         cwd,
+			Terminal:    result.Terminal,
+			FinalScreen: finalSnapshot.Text,
+			Exit:        exit,
+			ConfigPath:  opts.configPath,
+			Environment: opts.environment,
+		})
 		if err != nil {
 			return result, nil, fmt.Errorf("scaffold: %w", err)
 		}
 	}
-	return result, scaffold, nil
+	return result, scaffoldResult, nil
 }
 
 type sessionWriter struct {
