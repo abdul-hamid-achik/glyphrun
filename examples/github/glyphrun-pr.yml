@@ -18,7 +18,7 @@ jobs:
   behavior:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run Glyphrun specs
         id: glyph
@@ -29,7 +29,7 @@ jobs:
 
       - name: Post PR comment
         if: always() && github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: glyphrun
           path: glyphrun-comment.md
