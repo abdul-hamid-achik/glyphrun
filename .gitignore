@@ -2,4 +2,6 @@ bin/
 .glyphrun/runs/
 **/.glyphrun/runs/
 examples/apps/hello/hello
+examples/apps/reporter/reporter
+reports/
 spec.md

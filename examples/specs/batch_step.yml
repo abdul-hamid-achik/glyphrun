@@ -1,0 +1,78 @@
+version: 1
+name: batch_step_demo
+
+# Demonstrates the `batch` step: a sequence of `press` / `type` / `paste`
+# sub-steps is delivered to the PTY in a single write so transient TUI
+# state (a command palette, a focused menu, a hover popover) survives
+# across the keystrokes.
+#
+# Without `batch`, splitting the same actions into separate top-level
+# steps would give the TUI a chance to redraw between each input and
+# the popover/menu could close — leading to flaky tests.
+
+intent: |
+  the reporter app accepts a tag right after the "w" keypress. The
+  batch step types "w" + "abc" + enter in a single PTY write, then a
+  follow-up wait asserts the report landed.
+
+target:
+  cmd: ["./examples/apps/reporter/reporter"]
+  cwd: "."
+  env:
+    GLYPHRUN_REPORTER_DIR: "${env.REPORTER_DIR}"
+    GLYPHRUN_REPORTER_NAME: "report-batch.txt"
+
+terminal:
+  cols: 100
+  rows: 30
+  profile: xterm-256color
+  alternateScreen: require
+
+preconditions:
+  commands:
+    - run: "go build -o ./examples/apps/reporter/reporter ./examples/apps/reporter"
+      timeoutMs: 30000
+    - run: "rm -f ${env.REPORTER_DIR}/report-batch.txt"
+
+steps:
+  - wait:
+      screen:
+        contains: "reporter ready"
+      timeoutMs: 5000
+  # A trailing `wait` is the only synchronization point inside a
+  # batch. It lets the runner poll the screen once the burst has been
+  # delivered, instead of leaving the spec to add a separate top-level
+  # wait step.
+  - batch:
+      - press: "w"
+      - type: "abc"
+      - press: "enter"
+      - wait:
+          screen:
+            contains: "report="
+          timeoutMs: 5000
+  # Confirm the report file landed (the app writes it to the path it
+  # advertised, which we pinned via GLYPHRUN_REPORTER_NAME).
+  - download:
+      path: "${env.REPORTER_DIR}/report-batch.txt"
+      saveAs: "report.txt"
+      assign: report
+      waitFor: true
+      timeoutMs: 5000
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000
+
+outcomes:
+  - id: batch_captured_report
+    description: the batch step + the trailing download captured the report
+    verify:
+      command:
+        run: "test -s \"$GLYPHRUN_RUN_DIR/artifacts/report/report.txt\""
+  - id: tag_was_abc
+    description: the tag inside the report matches the batch's typed value
+    verify:
+      command:
+        run: "grep -q '^tag=abc' \"$GLYPHRUN_RUN_DIR/artifacts/report/report.txt\""

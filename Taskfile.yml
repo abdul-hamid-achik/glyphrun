@@ -3,6 +3,7 @@ version: '3'
 vars:
   BIN: ./bin/glyph
   MAIN: ./cmd/glyph
+  REPORTER_DIR: '{{.REPORTER_DIR | default "/tmp/glyphrun-examples"}}'
 
 tasks:
   default:
@@ -53,6 +54,42 @@ tasks:
     cmds:
       - go build -o ./examples/apps/hello/hello ./examples/apps/hello
       - '{{.BIN}} run examples/specs/hello.yml --format md'
+
+  example:download:
+    deps: [build]
+    env:
+      REPORTER_DIR: '{{.REPORTER_DIR}}'
+    cmds:
+      - go build -o ./examples/apps/reporter/reporter ./examples/apps/reporter
+      - '{{.BIN}} run examples/specs/download_artifact.yml --format md'
+
+  example:transform:
+    deps: [build]
+    env:
+      REPORTER_DIR: '{{.REPORTER_DIR}}'
+    cmds:
+      - go build -o ./examples/apps/reporter/reporter ./examples/apps/reporter
+      - '{{.BIN}} run examples/specs/transform_artifact.yml --format md'
+
+  example:batch:
+    deps: [build]
+    env:
+      REPORTER_DIR: '{{.REPORTER_DIR}}'
+    cmds:
+      - go build -o ./examples/apps/reporter/reporter ./examples/apps/reporter
+      - '{{.BIN}} run examples/specs/batch_step.yml --format md'
+
+  example:junit:
+    deps: [build]
+    cmds:
+      - mkdir -p reports
+      - '{{.BIN}} run examples/specs/junit_xml_demo.yml --junit reports/glyph.xml --format md'
+
+  example:count:
+    deps: [build]
+    cmds:
+      - chmod +x ./examples/apps/count_target/run.sh
+      - '{{.BIN}} run examples/specs/count_cells.yml --format md'
 
   context:
     deps: [build]

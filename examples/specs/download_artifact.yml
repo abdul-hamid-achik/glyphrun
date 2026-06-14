@@ -1,0 +1,77 @@
+version: 1
+name: download_artifact_demo
+
+# Demonstrates the `download` step in its simplest form: the target
+# process writes a report file to a known absolute path (advertised
+# through GLYPHRUN_REPORTER_DIR + GLYPHRUN_REPORTER_NAME). The spec
+# waits for the file with `waitFor: true`, captures it into a named
+# artifact under artifacts/report/, and a later outcome verifies the
+# captured copy.
+#
+# This mirrors cairn's `download: { by, saveAs, assign }` semantically
+# (the file is already on disk; the runner just snapshots it). The PTY
+# analog skips the click-to-trigger: the TUI target *itself* writes
+# the artifact and tells us where.
+
+intent: |
+  the reporter app writes a report file to a known directory; the spec
+  waits for the file, captures it under artifacts/report/, and a later
+  outcome checks the captured copy.
+
+target:
+  cmd: ["./examples/apps/reporter/reporter"]
+  cwd: "."
+  env:
+    GLYPHRUN_REPORTER_DIR: "${env.REPORTER_DIR}"
+    GLYPHRUN_REPORTER_NAME: "report-demo.txt"
+
+terminal:
+  cols: 100
+  rows: 30
+  profile: xterm-256color
+  alternateScreen: require
+
+preconditions:
+  commands:
+    - run: "go build -o ./examples/apps/reporter/reporter ./examples/apps/reporter"
+      timeoutMs: 30000
+    - run: "rm -f ${env.REPORTER_DIR}/report-demo.txt"
+
+steps:
+  - wait:
+      screen:
+        contains: "reporter ready"
+      timeoutMs: 5000
+  # Press "w" + tag + enter in a single PTY write so the app's prompt
+  # state is preserved across the keystrokes. The app then writes
+  # a report file at the known path.
+  - batch:
+      - press: "w"
+      - type: "demo"
+      - press: "enter"
+  # waitFor polls the path (resolving env placeholders against the
+  # spec environment) and copies the file once it appears.
+  - download:
+      path: "${env.REPORTER_DIR}/report-demo.txt"
+      saveAs: "report.txt"
+      assign: report
+      waitFor: true
+      timeoutMs: 5000
+  - snapshot: post_download
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000
+
+outcomes:
+  - id: captured_artifact_exists
+    description: the downloaded report is present under the run's artifacts dir
+    verify:
+      command:
+        run: "test -s \"$GLYPHRUN_RUN_DIR/artifacts/report/report.txt\""
+  - id: captured_artifact_has_status
+    description: the captured report contains the expected "status=ok" line
+    verify:
+      command:
+        run: "grep -q '^status=ok' \"$GLYPHRUN_RUN_DIR/artifacts/report/report.txt\""

@@ -137,3 +137,47 @@ func repoRoot(t *testing.T) string {
 	}
 	return filepath.Clean(filepath.Join(wd, "..", ".."))
 }
+
+func TestSubstitutePlaceholders_LeavesRuntimeArtifactKeysIntact(t *testing.T) {
+	in := `version: 1
+name: runtime_placeholder_test
+intent: artifact placeholders survive parse
+target:
+  cmd: ["/bin/echo"]
+steps:
+  - download:
+      path: "${artifacts.report.path}"
+      saveAs: copy.txt
+      assign: copy
+`
+	out, err := SubstitutePlaceholders(in, "memory://test", ParseOptions{
+		Vars:         map[string]string{},
+		Env:          map[string]string{},
+		ConfigValues: map[string]string{},
+	})
+	if err != nil {
+		t.Fatalf("expected runtime placeholder to pass through, got error: %v", err)
+	}
+	if !strings.Contains(out, "${artifacts.report.path}") {
+		t.Fatalf("expected artifact placeholder to be preserved verbatim, got:\n%s", out)
+	}
+	if !strings.Contains(out, "assign: copy") {
+		t.Fatalf("expected other YAML keys to survive, got:\n%s", out)
+	}
+}
+
+func TestIsRuntimePlaceholder(t *testing.T) {
+	cases := map[string]bool{
+		"artifacts.report.path":    true,
+		"artifacts.X.relativePath": true,
+		"vars.bin":                 false,
+		"env.READY_TEXT":           false,
+		"config.artifactRoot":      false,
+		"projectRoot":              false,
+	}
+	for in, want := range cases {
+		if got := IsRuntimePlaceholder(in); got != want {
+			t.Errorf("IsRuntimePlaceholder(%q) = %v, want %v", in, got, want)
+		}
+	}
+}

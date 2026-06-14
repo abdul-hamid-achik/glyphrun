@@ -1,0 +1,39 @@
+version: 1
+name: count_cells
+intent: |
+    Run a stub script that prints "ok-ok-ok" on three lines to a
+    10x3 screen, then assert: (1) the full screen has at least 6 'o'
+    cells (the third line scrolls off the 3-row screen), (2) row 0
+    has exactly 3 'o' cells, (3) row 1 has between 0 and 5 '-' cells.
+target:
+    cmd: ["./examples/apps/count_target/run.sh"]
+    timeoutMs: 8000
+terminal:
+    cols: 10
+    rows: 3
+steps:
+    - wait:
+        screen: {contains: "ok-ok-ok"}
+        timeoutMs: 3000
+outcomes:
+    - id: full_screen_has_at_least_six_o
+      description: full screen has at least 6 'o' cells (2 lines of "ok-ok-ok")
+      verify:
+        count:
+            matches: "o"
+            atLeast: 6
+    - id: row_zero_has_three_o
+      description: row 0 has exactly 3 'o' cells
+      verify:
+        count:
+            region: {x: 0, y: 0, width: 10, height: 1}
+            matches: "o"
+            equals: 3
+    - id: row_one_dashes_in_range
+      description: row 1 has between 0 and 5 '-' cells
+      verify:
+        count:
+            region: {x: 0, y: 1, width: 10, height: 1}
+            matches: "-"
+            between: [0, 5]
+contractHash: sha256:0df07504db52e7e61a7b474610538ea93b1ac237a4157bc800ab3413ac6d5d31

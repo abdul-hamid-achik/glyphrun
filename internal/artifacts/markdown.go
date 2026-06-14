@@ -160,6 +160,19 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string, recen
 	for _, key := range orderedArtifactKeys(result.Artifacts) {
 		fmt.Fprintf(&b, "- %s: %s\n", key, result.Artifacts[key])
 	}
+	if len(result.NamedArtifacts) > 0 {
+		b.WriteString("\n## Named Artifacts\n\n")
+		b.WriteString("Reference these from later steps and outcome `command:` verifiers via `${artifacts.<name>.path}` or `${artifacts.<name>.relativePath}`.\n\n")
+		names := make([]string, 0, len(result.NamedArtifacts))
+		for name := range result.NamedArtifacts {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			art := result.NamedArtifacts[name]
+			fmt.Fprintf(&b, "- `%s` (%s): %s\n", name, art.Kind, art.RelativePath)
+		}
+	}
 	b.WriteString("\n## Suggested Commands\n\n")
 	fmt.Fprintf(&b, "- `glyph context %s --format md`\n", result.RunID)
 	if result.Artifacts["failureDiagnostic"] != "" {

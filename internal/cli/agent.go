@@ -27,7 +27,7 @@ func newAgentCommand(opts *globalOptions) *cobra.Command {
 					"glyph init --cmd ./bin/app --ready ready --format md",
 					"glyph spec verify <spec> --format json",
 					"glyph run <spec> --format json",
-					"glyph run <spec> --format md --progress auto",
+					"glyph run <spec> --junit reports/glyph.xml --format md",
 					"glyph context latest --format md",
 					"glyph diff <runA> <runB> --format md",
 				},
@@ -37,6 +37,8 @@ func newAgentCommand(opts *globalOptions) *cobra.Command {
 					"Run spec verification before running a spec.",
 					"Use context latest after failures before editing code.",
 					"Prefer json or yaml for machine parsing and md for human reports.",
+					"For CI, write a JUnit report with --junit so the dashboard can surface the run.",
+					"Use download / transform / batch steps to capture artifacts and survive transient TUI state.",
 				},
 				"topics": docsTopics(),
 			}

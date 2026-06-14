@@ -19,6 +19,7 @@ type Config struct {
 	Terminal           Terminal               `yaml:"terminal" json:"terminal"`
 	Artifacts          Artifacts              `yaml:"artifacts" json:"artifacts"`
 	Redaction          Redaction              `yaml:"redaction" json:"redaction"`
+	Retention          Retention              `yaml:"retention,omitempty" json:"retention,omitempty"`
 }
 
 type Environment struct {
@@ -58,6 +59,17 @@ type Redaction struct {
 	Patterns     []RedactionPattern `yaml:"patterns" json:"patterns"`
 }
 
+// Retention governs disk usage of the artifact root. The runner
+// auto-prunes after every successful run when KeepRuns is set;
+// `glyph clean` does the same on demand and supports `--all` to
+// wipe the artifact root.
+type Retention struct {
+	// KeepRuns is the number of newest run directories to keep per
+	// artifact root. Older runs are pruned after each successful
+	// run. 0 (the default) means "no auto-prune".
+	KeepRuns int `yaml:"keepRuns,omitempty" json:"keepRuns,omitempty"`
+}
+
 type RedactionPattern struct {
 	Name    string `yaml:"name" json:"name"`
 	Regex   string `yaml:"regex" json:"regex"`
@@ -68,6 +80,7 @@ type Runtime struct {
 	Config      Config
 	ConfigPath  string
 	ProjectRoot string
+	SpecPath    string
 	Environment string
 	Vars        map[string]string
 	Env         map[string]string

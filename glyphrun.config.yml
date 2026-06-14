@@ -19,6 +19,10 @@ environments:
       LC_ALL: en_US.UTF-8
       CI: "1"
       GLYPHRUN: "1"
+      # Used by the artifact-pipeline example specs (download,
+      # transform, batch). Override with `REPORTER_DIR=...` on the
+      # command line or in your own config.
+      REPORTER_DIR: /tmp/glyphrun-examples
 
 terminal:
   profile: xterm-256color

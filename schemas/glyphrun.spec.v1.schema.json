@@ -9,6 +9,9 @@
     "name": { "type": "string", "minLength": 1 },
     "contractHash": { "type": "string" },
     "intent": { "type": "string", "minLength": 1 },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "redaction": { "$ref": "#/$defs/redaction" },
+    "artifacts": { "$ref": "#/$defs/capturePolicy" },
     "imports": { "type": "array", "items": { "type": "string" } },
     "target": {
       "type": "object",
@@ -72,6 +75,50 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "feature": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "priority": { "enum": ["low", "normal", "high", "critical"] },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "redaction": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "headers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "capturePolicy": {
+      "type": "object",
+      "properties": {
+        "snapshots":      { "enum": ["always", "on-failure", "never"] },
+        "frames":         { "enum": ["always", "on-failure", "never"] },
+        "rawLog":         { "enum": ["always", "on-failure", "never"] },
+        "finalScreen":    { "enum": ["always", "on-failure", "never"] },
+        "agentContext":   { "enum": ["always", "on-failure", "never"] },
+        "namedArtifacts": { "enum": ["always", "on-failure", "never"] },
+        "screenshots":    { "enum": ["always", "on-failure", "never"] },
+        "console":        { "enum": ["always", "on-failure", "never"] },
+        "network":        { "enum": ["always", "on-failure", "never"] },
+        "trace":          { "enum": ["always", "on-failure", "never"] },
+        "storage":        { "enum": ["always", "on-failure", "never"] }
+      },
+      "additionalProperties": false
+    },
     "normalize": {
       "type": "object",
       "properties": {
@@ -118,7 +165,10 @@
         { "required": ["wait"] },
         { "required": ["resize"] },
         { "required": ["snapshot"] },
-        { "required": ["use"] }
+        { "required": ["use"] },
+        { "required": ["download"] },
+        { "required": ["transform"] },
+        { "required": ["batch"] }
       ],
       "properties": {
         "when": { "$ref": "#/$defs/verify" },
@@ -144,7 +194,74 @@
           "additionalProperties": false
         },
         "snapshot": { "type": "string", "minLength": 1 },
-        "use": { "type": "string", "minLength": 1 }
+        "use": { "type": "string", "minLength": 1 },
+        "download": { "$ref": "#/$defs/download" },
+        "transform": { "$ref": "#/$defs/transform" },
+        "batch": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/batchSubStep" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "download": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "saveAs": { "type": "string", "minLength": 1 },
+        "assign": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9_]*$"
+        },
+        "waitFor": { "type": "boolean" },
+        "timeoutMs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "transform": {
+      "type": "object",
+      "required": ["file", "saveAs"],
+      "properties": {
+        "runtime": { "enum": ["node", "shell"] },
+        "file": { "type": "string", "minLength": 1 },
+        "input": { "type": "string" },
+        "saveAs": { "type": "string", "minLength": 1 },
+        "assign": {
+          "type": "string",
+          "pattern": "^[a-z][A-Za-z0-9_]*$"
+        },
+        "fixtures": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "timeoutMs": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "batchSubStep": {
+      "type": "object",
+      "oneOf": [
+        { "required": ["press"] },
+        { "required": ["type"] },
+        { "required": ["paste"] },
+        { "required": ["send"] },
+        { "required": ["wait"] }
+      ],
+      "properties": {
+        "press": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "paste": { "type": "string", "minLength": 1 },
+        "send": {
+          "type": "object",
+          "required": ["bytes"],
+          "properties": {
+            "bytes": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        "wait": { "$ref": "#/$defs/wait" }
       },
       "additionalProperties": false
     },
@@ -179,7 +296,10 @@
         { "required": ["cursor"] },
         { "required": ["process"] },
         { "required": ["snapshot"] },
-        { "required": ["command"] }
+        { "required": ["command"] },
+        { "required": ["file"] },
+        { "required": ["script"] },
+        { "required": ["count"] }
       ],
       "properties": {
         "screen": { "$ref": "#/$defs/screenCondition" },
@@ -204,6 +324,67 @@
             "run": { "type": "string", "minLength": 1 },
             "cwd": { "type": "string" },
             "timeoutMs": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "file": {
+          "type": "object",
+          "required": ["glob"],
+          "properties": {
+            "glob": { "type": "string", "minLength": 1 },
+            "contains": { "type": "string" },
+            "timeoutMs": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "script": {
+          "type": "object",
+          "oneOf": [
+            { "required": ["run"] },
+            { "required": ["file"] }
+          ],
+          "properties": {
+            "runtime": { "enum": ["node", "shell"] },
+            "run": { "type": "string" },
+            "file": { "type": "string" },
+            "fixtures": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            },
+            "timeoutMs": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "count": {
+          "type": "object",
+          "oneOf": [
+            { "required": ["equals"] },
+            { "required": ["atLeast"] },
+            { "required": ["atMost"] },
+            { "required": ["between"] }
+          ],
+          "properties": {
+            "region": {
+              "type": "object",
+              "required": ["x", "y", "width", "height"],
+              "properties": {
+                "x": { "type": "integer", "minimum": 0 },
+                "y": { "type": "integer", "minimum": 0 },
+                "width": { "type": "integer", "minimum": 1 },
+                "height": { "type": "integer", "minimum": 1 }
+              },
+              "additionalProperties": false
+            },
+            "matches": { "type": "string" },
+            "equals": { "type": "integer", "minimum": 0 },
+            "atLeast": { "type": "integer", "minimum": 0 },
+            "atMost": { "type": "integer", "minimum": 0 },
+            "between": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 0 },
+              "minItems": 2,
+              "maxItems": 2
+            }
           },
           "additionalProperties": false
         }

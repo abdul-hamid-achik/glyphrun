@@ -36,7 +36,8 @@ const (
 	exitFailed              = 1
 	exitErrored             = 2
 	exitTimedOut            = 3
-	exitUnsupportedTerminal = 6
+	exitContractHash        = 6
+	exitUnsupportedTerminal = 7
 )
 
 type runTimeoutError struct {
@@ -107,6 +108,7 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	if err != nil {
 		return artifacts.RunResult{}, err
 	}
+	runtime.SpecPath = parse.Path
 	resolved := parse.Resolved
 	started := time.Now().UTC()
 	runID := makeRunID(started, resolved.Name)
@@ -118,7 +120,7 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		artifactRoot = filepath.Join(runtime.ProjectRoot, artifactRoot)
 	}
 	runDir := filepath.Join(artifactRoot, runID)
-	writer := artifacts.NewWriter(runDir, artifacts.NewRedactor(runtime.Config.Redaction))
+	writer := artifacts.NewWriter(runDir, buildRedactor(runtime.Config.Redaction, parse.Spec.Redaction))
 	if err := writer.EnsureDirs(); err != nil {
 		return artifacts.RunResult{}, err
 	}
@@ -126,6 +128,7 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	_ = writer.WriteResolvedSpec(resolved)
 
 	state := newRunState(resolved, runtime, writer, opts.UpdateSnapshots, opts.Listener)
+	state.capturePolicy = resolveCapturePolicy(runtime.Config.Artifacts, parse.Spec.Artifacts, artifacts.StatusPassed)
 	if opts.Listener != nil {
 		opts.Listener.OnRunStart(resolved, runID, runDir)
 	}
@@ -214,13 +217,19 @@ type runState struct {
 	session         *ptyrunner.Session
 	updateSnapshots bool
 	listener        ProgressListener
+	// capturePolicy is the resolved per-run policy (project config
+	// + spec override) used to gate which artifacts are written. The
+	// runner populates it once at run start so `finish()` can apply
+	// it without re-resolving.
+	capturePolicy spec.CapturePolicy
 
-	mu        sync.Mutex
-	rawPTY    []byte
-	inputLog  []byte
-	frames    []terminal.Frame
-	termErr   error
-	snapshots map[string]terminal.ScreenSnapshot
+	mu             sync.Mutex
+	rawPTY         []byte
+	inputLog       []byte
+	frames         []terminal.Frame
+	termErr        error
+	snapshots      map[string]terminal.ScreenSnapshot
+	namedArtifacts map[string]artifacts.NamedArtifact
 
 	// rawPTYTruncated is set the first time a PTY output chunk is
 	// dropped because rawPTY has already hit MaxRawLogBytes. finish()
@@ -238,6 +247,7 @@ func newRunState(s spec.Spec, rt config.Runtime, writer *artifacts.Writer, updat
 		updateSnapshots: updateSnapshots,
 		listener:        listener,
 		snapshots:       map[string]terminal.ScreenSnapshot{},
+		namedArtifacts:  map[string]artifacts.NamedArtifact{},
 	}
 }
 
@@ -267,6 +277,9 @@ func (s *runState) startTarget() error {
 	}
 	env["TERM"] = s.spec.Terminal.Profile
 	env["GLYPHRUN"] = "1"
+	// GLYPHRUN_RUN_DIR lets a target process (or a shell `command:` verifier)
+	// reference the run's absolute path without scanning env vars for it.
+	env["GLYPHRUN_RUN_DIR"] = s.writer.RunDir
 	for k, v := range s.spec.Target.Env {
 		env[k] = v
 	}
@@ -362,8 +375,417 @@ func (s *runState) executeStep(ctx context.Context, step spec.Step) (stepExecuti
 		return stepExecutionResult{}, s.emulator.Resize(step.Resize.Cols, step.Resize.Rows)
 	case step.Snapshot != "":
 		return stepExecutionResult{}, s.captureSnapshot(step.Snapshot)
+	case step.Download != nil:
+		return s.executeDownload(ctx, *step.Download)
+	case step.Transform != nil:
+		return s.executeTransform(ctx, *step.Transform)
+	case len(step.Batch) > 0:
+		return s.executeBatch(ctx, step.Batch)
 	default:
 		return stepExecutionResult{}, fmt.Errorf("unsupported step")
+	}
+}
+
+// resolveRuntimePlaceholders replaces every ${artifacts.<name>.path} and
+// ${artifacts.<name>.relativePath} occurrence in `text` with the current
+// value from s.namedArtifacts. Unknown artifact names return a descriptive
+// error so missing wiring is loud, not silent.
+func (s *runState) resolveRuntimePlaceholders(text string) (string, error) {
+	if text == "" {
+		return text, nil
+	}
+	var firstErr error
+	out := runtimePlaceholderPattern.ReplaceAllStringFunc(text, func(match string) string {
+		key := strings.TrimSuffix(strings.TrimPrefix(match, "${"), "}")
+		name, field, ok := splitArtifactKey(key)
+		if !ok {
+			return match
+		}
+		s.mu.Lock()
+		art, found := s.namedArtifacts[name]
+		s.mu.Unlock()
+		if !found {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("artifact %q referenced by %s is not produced by any earlier step", name, match)
+			}
+			return match
+		}
+		switch field {
+		case "path":
+			return art.Path
+		case "relativePath":
+			return art.RelativePath
+		}
+		return match
+	})
+	if firstErr != nil {
+		return "", firstErr
+	}
+	return out, nil
+}
+
+var runtimePlaceholderPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
+
+func splitArtifactKey(key string) (name, field string, ok bool) {
+	const prefix = "artifacts."
+	if !strings.HasPrefix(key, prefix) {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(key, prefix)
+	dot := strings.Index(rest, ".")
+	if dot < 0 {
+		return "", "", false
+	}
+	return rest[:dot], rest[dot+1:], true
+}
+
+// executeDownload captures a file from a known path into the run artifact
+// directory. If `waitFor` is set the runner polls for the file to appear
+// (defaulting to a short timeout). Any ${artifacts.*} placeholders in the
+// path are resolved against the current run state.
+func (s *runState) executeDownload(ctx context.Context, d spec.DownloadStep) (stepExecutionResult, error) {
+	resolved, err := s.resolveRuntimePlaceholders(d.Path)
+	if err != nil {
+		return stepExecutionResult{}, err
+	}
+	timeout := timeoutFromMS(d.TimeoutMS)
+	if d.WaitFor {
+		// Poll for the file to appear, then wait one more tick for
+		// the size to stabilize. A target process that calls
+		// `os.WriteFile` (or `O_TRUNC` + write) has a brief window
+		// where the file exists at 0 bytes; capturing then would
+		// surface an empty artifact. Waiting for size stability across
+		// a poll cycle catches that race without adding a hard sleep.
+		deadline := time.Now().Add(timeout)
+		var prevSize int64 = -1
+		stableTicks := 0
+		for {
+			info, statErr := os.Stat(resolved)
+			if statErr == nil {
+				if info.Size() == prevSize && info.Size() > 0 {
+					stableTicks++
+					if stableTicks >= 1 {
+						break
+					}
+				} else {
+					stableTicks = 0
+					prevSize = info.Size()
+				}
+			}
+			if time.Now().After(deadline) {
+				return stepExecutionResult{}, fmt.Errorf("download timed out after %s waiting for %s", timeout, resolved)
+			}
+			select {
+			case <-ctx.Done():
+				return stepExecutionResult{}, ctx.Err()
+			case <-time.After(25 * time.Millisecond):
+			}
+		}
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return stepExecutionResult{}, fmt.Errorf("download source not found: %w", err)
+	}
+	if info.IsDir() {
+		return stepExecutionResult{}, fmt.Errorf("download source %s is a directory", resolved)
+	}
+	assign := d.Assign
+	if assign == "" {
+		assign = artifactNameFromPath(resolved)
+	}
+	saveAs := d.SaveAs
+	if saveAs == "" {
+		saveAs = filepath.Base(resolved)
+	}
+	relDir := "artifacts/" + assign
+	relPath := relDir + "/" + saveAs
+	absPath := s.writer.Resolve(relPath)
+	src, err := os.ReadFile(resolved)
+	if err != nil {
+		return stepExecutionResult{}, err
+	}
+	if err := s.writer.WriteArtifactBytes(relPath, src); err != nil {
+		return stepExecutionResult{}, err
+	}
+	s.mu.Lock()
+	s.namedArtifacts[assign] = artifacts.NamedArtifact{
+		Kind:         "download",
+		Path:         absPath,
+		RelativePath: relPath,
+	}
+	s.mu.Unlock()
+	_ = s.writer.AppendEvent(event("artifact.download", assign, relPath))
+	return stepExecutionResult{}, nil
+}
+
+// executeTransform runs an external script (Node or shell) that produces a
+// new named artifact. The script receives a JSON context on argv (Node) or
+// via env vars (shell); it must write its output to ctx.output.path. If the
+// script returns a JSON object with `{ "ok": false }` the step fails.
+func (s *runState) executeTransform(ctx context.Context, t spec.TransformStep) (stepExecutionResult, error) {
+	assign := t.Assign
+	if assign == "" {
+		assign = artifactNameFromPath(t.SaveAs)
+	}
+	relDir := "transforms/" + assign
+	relPath := relDir + "/" + filepath.Base(t.SaveAs)
+	absPath := s.writer.Resolve(relPath)
+	absDir := s.writer.Resolve(relDir)
+
+	input, err := s.resolveRuntimePlaceholders(t.Input)
+	if err != nil {
+		return stepExecutionResult{}, err
+	}
+
+	fixtures := map[string]string{}
+	for k, v := range t.Fixtures {
+		resolved, err := s.resolveRuntimePlaceholders(v)
+		if err != nil {
+			return stepExecutionResult{}, err
+		}
+		fixtures[k] = resolved
+	}
+
+	scriptPath := t.File
+	if !filepath.IsAbs(scriptPath) {
+		// Resolve relative to the spec file (matches the convention used
+		// elsewhere in glyphrun: spec-relative paths).
+		scriptPath = filepath.Join(filepath.Dir(s.runtime.SpecPath), scriptPath)
+	}
+
+	runtime := t.Runtime
+	if runtime == "" {
+		runtime = "shell"
+	}
+	timeout := timeoutFromMS(t.TimeoutMS)
+
+	if err := s.runTransformScript(ctx, runtime, scriptPath, input, absPath, absDir, fixtures, timeout); err != nil {
+		return stepExecutionResult{}, err
+	}
+	info, err := os.Stat(absPath)
+	if err != nil {
+		return stepExecutionResult{}, fmt.Errorf("transform did not write %s", absPath)
+	}
+	if info.IsDir() {
+		return stepExecutionResult{}, fmt.Errorf("transform wrote a directory at %s", absPath)
+	}
+
+	s.mu.Lock()
+	s.namedArtifacts[assign] = artifacts.NamedArtifact{
+		Kind:         "transform",
+		Path:         absPath,
+		RelativePath: relPath,
+	}
+	s.mu.Unlock()
+	_ = s.writer.AppendEvent(event("artifact.transform", assign, relPath))
+	return stepExecutionResult{}, nil
+}
+
+// runTransformScript is split out so executeTransform reads as the spec
+// semantics and the OS-process plumbing stays testable. The contract is:
+//
+//	shell:   $GLYPHRUN_INPUT, $GLYPHRUN_OUTPUT, $GLYPHRUN_FIXTURES_JSON
+//	node:    argv[2] is the path to a JSON file with the same context
+//
+// In both cases the script must create the output file at $GLYPHRUN_OUTPUT.
+func (s *runState) runTransformScript(parent context.Context, runtime string, scriptPath string, input string, outputPath string, outputDir string, fixtures map[string]string, timeout time.Duration) error {
+	runCtx, cancel := context.WithTimeout(parent, timeout)
+	defer cancel()
+
+	env := os.Environ()
+	env = append(env,
+		"GLYPHRUN_INPUT="+input,
+		"GLYPHRUN_OUTPUT="+outputPath,
+	)
+	if data, err := json.Marshal(fixtures); err == nil {
+		env = append(env, "GLYPHRUN_FIXTURES_JSON="+string(data))
+	}
+
+	var cmd *exec.Cmd
+	// Ensure the script's working dir and the output's parent dir both
+	// exist; the script itself may run from outputDir (matching the
+	// convention that the cwd is the artifact dir, so relative paths
+	// in the script resolve against the run).
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		return err
+	}
+	switch runtime {
+	case "node":
+		ctxPath, err := writeTransformContextFile(outputDir, transformContext{
+			Input:    input,
+			Output:   outputPath,
+			Fixtures: fixtures,
+			RunDir:   s.writer.RunDir,
+		})
+		if err != nil {
+			return err
+		}
+		cmd = exec.CommandContext(runCtx, "node", scriptPath, ctxPath)
+	default: // "shell"
+		cmd = exec.CommandContext(runCtx, "/bin/sh", "-lc", "\""+scriptPath+"\"")
+	}
+	cmd.Env = env
+	cmd.Dir = outputDir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if runCtx.Err() != nil {
+			return runTimeoutError{Scope: "transform", Timeout: timeout, Message: fmt.Sprintf("transform timed out after %s", timeout)}
+		}
+		return fmt.Errorf("transform %s failed: %v %s", scriptPath, err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+type transformContext struct {
+	Input    string            `json:"input"`
+	Output   string            `json:"output"`
+	Fixtures map[string]string `json:"fixtures"`
+	RunDir   string            `json:"runDir"`
+}
+
+func writeTransformContextFile(dir string, ctx transformContext) (string, error) {
+	data, err := json.MarshalIndent(ctx, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, ".glyphrun-transform-ctx.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// executeBatch queues every press/type/paste/send sub-step into a single
+// PTY write so the target app sees them as one input burst — this is the
+// mechanism that preserves transient TUI state across keystrokes (a
+// command palette, a hover popover, a focused menu). The optional trailing
+// `wait` is the only synchronization point inside the batch.
+func (s *runState) executeBatch(ctx context.Context, steps []spec.Step) (stepExecutionResult, error) {
+	if len(steps) < 2 {
+		return stepExecutionResult{}, fmt.Errorf("batch requires at least 2 sub-steps")
+	}
+	var buf bytes.Buffer
+	trailing := (*spec.WaitStep)(nil)
+	for i, sub := range steps {
+		if sub.Wait != nil {
+			if i != len(steps)-1 {
+				return stepExecutionResult{}, fmt.Errorf("batch wait must be the final sub-step")
+			}
+			w := *sub.Wait
+			trailing = &w
+			continue
+		}
+		var data []byte
+		var err error
+		switch {
+		case sub.Press != "":
+			data, err = input.KeyBytes(sub.Press)
+		case sub.Type != "":
+			data = []byte(sub.Type)
+		case sub.Paste != "":
+			data = []byte(sub.Paste)
+			if bracketedPasteEnabled(s.emulator) {
+				data = input.BracketedPasteBytes(sub.Paste)
+			}
+		case sub.Send != nil:
+			data, err = decodeEscaped(sub.Send.Bytes)
+		default:
+			return stepExecutionResult{}, fmt.Errorf("batch sub-step %d: unsupported action", i+1)
+		}
+		if err != nil {
+			return stepExecutionResult{}, err
+		}
+		buf.Write(data)
+	}
+	if buf.Len() > 0 {
+		if err := s.writeInput(buf.Bytes()); err != nil {
+			return stepExecutionResult{}, err
+		}
+	}
+	if trailing != nil {
+		return stepExecutionResult{}, s.waitFor(ctx, *trailing)
+	}
+	return stepExecutionResult{}, nil
+}
+
+// buildRedactor composes the per-run redactor. The project config
+// supplies the base patterns (config.Redaction) and the spec's
+// `redaction:` block (when present) adds literal value substitutions
+// on top. Both layers are folded into a single redactor so callers
+// don't have to know about the layering.
+//
+// Per-spec patterns are not exposed in the spec schema today (only
+// `values` is), but the helper accepts them anyway so a future
+// schema bump doesn't require a runner change.
+func buildRedactor(cfg config.Redaction, specRedaction *spec.Redaction) artifacts.Redactor {
+	r := artifacts.NewRedactor(cfg)
+	if specRedaction == nil {
+		return r
+	}
+	if len(specRedaction.Values) > 0 {
+		r = r.WithValues(specRedaction.Values)
+	}
+	return r
+}
+
+// resolveCapturePolicy composes the effective capture policy for a
+// run. The project config supplies the base (booleans); the spec's
+// `artifacts:` block overrides per channel. An empty CaptureMode
+// inherits from the base.
+func resolveCapturePolicy(base config.Artifacts, specPolicy *spec.CapturePolicy, status artifacts.RunStatus) spec.CapturePolicy {
+	out := spec.CapturePolicy{
+		Snapshots:      boolToMode(base.Snapshots),
+		Frames:         boolToMode(base.Frames),
+		RawLog:         boolToMode(base.RawLog),
+		FinalScreen:    boolToMode(base.FinalScreen),
+		AgentContext:   boolToMode(base.AgentContext),
+		NamedArtifacts: spec.CaptureAlways, // named artifacts are always-on; they're the spec's contract
+	}
+	if specPolicy == nil {
+		return out
+	}
+	if specPolicy.Snapshots != "" {
+		out.Snapshots = specPolicy.Snapshots
+	}
+	if specPolicy.Frames != "" {
+		out.Frames = specPolicy.Frames
+	}
+	if specPolicy.RawLog != "" {
+		out.RawLog = specPolicy.RawLog
+	}
+	if specPolicy.FinalScreen != "" {
+		out.FinalScreen = specPolicy.FinalScreen
+	}
+	if specPolicy.AgentContext != "" {
+		out.AgentContext = specPolicy.AgentContext
+	}
+	return out
+}
+
+func boolToMode(b bool) spec.CaptureMode {
+	if b {
+		return spec.CaptureAlways
+	}
+	return spec.CaptureNever
+}
+
+// shouldCapture answers "should this artifact channel be written
+// for the current run?" with the per-channel capture mode and the
+// final run status. An empty mode is treated as "never" so a spec
+// that explicitly disables a channel is honored even if the
+// project config turns it on.
+func shouldCapture(mode spec.CaptureMode, status artifacts.RunStatus) bool {
+	switch mode {
+	case spec.CaptureAlways:
+		return true
+	case spec.CaptureOnFailure:
+		return status == artifacts.StatusFailed || status == artifacts.StatusErrored
+	default:
+		return false
 	}
 }
 
@@ -431,31 +853,44 @@ func (s *runState) checkWait(wait spec.WaitStep) (bool, string) {
 	return false, "wait has no condition"
 }
 
+// outcomeEval is the result of evaluating a single outcome. It bundles
+// the user-facing OutcomeResult with any raw evidence payload the
+// verifier returned (e.g. a `script:` verifier's evidence object) so
+// evaluateOutcomes can forward it to WriteOutcomeRaw without losing it
+// between iterations.
+type outcomeEval struct {
+	result artifacts.OutcomeResult
+	raw    any
+}
+
 func (s *runState) evaluateOutcomes(ctx context.Context) []artifacts.OutcomeResult {
 	if s.listener != nil {
 		s.listener.OnOutcomesStart(len(s.spec.Outcomes))
 	}
 	results := make([]artifacts.OutcomeResult, 0, len(s.spec.Outcomes))
 	for _, outcome := range s.spec.Outcomes {
-		result := s.evaluateOutcome(ctx, outcome)
-		results = append(results, result)
+		eval := s.evaluateOutcome(ctx, outcome)
+		results = append(results, eval.result)
 		if s.listener != nil {
-			s.listener.OnOutcomeFinish(outcome, result)
+			s.listener.OnOutcomeFinish(outcome, eval.result)
 		}
-		_ = s.writer.WriteOutcome(result, map[string]any{
+		_ = s.writer.WriteOutcome(eval.result, map[string]any{
 			"id":     outcome.ID,
 			"verify": outcome.Verify,
 		})
-		if result.Status == artifacts.OutcomePassed {
-			_ = s.writer.AppendEvent(event("outcome.passed", outcome.ID, result.Message))
+		if eval.result.EvidenceRaw != "" && eval.raw != nil {
+			_ = s.writer.WriteOutcomeRaw(outcome.ID, eval.raw)
+		}
+		if eval.result.Status == artifacts.OutcomePassed {
+			_ = s.writer.AppendEvent(event("outcome.passed", outcome.ID, eval.result.Message))
 		} else {
-			_ = s.writer.AppendEvent(event("outcome.failed", outcome.ID, result.Message))
+			_ = s.writer.AppendEvent(event("outcome.failed", outcome.ID, eval.result.Message))
 		}
 	}
 	return results
 }
 
-func (s *runState) evaluateOutcome(ctx context.Context, outcome spec.Outcome) artifacts.OutcomeResult {
+func (s *runState) evaluateOutcome(ctx context.Context, outcome spec.Outcome) outcomeEval {
 	timeout := timeoutFromMS(outcome.TimeoutMS)
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
@@ -464,69 +899,292 @@ func (s *runState) evaluateOutcome(ctx context.Context, outcome spec.Outcome) ar
 	var last string
 	for {
 		if err := s.terminalError(); err != nil {
-			return artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: err.Error(), Evidence: "outcomes/" + outcome.ID + ".md"}
+			return outcomeEval{result: artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: err.Error(), Evidence: "outcomes/" + outcome.ID + ".md"}}
 		}
-		ok, message := s.checkVerify(ctx, outcome.Verify, outcome.Normalize)
+		ok, message, raw := s.checkVerifyWithEvidence(ctx, outcome.Verify, outcome.Normalize)
 		if ok {
-			return artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomePassed, Message: message, Evidence: "outcomes/" + outcome.ID + ".md"}
+			result := artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomePassed, Message: message, Evidence: "outcomes/" + outcome.ID + ".md"}
+			if raw != nil {
+				result.EvidenceRaw = "outcomes/" + outcome.ID + ".raw.json"
+			}
+			return outcomeEval{result: result, raw: raw}
 		}
 		last = message
 		select {
 		case <-ctx.Done():
-			return artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: ctx.Err().Error(), Evidence: "outcomes/" + outcome.ID + ".md"}
+			return outcomeEval{result: artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: ctx.Err().Error(), Evidence: "outcomes/" + outcome.ID + ".md"}}
 		case <-deadline.C:
-			return artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: fmt.Sprintf("timed out after %s: %s", timeout, last), Evidence: "outcomes/" + outcome.ID + ".md"}
+			return outcomeEval{result: artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: fmt.Sprintf("timed out after %s: %s", timeout, last), Evidence: "outcomes/" + outcome.ID + ".md"}}
 		case <-tick.C:
 		}
 	}
 }
 
 func (s *runState) checkVerify(ctx context.Context, verify spec.Verify, normalizeOverride *spec.Normalize) (bool, string) {
+	ok, message, _ := s.checkVerifyWithEvidence(ctx, verify, normalizeOverride)
+	return ok, message
+}
+
+// checkVerifyWithEvidence is the full-fidelity variant of checkVerify; it
+// also returns the raw evidence payload when a verifier produced one (e.g.
+// a `script:` verifier's return object). The caller (evaluateOutcome)
+// writes the evidence to outcomes/<id>.raw.json when present.
+func (s *runState) checkVerifyWithEvidence(ctx context.Context, verify spec.Verify, normalizeOverride *spec.Normalize) (bool, string, any) {
 	screen := s.emulator.Screen()
 	normalize := s.normalizeConfigWith(normalizeOverride)
 	switch {
 	case verify.Screen != nil:
-		return checkScreen(s.screenTextWithNormalize(normalize), *verify.Screen)
+		ok, message := checkScreen(s.screenTextWithNormalize(normalize), *verify.Screen)
+		return ok, message, nil
 	case verify.Region != nil:
 		cond := verify.Region
-		return checkScreen(normalizeText(screen.Region(cond.X, cond.Y, cond.Width, cond.Height).Text(), normalize), spec.ScreenCondition{
+		ok, message := checkScreen(normalizeText(screen.Region(cond.X, cond.Y, cond.Width, cond.Height).Text(), normalize), spec.ScreenCondition{
 			Contains:    cond.Contains,
 			NotContains: cond.NotContains,
 			Regex:       cond.Regex,
 		})
+		return ok, message, nil
 	case verify.Cell != nil:
 		cell := screen.Cell(verify.Cell.X, verify.Cell.Y)
 		if verify.Cell.Char != "" && cell.Char != verify.Cell.Char {
-			return false, fmt.Sprintf("expected cell %d,%d to be %q, got %q", verify.Cell.X, verify.Cell.Y, verify.Cell.Char, cell.Char)
+			return false, fmt.Sprintf("expected cell %d,%d to be %q, got %q", verify.Cell.X, verify.Cell.Y, verify.Cell.Char, cell.Char), nil
 		}
 		if verify.Cell.Style != nil {
 			if ok, message := checkStyle(cell.Style, *verify.Cell.Style); !ok {
-				return false, fmt.Sprintf("cell %d,%d style mismatch: %s", verify.Cell.X, verify.Cell.Y, message)
+				return false, fmt.Sprintf("cell %d,%d style mismatch: %s", verify.Cell.X, verify.Cell.Y, message), nil
 			}
 		}
-		return true, "cell matched"
+		return true, "cell matched", nil
 	case verify.Cursor != nil:
 		cursor := screen.Cursor()
 		if cursor.X != verify.Cursor.X || cursor.Y != verify.Cursor.Y {
-			return false, fmt.Sprintf("expected cursor %d,%d, got %d,%d", verify.Cursor.X, verify.Cursor.Y, cursor.X, cursor.Y)
+			return false, fmt.Sprintf("expected cursor %d,%d, got %d,%d", verify.Cursor.X, verify.Cursor.Y, cursor.X, cursor.Y), nil
 		}
 		if verify.Cursor.Visible != nil && cursor.Visible != *verify.Cursor.Visible {
-			return false, fmt.Sprintf("expected cursor visible=%v, got %v", *verify.Cursor.Visible, cursor.Visible)
+			return false, fmt.Sprintf("expected cursor visible=%v, got %v", *verify.Cursor.Visible, cursor.Visible), nil
 		}
-		return true, "cursor matched"
+		return true, "cursor matched", nil
 	case verify.Process != nil:
-		return checkProcess(s.session.ExitState(), *verify.Process)
+		ok, message := checkProcess(s.session.ExitState(), *verify.Process)
+		return ok, message, nil
 	case verify.Snapshot != nil:
-		return s.checkSnapshot(*verify.Snapshot)
+		ok, message := s.checkSnapshot(*verify.Snapshot)
+		return ok, message, nil
 	case verify.Command != nil:
 		err := s.runShellCommand(ctx, verify.Command.Run, verify.Command.Cwd, verify.Command.TimeoutMS)
 		if err != nil {
-			return false, err.Error()
+			return false, err.Error(), nil
 		}
-		return true, "command verifier passed"
+		return true, "command verifier passed", nil
+	case verify.File != nil:
+		ok, message, evidence := s.checkFile(ctx, *verify.File)
+		return ok, message, evidence
+	case verify.Script != nil:
+		ok, message, evidence := s.checkScript(ctx, *verify.Script)
+		return ok, message, evidence
+	case verify.Count != nil:
+		ok, message, evidence := s.checkCount(screen, *verify.Count)
+		return ok, message, evidence
 	default:
-		return false, "unsupported verifier"
+		return false, "unsupported verifier", nil
 	}
+}
+
+// checkFile polls the filesystem for a file matching the verifier's glob.
+// The glob is resolved relative to the spec's directory; wildcards are
+// supported in the filename portion. When `contains` is set, the matched
+// file's text is also required to include that substring.
+func (s *runState) checkFile(ctx context.Context, cond spec.FileCondition) (bool, string, any) {
+	glob := cond.Glob
+	if !filepath.IsAbs(glob) {
+		glob = filepath.Join(filepath.Dir(s.runtime.SpecPath), glob)
+	}
+	timeout := timeoutFromMS(cond.TimeoutMS)
+	deadline := time.Now().Add(timeout)
+	var lastErr string
+	for {
+		matches, err := filepath.Glob(glob)
+		if err != nil {
+			return false, fmt.Sprintf("invalid glob %q: %v", cond.Glob, err), nil
+		}
+		if len(matches) > 0 {
+			match := matches[0]
+			if cond.Contains != "" {
+				data, err := os.ReadFile(match)
+				if err != nil {
+					return false, fmt.Sprintf("matched %s but read failed: %v", match, err), nil
+				}
+				if !strings.Contains(string(data), cond.Contains) {
+					return false, fmt.Sprintf("matched %s but text does not contain %q", match, cond.Contains), nil
+				}
+			}
+			return true, fmt.Sprintf("file %q matched (%d candidate(s))", cond.Glob, len(matches)), map[string]any{
+				"glob":     cond.Glob,
+				"matched":  match,
+				"all":      matches,
+				"contains": cond.Contains,
+			}
+		}
+		if time.Now().After(deadline) {
+			return false, fmt.Sprintf("no file matching %q appeared within %s (last error: %s)", cond.Glob, timeout, lastErr), nil
+		}
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err().Error(), nil
+		case <-time.After(25 * time.Millisecond):
+		}
+	}
+}
+
+// checkScript runs the verifier's external script and parses the JSON
+// `{ ok, evidence }` response. The runner pre-creates the artifact dir
+// and passes the context via env (shell) or argv[2] (Node). The returned
+// `evidence` is forwarded to outcomes/<id>.raw.json when non-nil.
+func (s *runState) checkScript(ctx context.Context, cond spec.ScriptCondition) (bool, string, any) {
+	timeout := timeoutFromMS(cond.TimeoutMS)
+	if cond.File == "" && cond.Run == "" {
+		return false, "script must set file or run", nil
+	}
+
+	specDir := filepath.Dir(s.runtime.SpecPath)
+	resolvedFixtures := map[string]string{}
+	for k, v := range cond.Fixtures {
+		fv, err := s.resolveRuntimePlaceholders(v)
+		if err != nil {
+			return false, fmt.Sprintf("script fixture %s: %v", k, err), nil
+		}
+		resolvedFixtures[k] = fv
+	}
+
+	runtime := cond.Runtime
+	if runtime == "" {
+		runtime = "node"
+	}
+	if cond.Run != "" && runtime == "node" {
+		// inline `run` + node is allowed; the body is the script.
+	}
+
+	var (
+		scriptPath string
+		inlineBody string
+		cleanup    func()
+	)
+	if cond.File != "" {
+		scriptPath = cond.File
+		if !filepath.IsAbs(scriptPath) {
+			scriptPath = filepath.Join(specDir, scriptPath)
+		}
+	} else {
+		// inline `run` — write to a temp file the runner owns
+		dir, err := os.MkdirTemp(s.writer.RunDir, "script-")
+		if err != nil {
+			return false, fmt.Sprintf("script: create temp dir: %v", err), nil
+		}
+		ext := ".js"
+		if runtime == "shell" {
+			ext = ".sh"
+		}
+		p := filepath.Join(dir, "inline"+ext)
+		inlineBody = cond.Run
+		if err := os.WriteFile(p, []byte(inlineBody), 0o644); err != nil {
+			return false, fmt.Sprintf("script: write inline body: %v", err), nil
+		}
+		scriptPath = p
+		cleanup = func() { _ = os.RemoveAll(dir) }
+	}
+	if cleanup != nil {
+		defer cleanup()
+	}
+
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	env := append(os.Environ(),
+		"GLYPHRUN_RUN_DIR="+s.writer.RunDir,
+		"GLYPHRUN=1",
+	)
+	if data, err := json.Marshal(resolvedFixtures); err == nil {
+		env = append(env, "GLYPHRUN_FIXTURES_JSON="+string(data))
+	}
+
+	var cmd *exec.Cmd
+	switch runtime {
+	case "node":
+		ctxPath, err := writeVerifierContextFile(s.writer.RunDir, verifierContext{
+			Input:    "",
+			Fixtures: resolvedFixtures,
+			RunDir:   s.writer.RunDir,
+			SpecDir:  specDir,
+		})
+		if err != nil {
+			return false, fmt.Sprintf("script: write context: %v", err), nil
+		}
+		cmd = exec.CommandContext(runCtx, "node", scriptPath, ctxPath)
+	default: // "shell"
+		cmd = exec.CommandContext(runCtx, "/bin/sh", scriptPath)
+	}
+	cmd.Env = env
+	cmd.Dir = s.writer.RunDir
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if runCtx.Err() != nil {
+			return false, fmt.Sprintf("script timed out after %s", timeout), nil
+		}
+		return false, fmt.Sprintf("script %s failed: %v %s", scriptPath, err, strings.TrimSpace(stderr.String())), nil
+	}
+
+	// Parse the script's stdout as JSON. We accept the cairn shape
+	// (`{ ok, evidence }`); a non-JSON output is treated as a verifier
+	// error so a buggy script is loud, not silent.
+	rawOut := strings.TrimSpace(stdout.String())
+	if rawOut == "" {
+		return false, "script returned no output", nil
+	}
+	var result struct {
+		OK       bool        `json:"ok"`
+		Evidence interface{} `json:"evidence"`
+	}
+	if err := json.Unmarshal([]byte(rawOut), &result); err != nil {
+		return false, fmt.Sprintf("script returned non-JSON output: %s", truncateScriptOutput(rawOut, 200)), nil
+	}
+	if !result.OK {
+		message := "script verifier returned ok=false"
+		if result.Evidence != nil {
+			if data, err := json.Marshal(result.Evidence); err == nil {
+				message += ": " + string(data)
+			}
+		}
+		return false, message, result.Evidence
+	}
+	return true, "script verifier passed", result.Evidence
+}
+
+type verifierContext struct {
+	Input    string            `json:"input"`
+	Fixtures map[string]string `json:"fixtures"`
+	RunDir   string            `json:"runDir"`
+	SpecDir  string            `json:"specDir"`
+}
+
+func writeVerifierContextFile(runDir string, ctx verifierContext) (string, error) {
+	data, err := json.MarshalIndent(ctx, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(runDir, ".glyphrun-verifier-ctx.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func truncateScriptOutput(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 func (s *runState) checkSnapshot(cond spec.SnapshotCondition) (bool, string) {
@@ -732,7 +1390,18 @@ func (s *runState) runShellCommand(ctx context.Context, command string, cwd stri
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, "/bin/sh", "-lc", command)
 	cmd.Dir = resolveProjectPath(s.runtime.ProjectRoot, cwd)
-	cmd.Env = os.Environ()
+	// Start from the process env and layer on the active environment
+	// (config + target overrides + the GLYPHRUN_RUN_DIR/Glyphrun flags
+	// that the runner injects for the target). This lets a `command:`
+	// verifier reference $GLYPHRUN_RUN_DIR / ${env.*} / ${vars.*} the
+	// same way an outcome can.
+	cmd.Env = append(os.Environ(),
+		"GLYPHRUN_RUN_DIR="+s.writer.RunDir,
+		"GLYPHRUN=1",
+	)
+	for k, v := range s.runtime.Env {
+		cmd.Env = append(cmd.Env, k+"="+v)
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -807,21 +1476,25 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		ExitCode:      exitCode,
 		Artifacts:     map[string]string{"events": "events.ndjson", "environmentDiagnostic": "diagnostics/environment.md"},
 	}
-	if s.runtime.Config.Artifacts.AgentContext {
+	// Use the policy the runner resolved at start (project config +
+	// spec override). It's in s.capturePolicy so the finish() function
+	// doesn't have to re-resolve.
+	policy := s.capturePolicy
+	if shouldCapture(policy.AgentContext, status) {
 		result.Artifacts["agentContext"] = "agent_context.md"
 	}
-	if s.runtime.Config.Artifacts.FinalScreen {
+	if shouldCapture(policy.FinalScreen, status) {
 		result.Artifacts["finalScreenText"] = "screens/final.txt"
 		result.Artifacts["finalScreenJSON"] = "screens/final.json"
 	}
-	if s.runtime.Config.Artifacts.Frames {
+	if shouldCapture(policy.Frames, status) {
 		result.Artifacts["frames"] = "frames/frames.ndjson"
 	}
-	if s.runtime.Config.Artifacts.RawLog {
+	if shouldCapture(policy.RawLog, status) {
 		result.Artifacts["rawPtyLog"] = "raw/pty.raw.log"
 		result.Artifacts["inputRawLog"] = "raw/input.raw.log"
 	}
-	if s.runtime.Config.Artifacts.Snapshots {
+	if shouldCapture(policy.Snapshots, status) {
 		s.mu.Lock()
 		snapshotNames := make([]string, 0, len(s.snapshots))
 		for name := range s.snapshots {
@@ -833,6 +1506,25 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 			result.Artifacts["snapshot:"+name] = "snapshots/" + artifacts.SafeName(name) + ".txt"
 		}
 	}
+	// Surface named artifacts in the run result so agents reading run.json
+	// can resolve ${artifacts.X.path} / .relativePath without scanning the
+	// artifact map. A separate map keeps the artifact index readable.
+	s.mu.Lock()
+	named := make(map[string]artifacts.NamedArtifact, len(s.namedArtifacts))
+	names := make([]string, 0, len(s.namedArtifacts))
+	for name, art := range s.namedArtifacts {
+		named[name] = art
+		names = append(names, name)
+	}
+	s.mu.Unlock()
+	if len(named) > 0 {
+		sort.Strings(names)
+		result.NamedArtifacts = named
+		for _, name := range names {
+			art := named[name]
+			result.Artifacts["artifact:"+name] = art.RelativePath
+		}
+	}
 	if diagnostic != "" {
 		result.Artifacts["failureDiagnostic"] = "diagnostics/failure.md"
 		_ = s.writer.WriteDiagnostic("failure", "## Failure\n\n"+diagnostic+"\n\n## Final Screen\n\n```text\n"+finalSnapshot.Text+"\n```\n")
@@ -840,7 +1532,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		result.Artifacts["failureDiagnostic"] = "diagnostics/failure.md"
 		_ = s.writer.WriteDiagnostic("failure", renderOutcomeFailureDiagnostic(outcomes, finalSnapshot.Text))
 	}
-	if s.runtime.Config.Artifacts.FinalScreen {
+	if shouldCapture(policy.FinalScreen, status) {
 		_ = s.writer.WriteFinalScreen(finalSnapshot)
 	}
 	s.mu.Lock()
@@ -855,11 +1547,11 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		rawPTY = append(rawPTY, []byte(marker)...)
 		_ = s.writer.AppendEvent(event("pty.truncated", "", fmt.Sprintf("raw PTY log truncated at %d bytes", max)))
 	}
-	if s.runtime.Config.Artifacts.RawLog {
+	if shouldCapture(policy.RawLog, status) {
 		_ = s.writer.WriteRawPTY(rawPTY)
 		_ = s.writer.WriteInputLog(inputLog)
 	}
-	if s.runtime.Config.Artifacts.Frames {
+	if shouldCapture(policy.Frames, status) {
 		_ = s.writer.WriteFrames(frames)
 	}
 	_ = s.writer.WriteDiagnostic("environment", renderEnvironmentDiagnostic(s.runtime, s.spec, result))
@@ -870,11 +1562,54 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	} else {
 		_ = s.writer.AppendEvent(event("run.errored", s.spec.Name, diagnostic))
 	}
-	if s.runtime.Config.Artifacts.AgentContext {
+	if shouldCapture(policy.AgentContext, status) {
 		_ = s.writer.WriteAgentContext(s.spec, result, finalSnapshot.Text, s.writer.RecentEvents(12))
 	}
 	_ = s.writer.WriteOutcomesIndex(result)
 	_ = s.writer.WriteRun(result)
+	// Retention: auto-prune older runs when configured. Best-effort —
+	// a prune failure is logged as an event so the agent context
+	// surfaces it, but never fails the run. (See cairn's retention
+	// pattern: a passing run that bombs on disk cleanup is a worse
+	// surprise than a passing run that leaves a few extra runs.)
+	artifactRoot := ""
+	if s.writer != nil {
+		artifactRoot = filepath.Dir(s.writer.RunDir)
+	}
+	if keepRuns := s.runtime.Config.Retention.KeepRuns; keepRuns > 0 && artifactRoot != "" {
+		if report, pruneErr := artifacts.PruneRuns(artifactRoot, keepRuns); pruneErr != nil {
+			_ = s.writer.AppendEvent(event("retention.error", "", pruneErr.Error()))
+		} else if report.Pruned > 0 {
+			_ = s.writer.AppendEvent(event("retention.pruned", "", fmt.Sprintf("pruned %d, kept %d", report.Pruned, report.Kept)))
+		}
+	}
+	// Last-failed tracking: write this spec's name to .last-failed.txt
+	// at the artifact root when the run didn't pass. The list is
+	// rebuilt (not appended) by the next run, so a spec that
+	// subsequently passes drops off the list automatically.
+	if artifactRoot != "" {
+		existing, _ := artifacts.ReadLastFailed(artifactRoot)
+		switch status {
+		case artifacts.StatusFailed, artifacts.StatusErrored:
+			// Add (or keep) the failing name.
+			existing = append(existing, s.spec.Name)
+			if err := artifacts.WriteLastFailed(artifactRoot, existing); err != nil {
+				_ = s.writer.AppendEvent(event("lastfailed.error", "", err.Error()))
+			}
+		case artifacts.StatusPassed:
+			// Drop the passing name so `--rerun-failed` doesn't keep
+			// replaying a now-passing spec.
+			filtered := existing[:0]
+			for _, n := range existing {
+				if n != s.spec.Name {
+					filtered = append(filtered, n)
+				}
+			}
+			if err := artifacts.WriteLastFailed(artifactRoot, filtered); err != nil {
+				_ = s.writer.AppendEvent(event("lastfailed.error", "", err.Error()))
+			}
+		}
+	}
 	if s.listener != nil {
 		s.listener.OnRunEnd(result)
 	}
@@ -965,6 +1700,75 @@ func checkScreen(text string, cond spec.ScreenCondition) (bool, string) {
 	default:
 		return false, "screen condition is empty"
 	}
+}
+
+// checkCount asserts the count of cells in a region. The default
+// region is the full screen. The matcher picks which cells to count:
+// "nonEmpty" (default) counts non-blank cells, a single rune in
+// `matches` counts cells equal to that rune. The comparator is
+// exactly one of `equals` / `atLeast` / `atMost` / `between`. The
+// terminal-shaped sibling of cairn's `count:` verifier: cairn counts
+// DOM nodes by role, glyphrun counts cells by rune. Both feed the
+// same insight — "exactly N error rows must be visible after the
+// action" — using the model their runner already exposes.
+func (s *runState) checkCount(screen terminal.Screen, cond spec.CountCondition) (bool, string, any) {
+	var cells []terminal.Cell
+	if cond.Region != nil {
+		cells = screen.Region(cond.Region.X, cond.Region.Y, cond.Region.Width, cond.Region.Height).Cells()
+	} else {
+		size := screen.Size()
+		cells = screen.Region(0, 0, size.Cols, size.Rows).Cells()
+	}
+	var matched int
+	switch {
+	case cond.Matches == "" || cond.Matches == "nonEmpty":
+		for _, c := range cells {
+			if c.Char != "" && c.Char != " " {
+				matched++
+			}
+		}
+	case len(cond.Matches) == 1:
+		needle := cond.Matches
+		for _, c := range cells {
+			if c.Char == needle {
+				matched++
+			}
+		}
+	default:
+		return false, fmt.Sprintf("count.matches must be a single character or \"nonEmpty\", got %q", cond.Matches), nil
+	}
+	comps := 0
+	if cond.Equals != nil {
+		comps++
+		if matched != *cond.Equals {
+			return false, fmt.Sprintf("expected exactly %d matched cells, got %d", *cond.Equals, matched), map[string]any{"matched": matched, "comparator": "equals", "expected": *cond.Equals}
+		}
+	}
+	if cond.AtLeast != nil {
+		comps++
+		if matched < *cond.AtLeast {
+			return false, fmt.Sprintf("expected at least %d matched cells, got %d", *cond.AtLeast, matched), map[string]any{"matched": matched, "comparator": "atLeast", "expected": *cond.AtLeast}
+		}
+	}
+	if cond.AtMost != nil {
+		comps++
+		if matched > *cond.AtMost {
+			return false, fmt.Sprintf("expected at most %d matched cells, got %d", *cond.AtMost, matched), map[string]any{"matched": matched, "comparator": "atMost", "expected": *cond.AtMost}
+		}
+	}
+	if cond.Between != nil {
+		comps++
+		if matched < cond.Between[0] || matched > cond.Between[1] {
+			return false, fmt.Sprintf("expected between %d and %d matched cells, got %d", cond.Between[0], cond.Between[1], matched), map[string]any{"matched": matched, "comparator": "between", "expected": cond.Between}
+		}
+	}
+	if comps == 0 {
+		return false, "count condition has no comparator (equals / atLeast / atMost / between)", nil
+	}
+	if comps > 1 {
+		return false, "count condition has multiple comparators; pick exactly one of equals / atLeast / atMost / between", nil
+	}
+	return true, fmt.Sprintf("count matched: %d cells", matched), map[string]any{"matched": matched, "comparator": "passed", "expected": matched}
 }
 
 func checkStyle(actual terminal.Style, expected spec.Style) (bool, string) {
@@ -1077,6 +1881,44 @@ func alternateScreenState(emulator terminal.Emulator) (active bool, used bool) {
 
 func event(kind string, name string, info string) artifacts.Event {
 	return artifacts.Event{TS: time.Now().UTC().Format(time.RFC3339Nano), Type: kind, Name: name, Info: info}
+}
+
+// artifactNameFromPath produces a stable, snake_case-ish assign name for
+// unnamed download/transform steps. Empty input falls back to "artifact".
+func artifactNameFromPath(p string) string {
+	base := filepath.Base(p)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	name = strings.ToLower(name)
+	if name == "" || name == "." || name == "/" {
+		return "artifact"
+	}
+	var b strings.Builder
+	lastWasUnderscore := false
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastWasUnderscore = false
+		case r >= 'A' && r <= 'Z':
+			b.WriteRune(r + 32) // lowercase without importing strings just for this
+			lastWasUnderscore = false
+		default:
+			if !lastWasUnderscore {
+				b.WriteByte('_')
+				lastWasUnderscore = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "_")
+	if out == "" {
+		return "artifact"
+	}
+	// Assign names must start with a letter (see validArtifactAssign).
+	if out[0] >= '0' && out[0] <= '9' {
+		out = "a_" + out
+	}
+	return out
 }
 
 func describeStep(step spec.Step) string {

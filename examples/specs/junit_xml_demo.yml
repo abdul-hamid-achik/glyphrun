@@ -1,0 +1,55 @@
+version: 1
+name: junit_xml_demo
+
+# Minimal spec used by the `task example:junit` helper. It exists to
+# exercise the --junit flag end-to-end so contributors can verify the
+# JUnit XML output is well-formed and surfaces failures correctly.
+#
+# Run with:
+#   ./bin/glyph run examples/specs/junit_xml_demo.yml \
+#     --junit reports/glyph.xml --format md
+# then `cat reports/glyph.xml` to see the report.
+
+metadata:
+  feature: ci-integration
+  owner: release
+  priority: normal
+  tags:
+    - junit
+    - example
+
+intent: |
+  a tiny pass-and-quit spec used to validate the --junit flag.
+
+target:
+  cmd: ["/bin/sh", "-lc", "printf 'ready\\n'; read line"]
+  cwd: "."
+
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 3000
+  - type: "q"
+  - press: "enter"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000
+
+outcomes:
+  - id: ready_visible
+    description: the shell printed ready
+    verify:
+      screen:
+        contains: "ready"
+  - id: clean_exit
+    description: the shell exited with status 0
+    verify:
+      process:
+        exitCode: 0

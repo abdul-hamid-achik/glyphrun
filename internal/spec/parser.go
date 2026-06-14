@@ -182,6 +182,13 @@ func expandImports(s Spec, specPath string, opts ParseOptions) (Spec, error) {
 
 var placeholderPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
+// IsRuntimePlaceholder reports whether a placeholder key refers to a
+// runtime-resolved value (currently only the artifact namespace) that the
+// parser must leave intact and the runner resolves just before each step.
+func IsRuntimePlaceholder(key string) bool {
+	return strings.HasPrefix(key, "artifacts.")
+}
+
 func SubstitutePlaceholders(text string, filePath string, opts ParseOptions) (string, error) {
 	projectRoot := opts.ProjectRoot
 	if projectRoot == "" {
@@ -190,6 +197,12 @@ func SubstitutePlaceholders(text string, filePath string, opts ParseOptions) (st
 	var missing []string
 	out := placeholderPattern.ReplaceAllStringFunc(text, func(match string) string {
 		key := strings.TrimSuffix(strings.TrimPrefix(match, "${"), "}")
+		// Artifact placeholders are resolved at run time, not parse time —
+		// an earlier step's download/transform may populate them between
+		// the parse step and the runner dispatch.
+		if IsRuntimePlaceholder(key) {
+			return match
+		}
 		switch {
 		case key == "projectRoot":
 			return projectRoot

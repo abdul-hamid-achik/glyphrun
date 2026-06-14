@@ -36,6 +36,10 @@
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
+    "namedArtifacts": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/namedArtifact" }
+    },
     "runDir": { "type": "string", "minLength": 1 },
     "exitCode": { "type": "integer" }
   },
@@ -78,7 +82,18 @@
         "id": { "type": "string", "minLength": 1 },
         "status": { "enum": ["passed", "failed"] },
         "message": { "type": "string" },
-        "evidence": { "type": "string" }
+        "evidence": { "type": "string" },
+        "evidenceRaw": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "namedArtifact": {
+      "type": "object",
+      "required": ["kind", "path", "relativePath"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "relativePath": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     }

@@ -228,9 +228,58 @@ func stepSummary(step spec.Step) string {
 		return prefix + "snapshot " + step.Snapshot
 	case step.Use != "":
 		return prefix + "use " + step.Use
+	case step.Download != nil:
+		return prefix + downloadSummary(*step.Download)
+	case step.Transform != nil:
+		return prefix + transformSummary(*step.Transform)
+	case len(step.Batch) > 0:
+		return prefix + batchSummary(step.Batch)
 	default:
 		return prefix + "unknown"
 	}
+}
+
+func downloadSummary(d spec.DownloadStep) string {
+	assign := d.Assign
+	if assign == "" {
+		assign = "auto"
+	}
+	tag := "download -> " + assign
+	if d.WaitFor {
+		tag += " (wait)"
+	}
+	return tag
+}
+
+func transformSummary(t spec.TransformStep) string {
+	assign := t.Assign
+	if assign == "" {
+		assign = "auto"
+	}
+	runtime := t.Runtime
+	if runtime == "" {
+		runtime = "shell"
+	}
+	return fmt.Sprintf("transform(%s) -> %s", runtime, assign)
+}
+
+func batchSummary(steps []spec.Step) string {
+	parts := make([]string, 0, len(steps))
+	for _, sub := range steps {
+		switch {
+		case sub.Press != "":
+			parts = append(parts, "press "+sub.Press)
+		case sub.Type != "":
+			parts = append(parts, "type "+strconvQuote(sub.Type))
+		case sub.Paste != "":
+			parts = append(parts, "paste "+strconvQuote(sub.Paste))
+		case sub.Send != nil:
+			parts = append(parts, "send")
+		case sub.Wait != nil:
+			parts = append(parts, "wait")
+		}
+	}
+	return "batch[" + strings.Join(parts, " | ") + "]"
 }
 
 func waitSummary(wait spec.WaitStep) string {

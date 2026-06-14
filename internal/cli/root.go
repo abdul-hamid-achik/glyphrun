@@ -74,5 +74,9 @@ func newRootCommand(opts *globalOptions) *cobra.Command {
 	cmd.AddCommand(newExplainCommand(opts))
 	cmd.AddCommand(newDoctorCommand(opts))
 	cmd.AddCommand(newMCPCommand(opts))
+	cmd.AddCommand(newListCommand(opts))
+	cmd.AddCommand(newImportCommand(opts))
+	cmd.AddCommand(newExportCommand(opts))
+	cmd.AddCommand(newCleanCommand(opts))
 	return cmd
 }

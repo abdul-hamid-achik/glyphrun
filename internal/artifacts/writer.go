@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -31,6 +32,8 @@ func (w *Writer) EnsureDirs() error {
 		filepath.Join(w.RunDir, "snapshots"),
 		filepath.Join(w.RunDir, "outcomes"),
 		filepath.Join(w.RunDir, "diagnostics"),
+		filepath.Join(w.RunDir, "artifacts"),
+		filepath.Join(w.RunDir, "transforms"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
@@ -131,6 +134,19 @@ func (w *Writer) WriteOutcome(result OutcomeResult, raw any) error {
 	return nil
 }
 
+// WriteOutcomeRaw writes the raw evidence sidecar for an outcome. It is
+// called separately from WriteOutcome so the caller can stream a verifier's
+// `evidence` payload to disk in its own goroutine or after the outcome's
+// markdown has been written. The redaction layer is applied so secrets
+// emitted by `script:` verifiers don't leak into artifacts.
+func (w *Writer) WriteOutcomeRaw(outcomeID string, raw any) error {
+	if raw == nil {
+		return nil
+	}
+	safe := SafeName(outcomeID)
+	return writeJSON(w.Resolve("outcomes/"+safe+".raw.json"), raw, w.redactor)
+}
+
 func (w *Writer) WriteOutcomesIndex(result RunResult) error {
 	summary := map[string]any{
 		"runId":    result.RunID,
@@ -207,6 +223,83 @@ func (w *Writer) WriteAgentContext(s spec.Spec, result RunResult, finalScreen st
 
 func (w *Writer) WriteDiagnostic(name string, content string) error {
 	return os.WriteFile(w.Resolve("diagnostics/"+SafeName(name)+".md"), []byte(w.redactor.Text(content)), 0o644)
+}
+
+// WriteArtifactBytes writes a named artifact (download or transform output)
+// to the run dir under `relPath`, redacting through the configured patterns.
+// The caller resolves the relative path so the runner controls the on-disk
+// layout (artifacts/<assign>/<saveAs> vs transforms/<assign>/<saveAs>).
+func (w *Writer) WriteArtifactBytes(relPath string, data []byte) error {
+	abs := w.Resolve(relPath)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(abs, w.redactor.Bytes(data), 0o644)
+}
+
+// LastFailedFile is the conventional filename the runner writes
+// per-run, listing the names of specs that did NOT pass. The
+// `glyph run --rerun-failed` flag reads this file to scope the
+// next invocation to the failures. The file lives at the artifact
+// root (one level above the run dir).
+const LastFailedFile = ".last-failed.txt"
+
+// WriteLastFailed records a list of spec names to the artifact
+// root's .last-failed.txt. The previous file is replaced wholesale
+// (not appended) so a re-run of a previously-passing spec clears
+// the list. Names are written one per line, sorted, to make diffs
+// readable.
+func WriteLastFailed(artifactRoot string, names []string) error {
+	if artifactRoot == "" {
+		return nil
+	}
+	if err := os.MkdirAll(artifactRoot, 0o755); err != nil {
+		return err
+	}
+	// Sort + dedup for stable diffs.
+	seen := map[string]bool{}
+	cleaned := make([]string, 0, len(names))
+	for _, n := range names {
+		if n == "" || seen[n] {
+			continue
+		}
+		seen[n] = true
+		cleaned = append(cleaned, n)
+	}
+	sort.Strings(cleaned)
+	contents := strings.Join(cleaned, "\n")
+	if contents != "" {
+		contents += "\n"
+	}
+	return os.WriteFile(filepath.Join(artifactRoot, LastFailedFile), []byte(contents), 0o644)
+}
+
+// ReadLastFailed returns the list of spec names in the artifact
+// root's .last-failed.txt, or an empty slice if the file doesn't
+// exist. The runner uses this to scope `--rerun-failed`.
+func ReadLastFailed(artifactRoot string) ([]string, error) {
+	if artifactRoot == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(filepath.Join(artifactRoot, LastFailedFile))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var out []string
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		out = append(out, line)
+	}
+	return out, nil
 }
 
 func writeJSON(path string, value any, redactor Redactor) error {

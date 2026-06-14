@@ -157,9 +157,21 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 			"project":   "glyphrun",
 			"binary":    "glyph",
 			"commands":  []string{"init", "run", "spec verify", "spec scaffold", "spec scaffold --kind action", "snapshot update", "diff", "context", "docs", "agent", "explain", "doctor", "mcp"},
-			"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use", "when"},
+			"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use", "download", "transform", "batch", "when"},
 			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command"},
-			"progress":  []string{"auto", "always", "never"},
+			"namedArtifacts": map[string]any{
+				"placeholders": []string{"${artifacts.<name>.path}", "${artifacts.<name>.relativePath}"},
+				"stepKinds":    []string{"download", "transform"},
+				"example":      "see examples/specs/download_artifact.yml and examples/specs/transform_artifact.yml",
+			},
+			"compositeSteps": map[string]any{
+				"batch":        "queue multiple press/type/paste/send sub-steps into one PTY write so transient state survives",
+				"trailingWait": "an optional trailing wait: in a batch is the only synchronization point",
+			},
+			"ciIntegration": map[string]any{
+				"junit": "--junit <file> on `glyph run` writes a JUnit XML report consumable by GitHub Actions, GitLab, Jenkins, Buildkite",
+			},
+			"progress": []string{"auto", "always", "never"},
 		})
 	case "glyph_docs":
 		topic := stringArg(params.Arguments, "topic", "overview")

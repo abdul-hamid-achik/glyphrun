@@ -15,7 +15,8 @@
     },
     "terminal": { "$ref": "#/$defs/terminal" },
     "artifacts": { "$ref": "#/$defs/artifacts" },
-    "redaction": { "$ref": "#/$defs/redaction" }
+    "redaction": { "$ref": "#/$defs/redaction" },
+    "retention": { "$ref": "#/$defs/retention" }
   },
   "additionalProperties": false,
   "$defs": {
@@ -107,6 +108,13 @@
           "type": "array",
           "items": { "$ref": "#/$defs/redactionPattern" }
         }
+      },
+      "additionalProperties": false
+    },
+    "retention": {
+      "type": "object",
+      "properties": {
+        "keepRuns": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     },

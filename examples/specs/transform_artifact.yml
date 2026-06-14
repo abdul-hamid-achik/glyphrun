@@ -1,0 +1,82 @@
+version: 1
+name: transform_artifact_demo
+
+# Demonstrates the `transform` step: a download step captures a report
+# file into the named artifact `report`, then this spec's transform
+# reads the captured copy (via ${artifacts.report.path}) and writes a
+# processed version under transforms/report_upper/report.txt.
+#
+# The transform uses `runtime: shell` so the example runs anywhere
+# /bin/sh exists; the Node equivalent is shown in
+# examples/transforms/uppercase.ts (referenced in the comments).
+
+intent: |
+  a download step captures a report file; a transform step uppercases
+  its body and writes a new named artifact; an outcome verifier checks
+  the transformed copy.
+
+target:
+  cmd: ["./examples/apps/reporter/reporter"]
+  cwd: "."
+  env:
+    GLYPHRUN_REPORTER_DIR: "${env.REPORTER_DIR}"
+    GLYPHRUN_REPORTER_NAME: "report-transform.txt"
+
+terminal:
+  cols: 100
+  rows: 30
+  profile: xterm-256color
+  alternateScreen: require
+
+preconditions:
+  commands:
+    - run: "go build -o ./examples/apps/reporter/reporter ./examples/apps/reporter"
+      timeoutMs: 30000
+    - run: "rm -f ${env.REPORTER_DIR}/report-transform.txt"
+
+steps:
+  - wait:
+      screen:
+        contains: "reporter ready"
+      timeoutMs: 5000
+  - batch:
+      - press: "w"
+      - type: "transform"
+      - press: "enter"
+  - download:
+      path: "${env.REPORTER_DIR}/report-transform.txt"
+      saveAs: "report.txt"
+      assign: report
+      waitFor: true
+      timeoutMs: 5000
+  # The transform script receives the captured artifact path via
+  # $GLYPHRUN_INPUT. It must write its output to $GLYPHRUN_OUTPUT.
+  - transform:
+      runtime: shell
+      file: ../transforms/uppercase.sh
+      input: "${artifacts.report.path}"
+      saveAs: "upper.txt"
+      assign: reportUpper
+      timeoutMs: 5000
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000
+
+outcomes:
+  - id: transform_wrote_uppercase
+    description: the transform wrote a non-empty uppercase file under the run dir
+    verify:
+      command:
+        run: "test -s \"$GLYPHRUN_RUN_DIR/transforms/reportUpper/upper.txt\""
+  - id: transform_content_is_uppercase
+    description: the transform's output contains the "STATUS=OK" marker (uppercased)
+    verify:
+      command:
+        run: "grep -q '^STATUS=OK' \"$GLYPHRUN_RUN_DIR/transforms/reportUpper/upper.txt\""
+  - id: input_was_preserved
+    description: the input artifact is also present (so the transform received a valid path)
+    verify:
+      command:
+        run: "test -s \"$GLYPHRUN_RUN_DIR/artifacts/report/report.txt\""
