@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/abdul-hamid-achik/glyphrun/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -50,6 +51,7 @@ func newRootCommand(opts *globalOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:           "glyph",
 		Short:         "Run terminal behavior specs in a real PTY",
+		Version:       version.Full(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -78,5 +80,6 @@ func newRootCommand(opts *globalOptions) *cobra.Command {
 	cmd.AddCommand(newImportCommand(opts))
 	cmd.AddCommand(newExportCommand(opts))
 	cmd.AddCommand(newCleanCommand(opts))
+	cmd.AddCommand(newVersionCommand(opts))
 	return cmd
 }
