@@ -1,0 +1,81 @@
+name: Glyphrun
+description: >-
+  Build glyph, run terminal behavior specs, upload the artifact packs, and
+  render a PR-comment-ready Markdown summary (with deterministic SVG
+  screenshots) for failing runs.
+
+inputs:
+  specs:
+    description: Spec paths or globs to run (space-separated).
+    required: true
+  comment-path:
+    description: Where to write the PR-comment Markdown.
+    required: false
+    default: glyphrun-comment.md
+  artifact-name:
+    description: Name for the uploaded run-artifacts bundle.
+    required: false
+    default: glyphrun-artifacts
+  junit-path:
+    description: Where to write the JUnit XML report.
+    required: false
+    default: glyphrun-junit.xml
+  go-version:
+    description: Go toolchain version.
+    required: false
+    default: "1.26.x"
+
+outputs:
+  comment-path:
+    description: Path to the generated PR-comment Markdown.
+    value: ${{ inputs.comment-path }}
+  passed:
+    description: "true if every spec passed, false otherwise."
+    value: ${{ steps.run.outputs.passed }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Build glyph
+      shell: bash
+      run: go build -o ./bin/glyph ./cmd/glyph
+
+    - name: Run specs
+      id: run
+      shell: bash
+      run: |
+        set +e
+        ./bin/glyph run ${{ inputs.specs }} --format json --progress never \
+          --junit "${{ inputs.junit-path }}" 1>/dev/null
+        code=$?
+        if [ "$code" -eq 0 ]; then
+          echo "passed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "passed=false" >> "$GITHUB_OUTPUT"
+        fi
+        # Always render the comment from the most recent runs, pass or fail.
+        ./bin/glyph comment --last 50 --out "${{ inputs.comment-path }}"
+        exit "$code"
+      continue-on-error: true
+
+    - name: Upload artifact packs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          .glyphrun/runs
+          ${{ inputs.junit-path }}
+          ${{ inputs.comment-path }}
+        if-no-files-found: warn
+
+    - name: Fail the job if any spec failed
+      if: steps.run.outcome == 'failure'
+      shell: bash
+      run: |
+        echo "::error::Glyphrun specs failed. See ${{ inputs.comment-path }} and the uploaded artifacts."
+        exit 1

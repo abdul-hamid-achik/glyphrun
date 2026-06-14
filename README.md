@@ -143,6 +143,24 @@ glyph run examples/specs/hello.yml --format json
 glyph snapshot update examples/specs/hello.yml --format md
 ```
 
+## Scaffolding A Spec From A Recording
+
+Authoring a spec from scratch is the main cost of adopting Glyphrun, so you can
+bootstrap one from a real session:
+
+```bash
+glyph record --scaffold specs/glyphrun/app_smoke.yml -- ./bin/app
+```
+
+`record` drives the command in a PTY as usual and, with `--scaffold`, writes a
+draft spec inferred from what it observed: the target command, the terminal
+size, a representative "ready" string taken from the final screen, and a
+`clean_exit` outcome when the process exited on its own. The draft's contract
+hash is stamped so it runs immediately. Because `record` does not capture your
+keystrokes, the *interaction* steps are left for you to fill in — `intent` and
+`outcomes` are the contract, `steps` are repairable hints. After editing the
+contract, re-stamp with `glyph spec verify --stamp`.
+
 ## CLI Commands
 
 ```text
@@ -150,13 +168,19 @@ glyph init [dir]                       Create config, .gitignore entries, and a 
 glyph run <spec...>                    Run one or more behavior specs; --progress for live status
                                        --rerun-failed re-plays the most recent failures
                                        --junit <path> writes a JUnit XML report
+                                       --repeat N reports flakiness/stability over N runs
+                                       --watch re-runs on spec/source changes (--watch-path adds roots)
 glyph spec verify <spec> [--stamp]     Validate a spec and optionally stamp its contract hash
 glyph spec scaffold [--kind spec|action] Print a starter spec or reusable action
 glyph snapshot update <spec...>        Refresh committed terminal snapshots
 glyph diff <runA> <runB>               Compare two run artifact directories
 glyph record -- <command...>           Capture a PTY session as an artifact pack
+                                       --scaffold <path> also writes a draft spec from the session
 glyph replay <run>                     Replay or print a recorded PTY log
+glyph render <run|latest>              Render a screen to a deterministic SVG (--screen <name>, --out path|-)
 glyph context <run|latest>             Print agent-focused failure/run context
+glyph repair <spec> [run|latest]       Propose step fixes for a failed run; --write applies them
+glyph comment [run|latest ...]         Render a PR-comment Markdown summary (--last N, --out path)
 glyph list <dir-or-file>...             Catalog specs with --feature/--tag/--owner filters
 glyph clean --keep N | --all           Prune old run directories; --format json for CI
 glyph import bats <file> [--out path]   Convert a BATS file into a glyphrun spec
@@ -272,6 +296,47 @@ glyph run <spec> --rerun-failed    # replay only the specs in .last-failed.txt
 
 Auto-prune runs after every successful run (best-effort; logged as `retention.pruned` in `events.ndjson`). The current run is always kept; the cap applies to historical runs only.
 
+## Repairing Drifted Steps
+
+When a `wait` times out because the UI changed (a renamed banner, a moved
+prompt), the *navigation* is stale but the *contract* is fine. `glyph repair`
+leans into that split:
+
+```bash
+glyph repair specs/glyphrun/smoke.yml            # propose step fixes from the last run
+glyph repair specs/glyphrun/smoke.yml --write    # apply them in place
+```
+
+It reads the failing run, finds each timed-out `wait: screen: contains:` whose
+text is no longer on screen, and proposes the closest on-screen line. `--write`
+edits the spec surgically through the YAML node tree, touching only `steps` —
+never `intent` or `outcomes` — so the stamped contract hash stays valid and no
+re-stamp is needed. This is the agent self-heal loop the contract model implies,
+exposed as a plain command (and the `glyph_repair` MCP tool) rather than a
+per-agent code path.
+
+## Flakiness Probe And Watch Mode
+
+Two run modes help while iterating and before trusting a green suite:
+
+```bash
+glyph run <spec> --repeat 20 --format json   # run 20 times; report stability
+glyph run <spec> --watch                     # re-run on spec/source changes
+glyph run <spec> --watch --watch-path ./src  # also watch the app's source tree
+```
+
+`--repeat N` runs each spec `N` times and emits a flakiness report instead of a
+single result: per spec it reports `passed`/`failed` counts, whether the run was
+`stable` (identical outcomes *and* identical final screen every time), whether it
+was `flaky` (some runs passed, some failed), and the first iteration that
+diverged. It exits non-zero if any iteration failed, so CI catches both flaky and
+consistently-failing specs. This is how the determinism Glyphrun promises is kept
+honest.
+
+`--watch` is an interactive, human-only loop (markdown output only): it polls the
+spec directories — plus any `--watch-path` roots — and re-runs whenever a watched
+file changes, skipping the artifact root and VCS metadata. Press Ctrl-C to stop.
+
 ## Per-Spec Capture Policy
 
 Each artifact channel (snapshots, frames, raw log, final screen, agent context) can be set to `always`, `on-failure`, or `never`. The project config sets the defaults, and a spec can override individual channels:
@@ -318,6 +383,24 @@ The agent contract is simple: treat `intent` and `outcomes` as the behavior cont
 
 Run `glyph mcp` to start the stdio MCP server. The MCP tools mirror the CLI surface for docs, doctor checks, spec verification, spec scaffolding, runs, snapshot updates, diffs, agent context lookup, and the catalog (`glyph list`).
 
+## GitHub Integration
+
+Run specs in CI and surface the results on the pull request:
+
+```bash
+glyph run specs/glyphrun/*.yml --junit glyphrun-junit.xml --format json
+glyph comment --last 50 | gh pr comment "$PR" -F -
+```
+
+`glyph comment` renders GitHub-flavored Markdown — a status table, failure
+focus, the final screen in a `<details>` block, and pointers to the
+deterministic `screens/final.svg` screenshots. It writes to stdout (so it pipes
+into `gh pr comment -F -`) or to a file with `--out`. A reusable composite
+action lives at [`.github/actions/glyphrun`](.github/actions/glyphrun/action.yml)
+and an example workflow that posts a sticky PR comment is at
+[`examples/github/glyphrun-pr.yml`](examples/github/glyphrun-pr.yml). See
+`glyph docs github` for details.
+
 ## Artifact Packs
 
 Every `glyph run` writes a run directory under `.glyphrun/runs/` by default. Depending on config and the spec's capture policy, a pack can include:
@@ -326,7 +409,7 @@ Every `glyph run` writes a run directory under `.glyphrun/runs/` by default. Dep
 - `agent_context.md`
 - `events.ndjson`
 - `spec.resolved.yml`
-- `screens/final.txt` and `screens/final.json`
+- `screens/final.txt`, `screens/final.json`, and `screens/final.svg`
 - `frames/frames.ndjson`
 - `raw/pty.raw.log` and `raw/input.raw.log`
 - `snapshots/*.txt` and `snapshots/*.json`

@@ -20,6 +20,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	"github.com/abdul-hamid-achik/glyphrun/internal/input"
 	"github.com/abdul-hamid-achik/glyphrun/internal/ptyrunner"
+	"github.com/abdul-hamid-achik/glyphrun/internal/render"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal/adapters/gote"
@@ -1524,6 +1525,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	if shouldCapture(policy.FinalScreen, status) {
 		result.Artifacts["finalScreenText"] = "screens/final.txt"
 		result.Artifacts["finalScreenJSON"] = "screens/final.json"
+		result.Artifacts["finalScreenSVG"] = "screens/final.svg"
 	}
 	if shouldCapture(policy.Frames, status) {
 		result.Artifacts["frames"] = "frames/frames.ndjson"
@@ -1572,6 +1574,10 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	}
 	if shouldCapture(policy.FinalScreen, status) {
 		_ = s.writer.WriteFinalScreen(finalSnapshot)
+		// A deterministic SVG of the final screen rides alongside the text
+		// and JSON forms: it's what humans see in a PR comment and what a
+		// multimodal agent can read directly.
+		_ = s.writer.WriteScreenSVG("screens/final.svg", render.SnapshotSVG(finalSnapshot, render.DefaultOptions()))
 	}
 	s.mu.Lock()
 	rawPTY := append([]byte(nil), s.rawPTY...)

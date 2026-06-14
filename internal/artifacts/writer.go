@@ -82,6 +82,17 @@ func (w *Writer) WriteFinalScreen(snapshot terminal.ScreenSnapshot) error {
 	return writeJSON(w.Resolve("screens/final.json"), snapshot, w.redactor)
 }
 
+// WriteScreenSVG writes a rendered SVG screenshot to relPath under the run
+// dir. The SVG text is redacted like every other artifact so configured
+// secret values don't leak into a picture of the screen.
+func (w *Writer) WriteScreenSVG(relPath string, svg string) error {
+	abs := w.Resolve(relPath)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(abs, []byte(w.redactor.Text(svg)), 0o644)
+}
+
 func (w *Writer) WriteRawPTY(raw []byte) error {
 	return os.WriteFile(w.Resolve("raw/pty.raw.log"), w.redactor.Bytes(raw), 0o644)
 }

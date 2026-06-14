@@ -208,6 +208,7 @@ func orderedArtifactKeys(artifacts map[string]string) []string {
 		"environmentDiagnostic",
 		"finalScreenText",
 		"finalScreenJSON",
+		"finalScreenSVG",
 		"events",
 		"frames",
 		"rawPtyLog",
@@ -246,6 +247,8 @@ func artifactLabel(key string) string {
 		return "final screen text"
 	case "finalScreenJSON":
 		return "final screen JSON"
+	case "finalScreenSVG":
+		return "final screen SVG"
 	case "rawPtyLog":
 		return "raw PTY log"
 	case "inputRawLog":

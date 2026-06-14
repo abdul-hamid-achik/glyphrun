@@ -15,8 +15,11 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	glyphdocs "github.com/abdul-hamid-achik/glyphrun/internal/docs"
+	"github.com/abdul-hamid-achik/glyphrun/internal/render"
+	"github.com/abdul-hamid-achik/glyphrun/internal/repair"
 	"github.com/abdul-hamid-achik/glyphrun/internal/runner"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
+	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 )
 
 type ServerOptions struct {
@@ -143,6 +146,15 @@ func tools() []map[string]any {
 			"type":       "object",
 			"properties": map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"spec", "action"}}},
 		}),
+		tool("glyph_render", "Render a run's final screen to a deterministic SVG and return it.", map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"run": map[string]any{"type": "string"}, "screen": map[string]any{"type": "string"}},
+		}),
+		tool("glyph_repair", "Propose step repairs for a spec's failed run (never touches the contract).", map[string]any{
+			"type":       "object",
+			"required":   []string{"path"},
+			"properties": map[string]any{"path": map[string]any{"type": "string"}, "run": map[string]any{"type": "string"}, "write": map[string]any{"type": "boolean"}},
+		}),
 	}
 }
 
@@ -156,7 +168,7 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		return toolText(map[string]any{
 			"project":   "glyphrun",
 			"binary":    "glyph",
-			"commands":  []string{"init", "run", "spec verify", "spec scaffold", "spec scaffold --kind action", "snapshot update", "diff", "context", "docs", "agent", "explain", "doctor", "mcp"},
+			"commands":  []string{"init", "run", "spec verify", "spec scaffold", "spec scaffold --kind action", "snapshot update", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "mcp"},
 			"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use", "download", "transform", "batch", "when"},
 			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command"},
 			"namedArtifacts": map[string]any{
@@ -267,6 +279,24 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		return toolText(diff)
 	case "glyph_spec_scaffold":
 		return map[string]any{"content": []map[string]string{{"type": "text", "text": scaffoldSpec(stringArg(params.Arguments, "kind", "spec"))}}}, nil
+	case "glyph_render":
+		run := stringArg(params.Arguments, "run", "latest")
+		screen := stringArg(params.Arguments, "screen", "final")
+		svg, err := renderScreen(run, screen, opts)
+		if err != nil {
+			return toolError(err)
+		}
+		return map[string]any{"content": []map[string]string{{"type": "text", "text": svg}}}, nil
+	case "glyph_repair":
+		path := stringArg(params.Arguments, "path", "")
+		if path == "" {
+			return nil, &responseError{Code: -32602, Message: "path is required"}
+		}
+		result, err := repairSpec(path, stringArg(params.Arguments, "run", "latest"), boolArg(params.Arguments, "write", false), opts)
+		if err != nil {
+			return toolError(err)
+		}
+		return toolText(result)
 	default:
 		return nil, &responseError{Code: -32602, Message: "unknown tool: " + params.Name}
 	}
@@ -340,6 +370,96 @@ func docs(topic string) string {
 		return content
 	}
 	return "unknown topic: " + topic
+}
+
+// renderScreen resolves a run and renders its final screen (or a named
+// snapshot) to a deterministic SVG, mirroring `glyph render`.
+func renderScreen(run, screen string, opts ServerOptions) (string, error) {
+	root, err := artifactRoot(opts)
+	if err != nil {
+		return "", err
+	}
+	runDir, err := resolveRunDir(root, run)
+	if err != nil {
+		return "", err
+	}
+	var rel string
+	if screen == "" || screen == "final" {
+		rel = filepath.Join("screens", "final.json")
+	} else {
+		rel = filepath.Join("snapshots", artifacts.SafeName(screen)+".json")
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, rel))
+	if err != nil {
+		return "", err
+	}
+	var snapshot terminal.ScreenSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return "", err
+	}
+	return render.SnapshotSVG(snapshot, render.DefaultOptions()), nil
+}
+
+// repairSpec mirrors `glyph repair`: it analyzes a spec's failed run and
+// proposes (optionally applies) step repairs that never touch the contract.
+func repairSpec(path, run string, write bool, opts ServerOptions) (any, error) {
+	rt, err := config.LoadRuntime(path, opts.ConfigPath, opts.Environment)
+	if err != nil {
+		return nil, err
+	}
+	parseOpts := rt.SpecParseOptions()
+	parseOpts.AllowHashMismatch = true
+	parsed, err := spec.ParseFile(path, parseOpts)
+	if err != nil {
+		return nil, err
+	}
+	root, err := artifactRoot(opts)
+	if err != nil {
+		return nil, err
+	}
+	var runDir string
+	if run != "" && run != "latest" {
+		runDir, err = resolveRunDir(root, run)
+	} else {
+		runDir, err = repair.LatestRunDirForSpec(root, parsed.Resolved.Name)
+	}
+	if err != nil {
+		return nil, err
+	}
+	proposals := repair.Analyze(runDir, parsed.Resolved.Steps)
+	if write {
+		for i := range proposals {
+			if proposals[i].Proposed == "" || proposals[i].Current == "" {
+				continue
+			}
+			if err := repair.Apply(parsed.Path, proposals[i]); err != nil {
+				return nil, err
+			}
+			proposals[i].Applied = true
+		}
+	}
+	return map[string]any{
+		"spec":      parsed.Resolved.Name,
+		"run":       filepath.Base(runDir),
+		"proposals": proposals,
+		"applied":   write,
+	}, nil
+}
+
+// artifactRoot resolves the absolute artifact root from server options + config.
+func artifactRoot(opts ServerOptions) (string, error) {
+	rt, err := config.LoadRuntime(".", opts.ConfigPath, opts.Environment)
+	if err != nil {
+		return "", err
+	}
+	root := opts.ArtifactRoot
+	if root == "" {
+		root = rt.Config.ArtifactRoot
+	}
+	if !filepath.IsAbs(root) {
+		root = filepath.Join(rt.ProjectRoot, root)
+	}
+	return root, nil
 }
 
 func contextContent(run string, opts ServerOptions) (string, error) {

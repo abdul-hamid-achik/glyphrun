@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/version"
 	"github.com/spf13/cobra"
@@ -55,6 +56,12 @@ func newRootCommand(opts *globalOptions) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	// Cobra's Print/Printf default to stderr (OutOrStderr). Glyphrun's
+	// contract is that command output — including --format json/yaml — goes to
+	// stdout so it stays machine-readable, while progress and diagnostics go to
+	// stderr. Pin both streams explicitly. Tests override SetOut with a buffer.
+	cmd.SetOut(os.Stdout)
+	cmd.SetErr(os.Stderr)
 	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "config file path")
 	cmd.PersistentFlags().StringVar(&opts.artifactRoot, "artifact-root", "", "artifact root directory")
 	cmd.PersistentFlags().StringVar(&opts.format, "format", "md", "output format: json, yaml, md")
@@ -70,7 +77,10 @@ func newRootCommand(opts *globalOptions) *cobra.Command {
 	cmd.AddCommand(newDiffCommand(opts))
 	cmd.AddCommand(newRecordCommand(opts))
 	cmd.AddCommand(newReplayCommand(opts))
+	cmd.AddCommand(newRenderCommand(opts))
 	cmd.AddCommand(newContextCommand(opts))
+	cmd.AddCommand(newRepairCommand(opts))
+	cmd.AddCommand(newCommentCommand(opts))
 	cmd.AddCommand(newDocsCommand(opts))
 	cmd.AddCommand(newAgentCommand(opts))
 	cmd.AddCommand(newExplainCommand(opts))

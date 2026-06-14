@@ -1,0 +1,35 @@
+# Example GitHub Actions workflow: run Glyphrun specs on every PR, upload the
+# artifact packs, and post the rendered summary as a sticky PR comment.
+#
+# Copy this into .github/workflows/ in your project. It assumes glyph is built
+# from a checkout of your repo; if you vendor a prebuilt binary instead, replace
+# the composite action with a direct `glyph run` + `glyph comment` invocation.
+
+name: glyphrun
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write # required to post the PR comment
+
+jobs:
+  behavior:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Glyphrun specs
+        id: glyph
+        uses: ./.github/actions/glyphrun
+        with:
+          specs: "specs/glyphrun/*.yml"
+          comment-path: glyphrun-comment.md
+
+      - name: Post PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: glyphrun
+          path: glyphrun-comment.md

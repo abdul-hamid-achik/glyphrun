@@ -79,9 +79,10 @@ func resolveRunDir(root string, arg string) (string, error) {
 	return filepath.Join(root, arg), nil
 }
 
-// latestRunDir returns the newest run directory under root. Run
-// directory names are timestamped, so a reverse lexical sort matches
-// chronological order. When requireFile is non-empty, only directories
+// latestRunDir returns the newest run directory under root, ordered by
+// modification time. Modtime (not name) is used because `record-*` run dirs
+// do not share the timestamped naming of `glyph run` dirs, so a lexical sort
+// would wrongly rank them. When requireFile is non-empty, only directories
 // containing that file are considered.
 func latestRunDir(root string, requireFile string) (string, error) {
 	entries, err := os.ReadDir(root)
@@ -90,7 +91,7 @@ func latestRunDir(root string, requireFile string) (string, error) {
 	}
 	type candidate struct {
 		path string
-		name string
+		mod  int64
 	}
 	var dirs []candidate
 	for _, entry := range entries {
@@ -103,9 +104,13 @@ func latestRunDir(root string, requireFile string) (string, error) {
 				continue
 			}
 		}
-		dirs = append(dirs, candidate{path: path, name: entry.Name()})
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		dirs = append(dirs, candidate{path: path, mod: info.ModTime().UnixNano()})
 	}
-	sort.Slice(dirs, func(i, j int) bool { return dirs[i].name > dirs[j].name })
+	sort.Slice(dirs, func(i, j int) bool { return dirs[i].mod > dirs[j].mod })
 	if len(dirs) == 0 {
 		return "", os.ErrNotExist
 	}

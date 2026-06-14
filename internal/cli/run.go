@@ -21,6 +21,9 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 	var progress string
 	var junitPath string
 	var rerunFailed bool
+	var repeat int
+	var watch bool
+	var watchPaths []string
 	cmd := &cobra.Command{
 		Use:   "run <spec...>",
 		Short: "Run terminal behavior specs",
@@ -101,6 +104,19 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 				cmd.Print(output)
 				return nil
 			}
+			// --repeat N runs each spec N times and reports stability, to
+			// back up the determinism the tool promises. It's a separate
+			// surface from a normal run: the output is a flakiness report,
+			// not a run result.
+			if repeat > 1 {
+				return runFlakinessProbe(cmd, opts, format, args, repeat, parallel, updateSnapshots)
+			}
+			// --watch re-runs the specs whenever a spec file (or the target
+			// command's working tree) changes. It's a human-only,
+			// interactive loop, so it refuses non-interactive output modes.
+			if watch || len(watchPaths) > 0 {
+				return runWatch(cmd, opts, format, args, watchPaths, parallel, updateSnapshots, progress)
+			}
 			results, exitCode, err := runSpecs(context.Background(), args, parallel, opts, updateSnapshots, listener)
 			if err != nil {
 				return classifyRunError(err)
@@ -143,6 +159,9 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 	cmd.Flags().StringVar(&progress, "progress", "auto", "live progress: auto, always, never")
 	cmd.Flags().StringVar(&junitPath, "junit", "", "write a JUnit XML report to this path (use .xml extension)")
 	cmd.Flags().BoolVar(&rerunFailed, "rerun-failed", false, "re-run only the specs that failed in the previous invocation (from .last-failed.txt)")
+	cmd.Flags().IntVar(&repeat, "repeat", 1, "run each spec N times and report flakiness/stability instead of a single result")
+	cmd.Flags().BoolVar(&watch, "watch", false, "re-run on spec/source changes (interactive; markdown output only)")
+	cmd.Flags().StringArrayVar(&watchPaths, "watch-path", nil, "additional file or directory to watch (repeatable); implies --watch")
 	return cmd
 }
 

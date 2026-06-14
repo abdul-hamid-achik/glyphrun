@@ -25,6 +25,8 @@ glyph context latest --format md
 
 If you only want the YAML printed to stdout, use `glyph spec scaffold > specs/smoke.yml`.
 
+To bootstrap a spec from a real session instead of from scratch, run `glyph record --scaffold specs/smoke.yml -- ./bin/app`. It writes a draft spec (target, terminal size, an inferred "ready" string, and a `clean_exit` outcome) with its contract hash stamped, ready to edit.
+
 Use `--format json` or `--format yaml` for automation. Use `--format md` for readable terminal output and artifact summaries.
 
 Use live progress while iterating locally:

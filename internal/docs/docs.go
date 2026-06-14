@@ -12,7 +12,7 @@ Start with ` + "`glyph agent --format md`" + ` for the agent workflow, or ` + "`
 	"quickstart": `# Quickstart
 
 1. Run ` + "`glyph doctor --format md`" + `.
-2. Initialize a project with ` + "`glyph init --cmd ./bin/app --ready ready --format md`" + `, or print a spec with ` + "`glyph spec scaffold > specs/smoke.yml`" + `.
+2. Initialize a project with ` + "`glyph init --cmd ./bin/app --ready ready --format md`" + `, print a spec with ` + "`glyph spec scaffold > specs/smoke.yml`" + `, or bootstrap one from a real session with ` + "`glyph record --scaffold specs/smoke.yml -- ./bin/app`" + `.
 3. Validate it with ` + "`glyph spec verify specs/glyphrun/smoke.yml --format json`" + `.
 4. Run it with ` + "`glyph run specs/glyphrun/smoke.yml --format md --progress auto`" + `.
 5. Inspect failures with ` + "`glyph context latest --format md`" + `.
@@ -62,6 +62,8 @@ See also: ` + "`file-script-verifiers`" + ` for end-to-end examples of ` + "`fil
 Each run writes ` + "`run.json`" + `, ` + "`run.yaml`" + `, ` + "`run.md`" + `, ` + "`agent_context.md`" + `, ` + "`events.ndjson`" + `, ` + "`spec.resolved.yml`" + `, final screens, frames, raw logs, snapshots, outcomes, and diagnostics.
 
 Start with ` + "`run.md`" + ` for a human summary, ` + "`run.json`" + ` for automation, ` + "`agent_context.md`" + ` for agent debugging, ` + "`diagnostics/environment.md`" + ` for runtime context, and ` + "`screens/final.txt`" + ` for the normalized terminal state.
+
+The final screen is also rendered to a deterministic ` + "`screens/final.svg`" + ` (a pure function of the captured cell grid). Render any captured screen on demand with ` + "`glyph render <run|latest> [--screen <name>] [--out path|-]`" + `; the SVG is reproducible and safe to regenerate in CI or drop into a PR comment.
 `,
 	"agents": `# Agents
 
@@ -78,7 +80,7 @@ Do not edit ` + "`intent`" + ` or ` + "`outcomes`" + ` without surfacing the con
 `,
 	"mcp": `# MCP
 
-Run ` + "`glyph mcp`" + ` to start the stdio MCP server. The current server exposes tools for explain, docs, doctor, spec verification, spec scaffolding, runs, snapshot updates, diffs, and context lookup.
+Run ` + "`glyph mcp`" + ` to start the stdio MCP server. The current server exposes tools for explain, docs, doctor, spec verification, spec scaffolding, runs, snapshot updates, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), and step repair (` + "`glyph_repair`" + `).
 `,
 	"configuration": `# Configuration
 
@@ -418,6 +420,18 @@ Region (optional):
 Evidence: the verifier returns the matched count as ` + "`{ matched, comparator, expected }`" + ` in ` + "`outcomes/<id>.raw.json`" + ` so a passing run can be inspected without re-running.
 `,
 
+	"github": `# GitHub Integration
+
+Run specs in CI and surface the results on the pull request:
+
+1. ` + "`glyph run <specs> --junit glyphrun-junit.xml --format json`" + ` runs the suite and writes a JUnit report.
+2. ` + "`glyph comment --last 50 --out glyphrun-comment.md`" + ` renders a PR-comment-ready Markdown summary (status table, failure focus, final screen, and pointers to the deterministic ` + "`screens/final.svg`" + ` screenshots).
+3. Upload ` + "`.glyphrun/runs`" + ` as a build artifact so reviewers can open the SVG screenshots and ` + "`agent_context.md`" + `.
+4. Post ` + "`glyphrun-comment.md`" + ` as a sticky PR comment.
+
+A reusable composite action lives at ` + "`.github/actions/glyphrun`" + ` and an example workflow at ` + "`examples/github/glyphrun-pr.yml`" + `. ` + "`glyph comment`" + ` writes to stdout by default, so it also pipes straight into ` + "`gh pr comment -F -`" + `.
+`,
+
 	"topics": `# Docs Topics
 
 - overview
@@ -441,6 +455,7 @@ Evidence: the verifier returns the matched count as ` + "`{ matched, comparator,
 - rerun-failed
 - capture-policy
 - count-verifier
+- github
 - install
 - topics
 `,
