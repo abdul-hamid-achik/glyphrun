@@ -19,6 +19,19 @@ tasks:
       - mkdir -p bin
       - go build -o {{.BIN}} {{.MAIN}}
 
+  install:
+    desc: Build and install glyph globally to /opt/homebrew/bin
+    cmds:
+      - cmd: |
+          COMMIT=$(git rev-parse --short HEAD)
+          DATE=$(date -u +%Y-%m-%d)
+          go build \
+            -ldflags "-X github.com/abdul-hamid-achik/glyphrun/internal/version.Version=v0.1.0-${COMMIT}-dev \
+                       -X github.com/abdul-hamid-achik/glyphrun/internal/version.Commit=${COMMIT} \
+                       -X github.com/abdul-hamid-achik/glyphrun/internal/version.BuildDate=${DATE}" \
+            -o /opt/homebrew/bin/glyph {{.MAIN}}
+      - /opt/homebrew/bin/glyph --version
+
   run:
     deps: [build]
     cmds:

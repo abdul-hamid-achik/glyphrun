@@ -90,6 +90,41 @@ Use ` + "`glyph init [dir] --cmd <target> --ready <text>`" + ` to create ` + "`g
 
 Use ` + "`terminal.alternateScreen: require`" + ` when a full-screen TUI must enter alternate screen mode, or ` + "`forbid`" + ` when a command must stay on the main terminal screen. The default is ` + "`auto`" + `.
 `,
+	"install": `# Install
+
+Build and install glyph globally:
+
+` + "```" + `
+$ task install
+# → builds with -ldflags stamping version / commit / buildDate
+# → copies the binary to /opt/homebrew/bin/glyph
+# → prints ` + "`glyph --version`" + ` so you can confirm the install
+` + "```" + `
+
+Or build by hand:
+
+` + "```" + `
+$ go build \
+    -ldflags "-X github.com/abdul-hamid-achik/glyphrun/internal/version.Version=v0.1.0 \
+               -X github.com/abdul-hamid-achik/glyphrun/internal/version.Commit=$(git rev-parse --short HEAD) \
+               -X github.com/abdul-hamid-achik/glyphrun/internal/version.BuildDate=$(date -u +%Y-%m-%d)" \
+    -o /opt/homebrew/bin/glyph ./cmd/glyph
+$ glyph --version
+glyph version v0.1.0 (<sha> <date>)
+` + "```" + `
+
+When the linker doesn't override the version vars (a bare ` + "`go install`" + ` or ` + "`go run`" + `), glyph prints ` + "`dev (unknown unknown)`" + ` — useful for testing without a release build.
+
+Confirm the install path is on ` + "`$PATH`" + `:
+
+` + "```" + `
+$ which glyph
+/opt/homebrew/bin/glyph
+$ glyph doctor --format md
+` + "```" + `
+
+For CI distribution, prefer the build command above wrapped in ` + "`goreleaser`" + ` so the binary ships as a tarball per platform/arch. A ` + "`brew tap`" + ` is a future option once the first tag is cut.
+`,
 	"troubleshooting": `# Troubleshooting
 
 Use ` + "`glyph context latest --format md`" + ` after a failure. Inspect ` + "`screens/final.txt`" + `, ` + "`raw/pty.raw.log`" + `, ` + "`frames/frames.ndjson`" + `, and ` + "`diagnostics/failure.md`" + `.
@@ -404,6 +439,7 @@ Evidence: the verifier returns the matched count as ` + "`{ matched, comparator,
 - rerun-failed
 - capture-policy
 - count-verifier
+- install
 - topics
 `,
 }
