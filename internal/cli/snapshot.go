@@ -42,7 +42,7 @@ func newSnapshotUpdateCommand(opts *globalOptions) *cobra.Command {
 				if err != nil {
 					var mismatch spec.ContractHashMismatchError
 					if errors.As(err, &mismatch) {
-						return exitError{code: 5, err: err}
+						return exitError{code: 6, err: err}
 					}
 					return exitError{code: 4, err: err}
 				}

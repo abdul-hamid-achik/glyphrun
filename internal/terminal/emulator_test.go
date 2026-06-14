@@ -96,3 +96,53 @@ func TestSimpleEmulatorTracksAlternateScreenMode(t *testing.T) {
 		t.Fatal("alternate screen usage should remain recorded")
 	}
 }
+
+func TestSimpleEmulatorTabDoesNotOverwriteCells(t *testing.T) {
+	em := NewEmulator(20, 3)
+	// Write text, return to column 0, then tab forward past it. The tab must
+	// advance the cursor without blanking the cells it moves over.
+	if _, err := em.Feed([]byte("abcdef\r\tZ")); err != nil {
+		t.Fatal(err)
+	}
+	screen := em.Screen()
+	if got := screen.Cell(2, 0).Char; got != "c" {
+		t.Fatalf("tab overwrote cell 2,0: got %q, want \"c\"", got)
+	}
+	// The next tab stop after column 0 is column 8, so Z lands there.
+	if got := screen.Cell(8, 0).Char; got != "Z" {
+		t.Fatalf("cell 8,0 = %q, want \"Z\"", got)
+	}
+}
+
+func TestSimpleEmulatorIgnoresDEL(t *testing.T) {
+	em := NewEmulator(10, 2)
+	if _, err := em.Feed([]byte("a\x7fb")); err != nil {
+		t.Fatal(err)
+	}
+	screen := em.Screen()
+	if got := screen.Cell(0, 0).Char; got != "a" {
+		t.Fatalf("cell 0,0 = %q, want \"a\"", got)
+	}
+	// DEL must be a no-op: b follows a directly with no DEL glyph between.
+	if got := screen.Cell(1, 0).Char; got != "b" {
+		t.Fatalf("cell 1,0 = %q, want \"b\" (DEL should be ignored)", got)
+	}
+}
+
+func TestSimpleEmulatorECHCancelsPendingWrap(t *testing.T) {
+	em := NewEmulator(5, 3)
+	// Fill the row exactly; the last write leaves a deferred autowrap pending.
+	// ECH then erases at the cursor; a subsequent print must not wrap to row 1.
+	if _, err := em.Feed([]byte("abcde\x1b[XZ")); err != nil {
+		t.Fatal(err)
+	}
+	screen := em.Screen()
+	if got := screen.Cell(4, 0).Char; got != "Z" {
+		t.Fatalf("cell 4,0 = %q, want \"Z\" (ECH should cancel pending wrap)", got)
+	}
+	for x := 0; x < 5; x++ {
+		if got := screen.Cell(x, 1).Char; strings.TrimSpace(got) != "" {
+			t.Fatalf("row 1 should be empty, found %q at col %d", got, x)
+		}
+	}
+}

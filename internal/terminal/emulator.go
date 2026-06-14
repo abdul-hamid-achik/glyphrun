@@ -141,12 +141,13 @@ func (e *SimpleEmulator) feedRune(r rune) {
 			e.cursor.X--
 		}
 	case '\t':
-		next := ((e.cursor.X / 8) + 1) * 8
-		for e.cursor.X < next {
-			e.putRune(' ')
-		}
+		// Tab is cursor movement, not a write: advance to the next 8-column
+		// tab stop without overwriting the cells it passes over.
+		e.pendingWrap = false
+		e.cursor.X = clamp(((e.cursor.X/8)+1)*8, 0, e.cols-1)
 	default:
-		if r >= 0x20 {
+		// Skip C0 controls below 0x20 and DEL (0x7f); both are non-printing.
+		if r >= 0x20 && r != 0x7f {
 			e.putRune(r)
 		}
 	}
@@ -244,6 +245,9 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 	}
 	if strings.HasSuffix(body, "X") {
 		// ECH — erase N characters from the cursor without moving it.
+		// Erasing cancels any deferred autowrap so a subsequent print does
+		// not spuriously advance to the next line.
+		e.pendingWrap = false
 		n := csiNumber(strings.TrimSuffix(body, "X"), 1)
 		if e.cursor.Y >= 0 && e.cursor.Y < e.rows {
 			for i := 0; i < n; i++ {

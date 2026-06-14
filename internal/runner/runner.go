@@ -897,11 +897,19 @@ func (s *runState) evaluateOutcome(ctx context.Context, outcome spec.Outcome) ou
 	tick := time.NewTicker(DefaultPollInterval)
 	defer tick.Stop()
 	var last string
+	// Retain the most recent evidence payload so a failing or timed-out
+	// outcome still writes outcomes/<id>.raw.json — failure is exactly when
+	// that evidence (e.g. a script verifier's {ok:false, evidence} body) is
+	// most useful.
+	var lastRaw any
 	for {
 		if err := s.terminalError(); err != nil {
-			return outcomeEval{result: artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: err.Error(), Evidence: "outcomes/" + outcome.ID + ".md"}}
+			return failedOutcome(outcome, err.Error(), lastRaw)
 		}
 		ok, message, raw := s.checkVerifyWithEvidence(ctx, outcome.Verify, outcome.Normalize)
+		if raw != nil {
+			lastRaw = raw
+		}
 		if ok {
 			result := artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomePassed, Message: message, Evidence: "outcomes/" + outcome.ID + ".md"}
 			if raw != nil {
@@ -912,12 +920,22 @@ func (s *runState) evaluateOutcome(ctx context.Context, outcome spec.Outcome) ou
 		last = message
 		select {
 		case <-ctx.Done():
-			return outcomeEval{result: artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: ctx.Err().Error(), Evidence: "outcomes/" + outcome.ID + ".md"}}
+			return failedOutcome(outcome, ctx.Err().Error(), lastRaw)
 		case <-deadline.C:
-			return outcomeEval{result: artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: fmt.Sprintf("timed out after %s: %s", timeout, last), Evidence: "outcomes/" + outcome.ID + ".md"}}
+			return failedOutcome(outcome, fmt.Sprintf("timed out after %s: %s", timeout, last), lastRaw)
 		case <-tick.C:
 		}
 	}
+}
+
+// failedOutcome builds a failing OutcomeResult, attaching the raw-evidence
+// pointer when a verifier produced evidence before the outcome failed.
+func failedOutcome(outcome spec.Outcome, message string, raw any) outcomeEval {
+	result := artifacts.OutcomeResult{ID: outcome.ID, Status: artifacts.OutcomeFailed, Message: message, Evidence: "outcomes/" + outcome.ID + ".md"}
+	if raw != nil {
+		result.EvidenceRaw = "outcomes/" + outcome.ID + ".raw.json"
+	}
+	return outcomeEval{result: result, raw: raw}
 }
 
 func (s *runState) checkVerify(ctx context.Context, verify spec.Verify, normalizeOverride *spec.Normalize) (bool, string) {
