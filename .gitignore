@@ -3,6 +3,7 @@ bin/
 **/.glyphrun/runs/
 examples/apps/hello/hello
 examples/apps/reporter/reporter
+examples/apps/mouseapp/mouseapp
 reports/
 spec.md
 
