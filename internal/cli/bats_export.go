@@ -10,50 +10,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func newBatsExportCommand(opts *globalOptions) *cobra.Command {
-	// Direct subcommand; the user-facing entry is `glyph export bats` via
-	// newExportCommand. The handler lives in runBatsExport.
-	cmd := &cobra.Command{
-		Use:    "bats <spec.yml>",
-		Short:  "Export a glyphrun spec to a .bats test file (use `glyph export bats` instead)",
-		Args:   cobra.ExactArgs(1),
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runBatsExport(cmd, opts, args)
-		},
-	}
-	cmd.Flags().String("out", "", "output path (default: <source>.bats next to the source)")
-	return cmd
-}
-
-// runBatsExport is the entry point used by both `glyph export bats`
-// and the hidden direct subcommand.
-func runBatsExport(cmd *cobra.Command, opts *globalOptions, args []string) error {
+// runBatsExportWith is the handler behind `glyph export bats`. The
+// dispatcher in newExportCommand forwards the spec args and --out flag.
+func runBatsExportWith(cmd *cobra.Command, opts *globalOptions, args []string, outPath string) error {
 	if len(args) != 1 {
 		return exitError{code: 2, err: fmt.Errorf("export bats expects exactly one <spec> argument")}
 	}
-	format, err := resolveFormat(opts.format)
+	f, err := resolveFormat(opts.format)
 	if err != nil {
 		return exitError{code: 2, err: err}
-	}
-	outPath, _ := cmd.Flags().GetString("out")
-	return runBatsExportWith(cmd, opts, args, outPath, format)
-}
-
-// runBatsExportWith is the testable / direct form of runBatsExport.
-func runBatsExportWith(cmd *cobra.Command, opts *globalOptions, args []string, outPath string, format ...outputFormat) error {
-	if len(args) != 1 {
-		return exitError{code: 2, err: fmt.Errorf("export bats expects exactly one <spec> argument")}
-	}
-	var f outputFormat
-	if len(format) > 0 {
-		f = format[0]
-	} else {
-		var err error
-		f, err = resolveFormat(opts.format)
-		if err != nil {
-			return exitError{code: 2, err: err}
-		}
 	}
 	source := args[0]
 	out, err := exportBats(source, outPath)

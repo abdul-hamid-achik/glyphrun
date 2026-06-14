@@ -58,8 +58,13 @@ artifact the wipe targeted.`,
 			case all:
 				report, err = artifacts.CleanAll(artifactRoot)
 			default:
+				// An explicit --keep must win over config retention, even
+				// when it is 0. Comparing against 0 alone would make an
+				// explicit `--keep 0` silently fall back to config instead
+				// of disabling pruning for this invocation (0 means
+				// "no prune / keep all", matching retention.keepRuns).
 				effectiveKeep := keep
-				if effectiveKeep == 0 {
+				if !cmd.Flags().Changed("keep") {
 					effectiveKeep = rt.Config.Retention.KeepRuns
 				}
 				if effectiveKeep < 0 {
@@ -78,7 +83,7 @@ artifact the wipe targeted.`,
 			return nil
 		},
 	}
-	cmd.Flags().IntVar(&keep, "keep", 0, "keep the N newest runs (overrides config retention.keepRuns for this invocation)")
+	cmd.Flags().IntVar(&keep, "keep", 0, "keep the N newest runs (overrides config retention.keepRuns for this invocation; --keep 0 disables pruning — use --all to wipe every run)")
 	cmd.Flags().BoolVar(&all, "all", false, "remove every run directory under the artifact root")
 	return cmd
 }

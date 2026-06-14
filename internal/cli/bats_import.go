@@ -30,58 +30,16 @@ type batsImportResult struct {
 	Warnings []string `json:"warnings,omitempty" yaml:"warnings,omitempty"`
 }
 
-func newBatsImportCommand(opts *globalOptions) *cobra.Command {
-	// newBatsImportCommand is retained for direct invocation (`glyph import bats`)
-	// but the user-facing surface is `glyph import bats` via the parent
-	// newImportCommand. The actual handler lives in runBatsImport.
-	cmd := &cobra.Command{
-		Use:    "bats <file.bats>",
-		Short:  "Import a .bats test file as a glyphrun spec (use `glyph import bats` instead)",
-		Args:   cobra.ExactArgs(1),
-		Hidden: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runBatsImport(cmd, opts, args)
-		},
-	}
-	cmd.Flags().String("out", "", "output path (default: <source>.yml next to the source)")
-	cmd.Flags().String("name", "", "override the spec name (default: derived from the file basename)")
-	return cmd
-}
-
-// runBatsImport is the entry point used by both `glyph import bats` and
-// the hidden direct subcommand. It pulls --out and --name from the
-// cobra command, calls the importer, and emits the result.
-func runBatsImport(cmd *cobra.Command, opts *globalOptions, args []string) error {
+// runBatsImportWith is the handler behind `glyph import bats`. The
+// dispatcher in newImportCommand forwards the source args and the
+// --out / --name flags.
+func runBatsImportWith(cmd *cobra.Command, opts *globalOptions, args []string, outPath string, name string) error {
 	if len(args) != 1 {
 		return exitError{code: 2, err: fmt.Errorf("import bats expects exactly one <file> argument")}
 	}
-	format, err := resolveFormat(opts.format)
+	f, err := resolveFormat(opts.format)
 	if err != nil {
 		return exitError{code: 2, err: err}
-	}
-	outPath, _ := cmd.Flags().GetString("out")
-	name, _ := cmd.Flags().GetString("name")
-	return runBatsImportWith(cmd, opts, args, outPath, name, format)
-}
-
-// runBatsImportWith is the testable / direct form of runBatsImport
-// that takes the values directly. The dispatcher in
-// import_export.go calls this with the values it pulled from the
-// parent command's flags; the hidden direct subcommand calls it
-// with the values it pulled from its own flags.
-func runBatsImportWith(cmd *cobra.Command, opts *globalOptions, args []string, outPath string, name string, format ...outputFormat) error {
-	if len(args) != 1 {
-		return exitError{code: 2, err: fmt.Errorf("import bats expects exactly one <file> argument")}
-	}
-	var f outputFormat
-	if len(format) > 0 {
-		f = format[0]
-	} else {
-		var err error
-		f, err = resolveFormat(opts.format)
-		if err != nil {
-			return exitError{code: 2, err: err}
-		}
 	}
 	source := args[0]
 	result, err := importBats(source, outPath, name)

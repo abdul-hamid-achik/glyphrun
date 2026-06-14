@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
@@ -63,24 +64,41 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 				if err != nil {
 					return exitError{code: 2, err: fmt.Errorf("rerun-failed: read %s: %w", filepath.Join(artifactRoot, artifacts.LastFailedFile), err)}
 				}
-				if len(failed) == 0 {
-					cmd.Print("glyph run: no previous failures recorded in " + filepath.Join(artifactRoot, artifacts.LastFailedFile) + "\n")
-					return nil
+				lastFailedPath := filepath.Join(artifactRoot, artifacts.LastFailedFile)
+				if failed == nil {
+					failed = []string{}
 				}
-				// Pretty-print the list and exit 0 — the contributor
-				// copies the spec names into the next `glyph run`
-				// invocation. This is intentionally interactive:
-				// the next pass should re-supply the paths, since the
-				// runner doesn't keep a name→path index.
-				cmd.Print("# Glyphrun Rerun Failed\n\n")
-				cmd.Print(fmt.Sprintf("Previous failures (from %s):\n\n", filepath.Join(artifactRoot, artifacts.LastFailedFile)))
-				for _, n := range failed {
-					cmd.Print("- " + n + "\n")
+				// The list of failing spec *names* is informational: the
+				// contributor copies them into the next `glyph run`
+				// invocation, since the runner keeps no name→path index.
+				// Route through emitForCLI so --format json/yaml stays
+				// machine-parseable instead of emitting Markdown.
+				value := map[string]any{
+					"schemaVersion":  1,
+					"lastFailedFile": lastFailedPath,
+					"failed":         failed,
 				}
-				cmd.Print("\nRe-run with:\n")
-				for _, n := range failed {
-					cmd.Print(fmt.Sprintf("  glyph run <path-to-%s> ...\n", n))
+				output, err := emitForCLI(cmd, opts, format, value, func() string {
+					var b strings.Builder
+					b.WriteString("# Glyphrun Rerun Failed\n\n")
+					if len(failed) == 0 {
+						b.WriteString("No previous failures recorded in " + lastFailedPath + ".\n")
+						return b.String()
+					}
+					fmt.Fprintf(&b, "Previous failures (from %s):\n\n", lastFailedPath)
+					for _, n := range failed {
+						b.WriteString("- " + n + "\n")
+					}
+					b.WriteString("\nRe-run with:\n")
+					for _, n := range failed {
+						fmt.Fprintf(&b, "  glyph run <path-to-%s> ...\n", n)
+					}
+					return b.String()
+				})
+				if err != nil {
+					return exitError{code: 2, err: err}
 				}
+				cmd.Print(output)
 				return nil
 			}
 			results, exitCode, err := runSpecs(context.Background(), args, parallel, opts, updateSnapshots, listener)

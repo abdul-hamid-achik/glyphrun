@@ -223,6 +223,11 @@ type runState struct {
 	// it without re-resolving.
 	capturePolicy spec.CapturePolicy
 
+	// cleanupOnce guards session teardown so the deferred cleanup in
+	// RunSpec and the explicit call in finish() collapse to a single
+	// Session.Cleanup, regardless of which path runs first.
+	cleanupOnce sync.Once
+
 	mu             sync.Mutex
 	rawPTY         []byte
 	inputLog       []byte
@@ -1408,18 +1413,20 @@ func (s *runState) runShellCommand(ctx context.Context, command string, cwd stri
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, "/bin/sh", "-lc", command)
 	cmd.Dir = resolveProjectPath(s.runtime.ProjectRoot, cwd)
-	// Start from the process env and layer on the active environment
-	// (config + target overrides + the GLYPHRUN_RUN_DIR/Glyphrun flags
-	// that the runner injects for the target). This lets a `command:`
-	// verifier reference $GLYPHRUN_RUN_DIR / ${env.*} / ${vars.*} the
-	// same way an outcome can.
-	cmd.Env = append(os.Environ(),
-		"GLYPHRUN_RUN_DIR="+s.writer.RunDir,
-		"GLYPHRUN=1",
-	)
+	// Start from the process env, layer the active config env, then
+	// inject the runner's GLYPHRUN_RUN_DIR/GLYPHRUN flags last so they
+	// win over any same-named config value. This matches the precedence
+	// in startTarget (the runner's run-dir is authoritative) and lets a
+	// `command:` verifier reference $GLYPHRUN_RUN_DIR / ${env.*} /
+	// ${vars.*} the same way an outcome can.
+	cmd.Env = os.Environ()
 	for k, v := range s.runtime.Env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}
+	cmd.Env = append(cmd.Env,
+		"GLYPHRUN_RUN_DIR="+s.writer.RunDir,
+		"GLYPHRUN=1",
+	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -1432,9 +1439,11 @@ func (s *runState) runShellCommand(ctx context.Context, command string, cwd stri
 }
 
 func (s *runState) cleanup() {
-	if s.session != nil {
-		_ = s.session.Cleanup(CleanupTimeout)
-	}
+	s.cleanupOnce.Do(func() {
+		if s.session != nil {
+			_ = s.session.Cleanup(CleanupTimeout)
+		}
+	})
 }
 
 func (s *runState) terminalError() error {
