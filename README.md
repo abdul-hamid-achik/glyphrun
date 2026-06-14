@@ -28,14 +28,16 @@ scroll regions (DECSTBM) with region-aware line feed and reverse index, insert/
 delete line (IL/DL), insert/delete character (ICH/DCH), scroll up/down (SU/SD),
 save/restore cursor (DECSC/DECRC), and origin mode (DECOM).
 
+It runs on Unix PTYs (macOS, Linux) and on Windows via ConPTY (Windows 10 1809+),
+behind a platform-neutral backend interface.
+
 Some terminal features are intentionally still future work: remaining xterm edge
-cases, mouse protocols, Sixel / images, terminal hyperlinks, and Windows ConPTY
-support.
+cases, mouse protocols, Sixel / images, and terminal hyperlinks.
 
 ## Requirements
 
 - Go 1.26.x
-- macOS or another Unix-like environment with PTY support
+- macOS or another Unix-like environment with PTY support, or Windows 10 1809+ (ConPTY)
 - Optional: `asdf` and `task`
 
 The pinned toolchain is in `.tool-versions`.

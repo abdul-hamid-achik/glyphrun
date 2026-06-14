@@ -27,7 +27,7 @@ Package boundaries are part of the contract — do not blur them.
 | `cmd/glyph` | Entrypoint only. Defers to `internal/cli.Execute()`. |
 | `internal/cli` | Cobra command handlers. No business logic. |
 | `internal/spec` | Spec model, parsing, validation, contract hash, stamping. |
-| `internal/ptyrunner` | Process backend (`creack/pty`). No terminal semantics. |
+| `internal/ptyrunner` | Process backend behind a platform `backend` interface: Unix PTY (`creack/pty`) and Windows ConPTY. No terminal semantics. |
 | `internal/terminal` | Virtual emulator + adapters (`gote`, `fake`). No PTY or spec knowledge. |
 | `internal/runner` | Step execution and outcome evaluation. The orchestrator. |
 | `internal/artifacts` | Writer, markdown, redaction, diffs. No runner state. |

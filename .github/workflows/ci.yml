@@ -56,3 +56,25 @@ jobs:
         run: |
           mkdir -p reports
           ./bin/glyph run examples/specs/junit_xml_demo.yml --junit reports/glyph.xml --format md
+
+  # Windows validates the ConPTY backend specifically. The full suite assumes a
+  # Unix shell and example binaries, so this job builds everything and runs the
+  # pseudo-console smoke test rather than the whole gate.
+  windows:
+    name: Windows (ConPTY)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: ConPTY backend test
+        run: go test ./internal/ptyrunner/...

@@ -1,16 +1,17 @@
+// Package ptyrunner launches a target command inside a pseudo-terminal and
+// streams its output. The process/PTY mechanics are platform-specific (a Unix
+// PTY via creack/pty, a Windows pseudo-console via ConPTY) and live behind the
+// `backend` interface in backend_unix.go / backend_windows.go; everything in
+// this file — the read loop, exit tracking, and teardown — is platform-neutral.
 package ptyrunner
 
 import (
 	"errors"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
-
-	"github.com/creack/pty"
 )
 
 type Options struct {
@@ -29,9 +30,21 @@ type ExitState struct {
 	ExitCode int  `json:"exitCode,omitempty"`
 }
 
+// backend abstracts the platform PTY + process. It owns the byte stream
+// (Read/Write), resizing, the blocking wait for exit, and teardown. The
+// neutral Session drives it.
+type backend interface {
+	io.Reader
+	io.Writer
+	resize(cols, rows int) error
+	wait() ExitState // blocks until the process exits
+	softStop() error // graceful terminate (best-effort; may be a no-op)
+	hardStop() error // force kill
+	closePTY() error // close the PTY handle so a blocked Read returns
+}
+
 type Session struct {
-	cmd          *exec.Cmd
-	ptmx         *os.File
+	backend      backend
 	done         chan ExitState
 	outputDone   chan struct{}
 	mu           sync.RWMutex
@@ -51,20 +64,14 @@ func Start(opts Options) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(opts.Cmd[0], opts.Cmd[1:]...)
-	cmd.Dir = absCwd
-	cmd.Env = mergeEnv(os.Environ(), opts.Env)
+	opts.Cwd = absCwd
 
-	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
-		Cols: uint16(opts.Cols),
-		Rows: uint16(opts.Rows),
-	})
+	b, err := newBackend(opts)
 	if err != nil {
 		return nil, err
 	}
 	s := &Session{
-		cmd:          cmd,
-		ptmx:         ptmx,
+		backend:      b,
 		done:         make(chan ExitState, 1),
 		outputDone:   make(chan struct{}),
 		lastOutputAt: time.Now(),
@@ -75,12 +82,12 @@ func Start(opts Options) (*Session, error) {
 }
 
 func (s *Session) Write(data []byte) error {
-	_, err := s.ptmx.Write(data)
+	_, err := s.backend.Write(data)
 	return err
 }
 
 func (s *Session) Resize(cols, rows int) error {
-	return pty.Setsize(s.ptmx, &pty.Winsize{Cols: uint16(cols), Rows: uint16(rows)})
+	return s.backend.resize(cols, rows)
 }
 
 func (s *Session) ExitState() ExitState {
@@ -103,32 +110,28 @@ func (s *Session) Cleanup(timeout time.Duration) ExitState {
 	state := s.ExitState()
 	if state.Exited {
 		if !s.waitForOutput(timeout) {
-			_ = s.ptmx.Close()
+			_ = s.backend.closePTY()
 			_ = s.waitForOutput(time.Second)
 		}
 		return state
 	}
-	if s.cmd.Process != nil {
-		_ = s.cmd.Process.Signal(syscall.SIGTERM)
-	}
+	_ = s.backend.softStop()
 	select {
 	case state = <-s.done:
 		if !s.waitForOutput(timeout) {
-			_ = s.ptmx.Close()
+			_ = s.backend.closePTY()
 			_ = s.waitForOutput(time.Second)
 		}
 		return state
 	case <-time.After(timeout):
 	}
-	if s.cmd.Process != nil {
-		_ = s.cmd.Process.Kill()
-	}
+	_ = s.backend.hardStop()
 	select {
 	case state = <-s.done:
 	case <-time.After(time.Second):
 		state = ExitState{Exited: true, ExitCode: -1}
 	}
-	_ = s.ptmx.Close()
+	_ = s.backend.closePTY()
 	_ = s.waitForOutput(time.Second)
 	return state
 }
@@ -146,7 +149,7 @@ func (s *Session) readLoop(onOutput func([]byte), onError func(error)) {
 	defer close(s.outputDone)
 	buf := make([]byte, 4096)
 	for {
-		n, err := s.ptmx.Read(buf)
+		n, err := s.backend.Read(buf)
 		if n > 0 {
 			chunk := append([]byte(nil), buf[:n]...)
 			s.mu.Lock()
@@ -166,8 +169,7 @@ func (s *Session) readLoop(onOutput func([]byte), onError func(error)) {
 }
 
 func (s *Session) waitLoop() {
-	err := s.cmd.Wait()
-	state := ExitState{Exited: true, ExitCode: exitCode(err)}
+	state := s.backend.wait()
 	s.mu.Lock()
 	s.exit = state
 	s.mu.Unlock()
