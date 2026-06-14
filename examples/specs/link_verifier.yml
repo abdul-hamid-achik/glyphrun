@@ -1,0 +1,32 @@
+version: 1
+name: link_visible
+intent: |
+    a user sees a clickable docs hyperlink in the hello demo app.
+target:
+    cmd: ["${vars.helloBin}"]
+    cwd: "."
+terminal:
+    cols: 80
+    rows: 24
+    profile: xterm-256color
+steps:
+    - wait:
+        screen:
+            contains: "hello from glyphrun"
+    - press: "q"
+    - wait:
+        process:
+            exitCode: 0
+outcomes:
+    - id: docs_link_present
+      description: the "docs" text is an OSC 8 hyperlink to the project site
+      verify:
+        link:
+            url: "glyphrun.dev"
+            text: "docs"
+    - id: clean_exit
+      description: q exits the application cleanly
+      verify:
+        process:
+            exitCode: 0
+contractHash: sha256:85ae05397cb77e657b0934fafafa3fe679ae2e2d9857713168b26a238dc51c01

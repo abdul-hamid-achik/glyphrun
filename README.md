@@ -233,6 +233,7 @@ Agent-callable commands support `--format json|yaml|md`. JSON and YAML modes do 
 | `script: { runtime?, run \| file, fixtures?, timeoutMs? }` | An external Node module or shell script that returns `{ ok, evidence }` |
 | `command: { run, cwd?, timeoutMs? }` | A trusted shell command (`test -x ./bin/app`) |
 | `count: { region?, matches?, equals \| atLeast \| atMost \| between }` | Cell-level count over a region (Cairn's `count: { role }` analogue) |
+| `link: { url?, text? }` | An OSC 8 hyperlink is present (URI substring and/or linked-text substring) |
 
 `count.matches` is a single rune or the literal `"nonEmpty"`. The comparator is exactly one of `equals` / `atLeast` / `atMost` / `between`. The verifier returns `{ matched, comparator, expected }` as evidence, written to `outcomes/<id>.raw.json`.
 

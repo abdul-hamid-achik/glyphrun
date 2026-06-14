@@ -34,6 +34,11 @@ type SimpleEmulator struct {
 	alternateScreen     bool
 	alternateScreenUsed bool
 
+	// link is the currently open OSC 8 hyperlink URI. It is attached to every
+	// glyph printed until the link is closed (OSC 8 with an empty URI). Unlike
+	// SGR attributes it is not reset by SGR 0.
+	link string
+
 	// scrollTop/scrollBottom bound the DECSTBM scroll region (inclusive,
 	// 0-based). Line feeds, reverse index, IL/DL, and SU/SD all operate within
 	// this region. They default to the full screen.
@@ -193,6 +198,7 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		return
 	}
 	if strings.HasPrefix(seq, "]") {
+		e.applyOSC(seq)
 		return
 	}
 	if !strings.HasPrefix(seq, "[") {
@@ -346,6 +352,25 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		e.applySGR(strings.TrimSuffix(body, "m"))
 		return
 	}
+}
+
+// applyOSC handles Operating System Command sequences. Only OSC 8 (hyperlinks)
+// changes state today; other OSCs (e.g. window title) are ignored. The format
+// is `8 ; params ; URI`; an empty URI closes the current link.
+func (e *SimpleEmulator) applyOSC(seq string) {
+	body := strings.TrimPrefix(seq, "]")
+	body = strings.TrimSuffix(body, "\a")
+	body = strings.TrimSuffix(body, "\x1b\\")
+	if !strings.HasPrefix(body, "8;") {
+		return
+	}
+	rest := strings.TrimPrefix(body, "8;")
+	idx := strings.IndexByte(rest, ';')
+	if idx < 0 {
+		e.link = ""
+		return
+	}
+	e.link = rest[idx+1:]
 }
 
 func (e *SimpleEmulator) applyPrivateMode(body string) {
@@ -540,6 +565,7 @@ func (e *SimpleEmulator) putRune(r rune) {
 	if e.cursor.Y >= 0 && e.cursor.Y < e.rows && e.cursor.X >= 0 && e.cursor.X < e.cols {
 		e.cells[e.cursor.Y][e.cursor.X].Char = string(r)
 		e.cells[e.cursor.Y][e.cursor.X].Style = e.style
+		e.cells[e.cursor.Y][e.cursor.X].Link = e.link
 	}
 	if e.cursor.X >= e.cols-1 {
 		// Last column: stay put and defer the wrap (VT100 autowrap quirk).

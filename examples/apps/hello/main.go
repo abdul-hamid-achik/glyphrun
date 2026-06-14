@@ -23,6 +23,9 @@ func main() {
 	fmt.Print("\x1b[2J\x1b[H")
 	fmt.Println("hello from glyphrun")
 	fmt.Println("press q to quit")
+	// An OSC 8 hyperlink: the text "docs" links to the project URL. The
+	// link.yml example asserts this with the `link` verifier.
+	fmt.Print("\x1b]8;;https://glyphrun.dev\x1b\\docs\x1b]8;;\x1b\\\n")
 
 	reader := bufio.NewReader(os.Stdin)
 	for {

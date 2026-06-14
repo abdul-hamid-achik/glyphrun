@@ -27,6 +27,8 @@ type Cell struct {
 	Char  string `json:"char"`
 	Width int    `json:"width"`
 	Style Style  `json:"style"`
+	// Link is the OSC 8 hyperlink URI attached to this cell, if any.
+	Link string `json:"link,omitempty"`
 }
 
 type Region interface {

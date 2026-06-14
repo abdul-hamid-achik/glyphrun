@@ -299,9 +299,22 @@
         { "required": ["command"] },
         { "required": ["file"] },
         { "required": ["script"] },
-        { "required": ["count"] }
+        { "required": ["count"] },
+        { "required": ["link"] }
       ],
       "properties": {
+        "link": {
+          "type": "object",
+          "anyOf": [
+            { "required": ["url"] },
+            { "required": ["text"] }
+          ],
+          "properties": {
+            "url": { "type": "string" },
+            "text": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
         "screen": { "$ref": "#/$defs/screenCondition" },
         "region": { "$ref": "#/$defs/regionCondition" },
         "cell": { "$ref": "#/$defs/cellCondition" },

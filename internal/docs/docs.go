@@ -43,7 +43,7 @@ Every step can include a ` + "`when`" + ` guard that uses the same verifier shap
 `,
 	"verifiers": `# Verifiers
 
-Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, and trusted ` + "`command`" + `.
+Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, ` + "`link`" + `, and trusted ` + "`command`" + `.
 
 Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes (fg, bg, bold, dim, italic, underline, reverse). Process verifiers can check exit state and exit code.
 
@@ -56,6 +56,8 @@ Colors use a canonical form: the 16 base colors are named (` + "`red`" + `, ` + 
 Outcomes can set ` + "`timeoutMs`" + ` and ` + "`normalize`" + ` when a single assertion needs longer polling or custom volatile-text cleanup.
 
 ` + "`count`" + ` asserts how many cells on the screen, or within a region, match a character or pattern (see ` + "`count-verifier`" + `).
+
+` + "`link`" + ` asserts that an OSC 8 hyperlink is present: ` + "`link: { url, text }`" + ` matches a substring of the link URI and (optionally) the linked text. Useful for TUIs that render clickable links.
 
 See also: ` + "`file-script-verifiers`" + ` for end-to-end examples of ` + "`file`" + ` and ` + "`script`" + `.
 `,

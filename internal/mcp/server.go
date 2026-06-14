@@ -170,7 +170,7 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 			"binary":    "glyph",
 			"commands":  []string{"init", "run", "spec verify", "spec scaffold", "spec scaffold --kind action", "snapshot update", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "mcp"},
 			"steps":     []string{"press", "type", "paste", "send", "wait", "resize", "snapshot", "use", "download", "transform", "batch", "when"},
-			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count"},
+			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link"},
 			"namedArtifacts": map[string]any{
 				"placeholders": []string{"${artifacts.<name>.path}", "${artifacts.<name>.relativePath}"},
 				"stepKinds":    []string{"download", "transform"},

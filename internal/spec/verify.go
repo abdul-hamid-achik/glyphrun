@@ -297,6 +297,12 @@ func validateVerify(v Verify) error {
 			return err
 		}
 	}
+	if v.Link != nil {
+		count++
+		if v.Link.URL == "" && v.Link.Text == "" {
+			return fmt.Errorf("link verifier must contain url or text")
+		}
+	}
 	if count != 1 {
 		return fmt.Errorf("verify must contain exactly one verifier")
 	}

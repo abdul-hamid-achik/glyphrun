@@ -215,6 +215,28 @@ func TestSimpleEmulatorOriginMode(t *testing.T) {
 	}
 }
 
+func TestSimpleEmulatorTracksOSC8Hyperlinks(t *testing.T) {
+	em := NewEmulator(40, 1)
+	// "go ⟨docs⟩ end" where docs links to the project URL.
+	seq := "go \x1b]8;;https://glyphrun.dev\x1b\\docs\x1b]8;;\x1b\\ end"
+	if _, err := em.Feed([]byte(seq)); err != nil {
+		t.Fatal(err)
+	}
+	s := em.Screen()
+	// "go " (cols 0-2) carry no link; "docs" (cols 3-6) do; " end" does not.
+	if l := s.Cell(0, 0).Link; l != "" {
+		t.Errorf("cell 0 should have no link, got %q", l)
+	}
+	for x := 3; x <= 6; x++ {
+		if l := s.Cell(x, 0).Link; l != "https://glyphrun.dev" {
+			t.Errorf("cell %d link = %q, want the project URL", x, l)
+		}
+	}
+	if l := s.Cell(8, 0).Link; l != "" {
+		t.Errorf("cell after the link should have no link, got %q", l)
+	}
+}
+
 func TestSimpleEmulatorIgnoresOSCTitleSequences(t *testing.T) {
 	em := NewEmulator(20, 3)
 	if _, err := em.Feed([]byte("\x1b]2;LOCAL AGENT\ahello\x1b]2;\a")); err != nil {

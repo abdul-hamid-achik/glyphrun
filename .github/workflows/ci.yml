@@ -52,6 +52,11 @@ jobs:
           chmod +x ./examples/apps/count_target/run.sh
           ./bin/glyph run examples/specs/count_cells.yml --format md
 
+      - name: Link example
+        run: |
+          go build -o ./examples/apps/hello/hello ./examples/apps/hello
+          ./bin/glyph run examples/specs/link_verifier.yml --format md
+
       - name: JUnit example
         run: |
           mkdir -p reports

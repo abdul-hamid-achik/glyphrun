@@ -1020,6 +1020,9 @@ func (s *runState) checkVerifyWithEvidence(ctx context.Context, verify spec.Veri
 	case verify.Count != nil:
 		ok, message, evidence := s.checkCount(screen, *verify.Count)
 		return ok, message, evidence
+	case verify.Link != nil:
+		ok, message, evidence := checkLink(screen, *verify.Link)
+		return ok, message, evidence
 	default:
 		return false, "unsupported verifier", nil
 	}
@@ -1813,6 +1816,56 @@ func (s *runState) checkCount(screen terminal.Screen, cond spec.CountCondition) 
 		return false, "count condition has multiple comparators; pick exactly one of equals / atLeast / atMost / between", nil
 	}
 	return true, fmt.Sprintf("count matched: %d cells", matched), map[string]any{"matched": matched, "comparator": "passed", "expected": matched}
+}
+
+// checkLink asserts that an OSC 8 hyperlink is present on the screen. It groups
+// contiguous cells sharing a link URI into spans, then matches `url` against the
+// URI (substring) and the optional `text` against the linked text (substring).
+// With neither set, any hyperlink satisfies the check.
+func checkLink(screen terminal.Screen, cond spec.LinkCondition) (bool, string, any) {
+	size := screen.Size()
+	cells := screen.Region(0, 0, size.Cols, size.Rows).Cells()
+	type linkSpan struct {
+		url  string
+		text string
+	}
+	var spans []linkSpan
+	curIdx := -1
+	for _, c := range cells {
+		if c.Link == "" {
+			curIdx = -1
+			continue
+		}
+		if curIdx < 0 || spans[curIdx].url != c.Link {
+			spans = append(spans, linkSpan{url: c.Link})
+			curIdx = len(spans) - 1
+		}
+		ch := c.Char
+		if ch == "" {
+			ch = " "
+		}
+		spans[curIdx].text += ch
+	}
+	if len(spans) == 0 {
+		return false, "no hyperlinks found on screen", nil
+	}
+	for _, sp := range spans {
+		text := strings.TrimSpace(sp.text)
+		if cond.URL != "" && !strings.Contains(sp.url, cond.URL) {
+			continue
+		}
+		if cond.Text != "" && !strings.Contains(text, cond.Text) {
+			continue
+		}
+		return true, fmt.Sprintf("hyperlink matched: %q -> %q", text, sp.url),
+			map[string]any{"url": sp.url, "text": text}
+	}
+	found := make([]map[string]string, 0, len(spans))
+	for _, sp := range spans {
+		found = append(found, map[string]string{"url": sp.url, "text": strings.TrimSpace(sp.text)})
+	}
+	return false, fmt.Sprintf("no hyperlink matched url=%q text=%q (found %d link(s))", cond.URL, cond.Text, len(spans)),
+		map[string]any{"found": found}
 }
 
 func checkStyle(actual terminal.Style, expected spec.Style) (bool, string) {

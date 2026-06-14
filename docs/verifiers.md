@@ -1,6 +1,6 @@
 # Verifiers
 
-The v1 verifier vocabulary is `screen`, `region`, `cell`, `cursor`, `process`, `snapshot`, trusted `command`, `file`, `script`, and `count`.
+The v1 verifier vocabulary is `screen`, `region`, `cell`, `cursor`, `process`, `snapshot`, trusted `command`, `file`, `script`, `count`, and `link`.
 
 Examples:
 
@@ -65,5 +65,6 @@ The `file`, `script`, and `count` verifiers extend assertions beyond the screen:
 - `file` polls the filesystem for a glob match (filename wildcards supported, directory portion literal) and optionally requires the matched file's body to contain a needle.
 - `script` runs an external `node` or `shell` script that returns a JSON `{ ok, evidence }` body; the evidence is written to `outcomes/<id>.raw.json` (on both pass and failure).
 - `count` asserts how many cells on the screen, or within a region, match a character or pattern.
+- `link` asserts that an OSC 8 hyperlink is present: `link: { url, text }` matches a substring of the link URI and, optionally, the linked text.
 
 See `glyph docs file-script-verifiers --format md` and `glyph docs count-verifier --format md` for end-to-end examples.

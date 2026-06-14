@@ -199,6 +199,15 @@ type Verify struct {
 	File     *FileCondition     `yaml:"file,omitempty" json:"file,omitempty"`
 	Script   *ScriptCondition   `yaml:"script,omitempty" json:"script,omitempty"`
 	Count    *CountCondition    `yaml:"count,omitempty" json:"count,omitempty"`
+	Link     *LinkCondition     `yaml:"link,omitempty" json:"link,omitempty"`
+}
+
+// LinkCondition asserts that an OSC 8 hyperlink is present on the screen. `url`
+// matches a substring of the link's URI; the optional `text` matches a
+// substring of the linked text (the visible characters carrying that link).
+type LinkCondition struct {
+	URL  string `yaml:"url,omitempty" json:"url,omitempty"`
+	Text string `yaml:"text,omitempty" json:"text,omitempty"`
 }
 
 // CountCondition asserts a count of cells in a region. The matcher
