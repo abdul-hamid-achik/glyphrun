@@ -291,32 +291,135 @@ func (e *SimpleEmulator) applySGR(args string) {
 	if args == "" {
 		args = "0"
 	}
-	for _, part := range strings.Split(args, ";") {
-		code := csiNumber(part, 0)
-		switch code {
-		case 0:
+	// Parse the parameter list to ints up front so multi-parameter colors
+	// (38;5;n and 38;2;r;g;b, and their 48 background twins) can consume the
+	// parameters that follow the introducer.
+	parts := strings.Split(args, ";")
+	nums := make([]int, len(parts))
+	for i, p := range parts {
+		if p == "" {
+			nums[i] = 0 // ANSI: an empty parameter defaults to 0
+			continue
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			n = 0
+		}
+		nums[i] = n
+	}
+	for i := 0; i < len(nums); i++ {
+		code := nums[i]
+		switch {
+		case code == 0:
 			e.style = Style{}
-		case 1:
+		case code == 1:
 			e.style.Bold = true
-		case 2:
+		case code == 2:
 			e.style.Dim = true
-		case 3:
+		case code == 3:
 			e.style.Italic = true
-		case 4:
+		case code == 4:
 			e.style.Underline = true
-		case 7:
+		case code == 7:
 			e.style.Reverse = true
-		case 22:
+		case code == 22:
 			e.style.Bold = false
 			e.style.Dim = false
-		case 23:
+		case code == 23:
 			e.style.Italic = false
-		case 24:
+		case code == 24:
 			e.style.Underline = false
-		case 27:
+		case code == 27:
 			e.style.Reverse = false
+		case code >= 30 && code <= 37:
+			e.style.Fg = standardColorName(code - 30)
+		case code == 38:
+			if c, adv := extendedColor(nums[i+1:]); c != "" {
+				e.style.Fg = c
+				i += adv
+			}
+		case code == 39:
+			e.style.Fg = ""
+		case code >= 40 && code <= 47:
+			e.style.Bg = standardColorName(code - 40)
+		case code == 48:
+			if c, adv := extendedColor(nums[i+1:]); c != "" {
+				e.style.Bg = c
+				i += adv
+			}
+		case code == 49:
+			e.style.Bg = ""
+		case code >= 90 && code <= 97:
+			e.style.Fg = brightColorName(code - 90)
+		case code >= 100 && code <= 107:
+			e.style.Bg = brightColorName(code - 100)
 		}
 	}
+}
+
+// extendedColor parses the parameters following an SGR 38/48 introducer and
+// returns the canonical color string plus how many parameters it consumed.
+// 5;n selects a 256-color palette index; 2;r;g;b selects a truecolor value.
+func extendedColor(rest []int) (string, int) {
+	if len(rest) == 0 {
+		return "", 0
+	}
+	switch rest[0] {
+	case 5:
+		if len(rest) < 2 {
+			return "", 0
+		}
+		return colorForIndex(rest[1]), 2
+	case 2:
+		if len(rest) < 4 {
+			return "", 0
+		}
+		return fmt.Sprintf("#%02x%02x%02x", clampByte(rest[1]), clampByte(rest[2]), clampByte(rest[3])), 4
+	}
+	return "", 0
+}
+
+// colorForIndex maps a 256-color palette index to its canonical string. The
+// first 16 entries reuse the named colors so `cell: { style: { fg } }`
+// assertions read the same whether the app used SGR 31 or 38;5;1; indices
+// 16-255 are stored as their decimal index.
+func colorForIndex(n int) string {
+	switch {
+	case n < 0 || n > 255:
+		return ""
+	case n < 8:
+		return standardColorName(n)
+	case n < 16:
+		return brightColorName(n - 8)
+	default:
+		return strconv.Itoa(n)
+	}
+}
+
+var standardColorNames = [8]string{"black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"}
+
+func standardColorName(n int) string {
+	if n < 0 || n > 7 {
+		return ""
+	}
+	return standardColorNames[n]
+}
+
+func brightColorName(n int) string {
+	if n < 0 || n > 7 {
+		return ""
+	}
+	return "bright" + standardColorNames[n]
+}
+
+func clampByte(v int) int {
+	if v < 0 {
+		return 0
+	}
+	if v > 255 {
+		return 255
+	}
+	return v
 }
 
 func csiNumber(text string, fallback int) int {

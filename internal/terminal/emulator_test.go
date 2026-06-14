@@ -36,6 +36,64 @@ func TestSimpleEmulatorCursorMovementAndStyles(t *testing.T) {
 	}
 }
 
+func TestSimpleEmulatorTracksColors(t *testing.T) {
+	tests := []struct {
+		name   string
+		seq    string
+		wantFg string
+		wantBg string
+	}{
+		{name: "standard fg", seq: "\x1b[31mX", wantFg: "red"},
+		{name: "standard bg", seq: "\x1b[42mX", wantBg: "green"},
+		{name: "bright fg", seq: "\x1b[94mX", wantFg: "brightblue"},
+		{name: "bright bg", seq: "\x1b[103mX", wantBg: "brightyellow"},
+		{name: "256 named", seq: "\x1b[38;5;1mX", wantFg: "red"},
+		{name: "256 index", seq: "\x1b[38;5;201mX", wantFg: "201"},
+		{name: "truecolor", seq: "\x1b[38;2;255;136;0mX", wantFg: "#ff8800"},
+		{name: "fg and bg", seq: "\x1b[31;44mX", wantFg: "red", wantBg: "blue"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			em := NewEmulator(10, 1)
+			if _, err := em.Feed([]byte(tc.seq)); err != nil {
+				t.Fatal(err)
+			}
+			cell := em.Screen().Cell(0, 0)
+			if cell.Style.Fg != tc.wantFg {
+				t.Errorf("fg = %q, want %q", cell.Style.Fg, tc.wantFg)
+			}
+			if cell.Style.Bg != tc.wantBg {
+				t.Errorf("bg = %q, want %q", cell.Style.Bg, tc.wantBg)
+			}
+		})
+	}
+}
+
+func TestSimpleEmulatorColorResets(t *testing.T) {
+	em := NewEmulator(10, 1)
+	// Set fg+bg, then reset fg (39) and bg (49) individually.
+	if _, err := em.Feed([]byte("\x1b[31;44mA\x1b[39mB\x1b[49mC")); err != nil {
+		t.Fatal(err)
+	}
+	screen := em.Screen()
+	if a := screen.Cell(0, 0).Style; a.Fg != "red" || a.Bg != "blue" {
+		t.Errorf("cell A = %+v, want fg red bg blue", a)
+	}
+	if b := screen.Cell(1, 0).Style; b.Fg != "" || b.Bg != "blue" {
+		t.Errorf("cell B = %+v, want fg reset, bg blue", b)
+	}
+	if c := screen.Cell(2, 0).Style; c.Fg != "" || c.Bg != "" {
+		t.Errorf("cell C = %+v, want both reset", c)
+	}
+	// SGR 0 clears everything.
+	if _, err := em.Feed([]byte("\x1b[1;31mD\x1b[0mE")); err != nil {
+		t.Fatal(err)
+	}
+	if e := em.Screen().Cell(4, 0).Style; e.Fg != "" || e.Bold {
+		t.Errorf("cell E = %+v, want fully reset", e)
+	}
+}
+
 func TestSimpleEmulatorIgnoresOSCTitleSequences(t *testing.T) {
 	em := NewEmulator(20, 3)
 	if _, err := em.Feed([]byte("\x1b]2;LOCAL AGENT\ahello\x1b]2;\a")); err != nil {

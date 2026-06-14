@@ -9,6 +9,7 @@
 package render
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -336,9 +337,9 @@ func xmlEscape(s string) string {
 	return r.Replace(s)
 }
 
-// defaultPalette maps the 16 standard ANSI color names (and their 0-15 index
-// aliases) to hex. The emulator does not track color today, so this is mostly
-// forward-compatible wiring for when it does.
+// defaultPalette maps the standard ANSI color names, their 0-15 index aliases,
+// and the full 16-255 xterm palette to hex. The emulator stores named colors
+// for 0-15 and decimal indices for 16-255, so this resolves whatever it emits.
 func defaultPalette() map[string]string {
 	names := []string{
 		"black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
@@ -349,12 +350,37 @@ func defaultPalette() map[string]string {
 		"#1d1f21", "#cc342b", "#198844", "#fba922", "#3971ed", "#a36ac7", "#3971ed", "#c5c8c6",
 		"#969896", "#cc342b", "#198844", "#fba922", "#3971ed", "#a36ac7", "#3971ed", "#ffffff",
 	}
-	out := make(map[string]string, len(names)*2)
+	out := make(map[string]string, 256+len(names))
 	for i, name := range names {
 		out[name] = hexes[i]
 		out[strconv.Itoa(i)] = hexes[i]
 	}
+	// The rest of the xterm 256-color space: the 6×6×6 color cube (16-231)
+	// and the grayscale ramp (232-255).
+	for i := 16; i <= 255; i++ {
+		out[strconv.Itoa(i)] = xterm256Hex(i)
+	}
 	return out
+}
+
+// xterm256Hex returns the hex value for an xterm 256-color index in the
+// 16-255 range using the standard cube + grayscale formula.
+func xterm256Hex(i int) string {
+	if i >= 16 && i <= 231 {
+		n := i - 16
+		conv := func(v int) int {
+			if v == 0 {
+				return 0
+			}
+			return 55 + v*40
+		}
+		return fmt.Sprintf("#%02x%02x%02x", conv(n/36), conv((n/6)%6), conv(n%6))
+	}
+	if i >= 232 && i <= 255 {
+		level := 8 + (i-232)*10
+		return fmt.Sprintf("#%02x%02x%02x", level, level, level)
+	}
+	return ""
 }
 
 // PaletteNames returns the sorted palette keys. Exposed for tests and tooling

@@ -94,6 +94,46 @@ func TestSnapshotSVGReverseSwapsColors(t *testing.T) {
 	}
 }
 
+func TestSnapshotSVGColors(t *testing.T) {
+	s := snap("x")
+	s.Cells[0].Style = terminal.Style{Fg: "red", Bg: "blue"}
+	out := SnapshotSVG(s, DefaultOptions())
+	// Named colors resolve through the palette to hex.
+	if !strings.Contains(out, `fill="#cc342b"`) { // red
+		t.Errorf("expected red foreground hex in output:\n%s", out)
+	}
+	if !strings.Contains(out, `fill="#3971ed"/>`) { // blue background rect
+		t.Errorf("expected blue background rect in output:\n%s", out)
+	}
+}
+
+func TestSnapshotSVGTruecolorAnd256(t *testing.T) {
+	s := snap("ab")
+	s.Cells[0].Style = terminal.Style{Fg: "#ff8800"} // truecolor passthrough
+	s.Cells[1].Style = terminal.Style{Fg: "201"}     // 256-palette index
+	out := SnapshotSVG(s, DefaultOptions())
+	if !strings.Contains(out, `fill="#ff8800"`) {
+		t.Errorf("expected truecolor fg passthrough:\n%s", out)
+	}
+	if !strings.Contains(out, xterm256Hex(201)) {
+		t.Errorf("expected 256-index color %s in output:\n%s", xterm256Hex(201), out)
+	}
+}
+
+func TestXterm256Hex(t *testing.T) {
+	tests := map[int]string{
+		16:  "#000000",
+		231: "#ffffff",
+		232: "#080808",
+		255: "#eeeeee",
+	}
+	for idx, want := range tests {
+		if got := xterm256Hex(idx); got != want {
+			t.Errorf("xterm256Hex(%d) = %s, want %s", idx, got, want)
+		}
+	}
+}
+
 func TestSnapshotSVGBlankScreenHasNoText(t *testing.T) {
 	s := snap("   ", "   ")
 	out := SnapshotSVG(s, DefaultOptions())

@@ -34,6 +34,14 @@ outcomes:
 
 Screen verifiers support `contains`, `notContains`, and `regex`. Cell verifiers can check characters and style attributes such as foreground color, background color, bold, dim, italic, underline, and reverse.
 
+Color values use a canonical form so `style: { fg, bg }` assertions are stable across SGR encodings:
+
+- the 16 base colors are named: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, and their `bright`-prefixed variants (e.g. `brightred`). SGR `31` and `38;5;1` both read as `red`.
+- 256-palette colors 16–255 are their decimal index as a string (e.g. `"201"`).
+- truecolor (`38;2;r;g;b`) is lowercase hex (e.g. `"#ff8800"`).
+
+The same values drive the colors in the rendered `screens/final.svg` screenshot.
+
 Outcomes can set their own `timeoutMs` and `normalize` block when a single assertion needs different polling or text cleanup than the rest of the spec:
 
 ```yaml

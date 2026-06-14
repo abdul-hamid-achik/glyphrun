@@ -45,7 +45,9 @@ Every step can include a ` + "`when`" + ` guard that uses the same verifier shap
 
 Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, and trusted ` + "`command`" + `.
 
-Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes. Process verifiers can check exit state and exit code.
+Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes (fg, bg, bold, dim, italic, underline, reverse). Process verifiers can check exit state and exit code.
+
+Colors use a canonical form: the 16 base colors are named (` + "`red`" + `, ` + "`brightblue`" + `, …), 256-palette indices 16-255 are their decimal string (` + "`\"201\"`" + `), and truecolor is lowercase hex (` + "`\"#ff8800\"`" + `). The same values color the rendered ` + "`screens/final.svg`" + `.
 
 ` + "`file`" + ` polls the filesystem for a file matching a glob (filename wildcards supported, directory portion is literal). The verifier passes when a match exists, and optionally requires the matched file's body to contain a needle. Default timeout is 5s; override with ` + "`timeoutMs`" + `.
 
