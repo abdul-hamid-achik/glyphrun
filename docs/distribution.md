@@ -24,9 +24,9 @@ go install github.com/abdul-hamid-achik/glyphrun/cmd/glyph@latest
 ## Cutting a release
 
 Releases are automated: pushing a `v*` tag runs `.github/workflows/release.yml`,
-which invokes GoReleaser to build the matrix (darwin/linux × amd64/arm64),
-publish a GitHub Release with archives + `checksums.txt`, and update the
-Homebrew cask.
+which invokes GoReleaser to build the matrix (darwin/linux/windows × amd64/arm64
+— Windows as `.zip`, the rest as `.tar.gz`), publish a GitHub Release with
+archives + `checksums.txt`, and update the Homebrew cask (macOS).
 
 ```bash
 git tag v0.2.0

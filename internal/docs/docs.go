@@ -442,7 +442,7 @@ Glyphrun ships cross-platform binaries via GoReleaser.
 
 Install a published release with Homebrew (` + "`brew install abdul-hamid-achik/tap/glyph`" + `), by downloading an archive from the GitHub Releases page, or from source with ` + "`go install github.com/abdul-hamid-achik/glyphrun/cmd/glyph@latest`" + `.
 
-Cut a release by pushing a ` + "`v*`" + ` tag: ` + "`.github/workflows/release.yml`" + ` runs GoReleaser to build the darwin/linux × amd64/arm64 matrix, publish a GitHub Release with checksums, and update the Homebrew cask. Validate first with ` + "`goreleaser check`" + ` and ` + "`goreleaser build --snapshot --clean`" + `.
+Cut a release by pushing a ` + "`v*`" + ` tag: ` + "`.github/workflows/release.yml`" + ` runs GoReleaser to build the darwin/linux/windows × amd64/arm64 matrix, publish a GitHub Release with checksums, and update the Homebrew cask. Validate first with ` + "`goreleaser check`" + ` and ` + "`goreleaser build --snapshot --clean`" + `.
 `,
 
 	"topics": `# Docs Topics

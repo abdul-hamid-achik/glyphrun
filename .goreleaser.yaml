@@ -19,6 +19,7 @@ builds:
     goos:
       - darwin
       - linux
+      - windows
     goarch:
       - amd64
       - arm64
@@ -35,6 +36,11 @@ archives:
   - id: glyph
     formats:
       - tar.gz
+    # Ship Windows builds as .zip, the platform convention.
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
