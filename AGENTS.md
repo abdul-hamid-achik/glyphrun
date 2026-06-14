@@ -36,6 +36,7 @@ Package boundaries are part of the contract — do not blur them.
 | `internal/flaky` | Stability/divergence summary for repeated runs. Pure. |
 | `internal/scaffold` | Draft spec inference from a recorded session. |
 | `internal/ghreport` | GitHub PR-comment Markdown rendering. |
+| `internal/tui` | Interactive frame scrubber (`replay --tui`). The only Bubble Tea dependency; keep it isolated here. |
 | `internal/mcp` | Stdio MCP server. Thin pass-through to CLI commands. |
 | `internal/config` | Config loading, defaults, schema validation. |
 | `internal/input` | Key name → escape sequence mapping. Pure function. |

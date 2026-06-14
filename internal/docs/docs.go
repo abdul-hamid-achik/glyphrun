@@ -66,6 +66,8 @@ Each run writes ` + "`run.json`" + `, ` + "`run.yaml`" + `, ` + "`run.md`" + `, 
 Start with ` + "`run.md`" + ` for a human summary, ` + "`run.json`" + ` for automation, ` + "`agent_context.md`" + ` for agent debugging, ` + "`diagnostics/environment.md`" + ` for runtime context, and ` + "`screens/final.txt`" + ` for the normalized terminal state.
 
 The final screen is also rendered to a deterministic ` + "`screens/final.svg`" + ` (a pure function of the captured cell grid). Render any captured screen on demand with ` + "`glyph render <run|latest> [--screen <name>] [--out path|-]`" + `; the SVG is reproducible and safe to regenerate in CI or drop into a PR comment.
+
+Scrub the recorded frames interactively with ` + "`glyph replay <run> --tui`" + `: step (←/→), jump (home/end), and play back ` + "`frames/frames.ndjson`" + ` to see exactly when the screen changed.
 `,
 	"agents": `# Agents
 

@@ -19,6 +19,6 @@ High-signal files:
 
 Use `glyph diff <runA> <runB>` to compare two artifact packs by run status, outcome results, and final screen text.
 
-Use `glyph record -- <command...>` to capture a one-off PTY session and `glyph replay <run>` to print its raw PTY log.
+Use `glyph record -- <command...>` to capture a one-off PTY session and `glyph replay <run>` to print its raw PTY log. `glyph replay <run> --tui` opens an interactive scrubber over `frames/frames.ndjson` — step (←/→), jump (home/end), and play back the captured frames to see exactly when the screen changed.
 
 Use `glyph render <run|latest>` to render a run's final screen (or `--screen <name>` for a captured snapshot) to a deterministic SVG. The render is a pure function of the captured cell grid, so it is reproducible and safe to regenerate in CI; `--out -` streams the raw SVG to stdout.

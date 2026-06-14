@@ -196,7 +196,7 @@ glyph snapshot update <spec...>        Refresh committed terminal snapshots
 glyph diff <runA> <runB>               Compare two run artifact directories
 glyph record -- <command...>           Capture a PTY session as an artifact pack
                                        --scaffold <path> also writes a draft spec from the session
-glyph replay <run>                     Replay or print a recorded PTY log
+glyph replay <run>                     Replay or print a recorded PTY log; --tui scrubs frames interactively
 glyph render <run|latest>              Render a screen to a deterministic SVG (--screen <name>, --out path|-)
 glyph context <run|latest>             Print agent-focused failure/run context
 glyph repair <spec> [run|latest]       Propose step fixes for a failed run; --write applies them
@@ -489,6 +489,7 @@ internal/repair/        Failed-run analysis and step-repair proposals
 internal/flaky/         Stability/divergence summary for repeated runs
 internal/scaffold/      Draft spec inference from a recorded session
 internal/ghreport/      GitHub PR-comment Markdown rendering
+internal/tui/           Interactive frame scrubber (Bubble Tea v2; replay --tui)
 internal/version/       Build-time version metadata
 internal/mcp/           MCP stdio server
 schemas/                JSON schemas for specs, config, and run output
