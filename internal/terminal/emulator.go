@@ -187,16 +187,23 @@ func escapeComplete(buf []byte, r rune) bool {
 	if len(buf) == 0 {
 		return false
 	}
-	if buf[0] == ']' {
+	switch buf[0] {
+	case ']':
+		// OSC: terminated by BEL or ST (ESC \).
 		return r == '\a' || strings.HasSuffix(string(buf), "\x1b\\")
-	}
-	if buf[0] != '[' {
+	case 'P', '_', '^', 'X':
+		// String-type sequences — DCS (Sixel), APC (Kitty graphics), PM, SOS —
+		// run until ST. Without this their payloads would be parsed as text and
+		// corrupt the screen. (BEL is accepted defensively.)
+		return r == '\a' || strings.HasSuffix(string(buf), "\x1b\\")
+	case '[':
+		if len(buf) == 1 {
+			return false
+		}
+		return r >= '@' && r <= '~'
+	default:
 		return true
 	}
-	if len(buf) == 1 {
-		return false
-	}
-	return r >= '@' && r <= '~'
 }
 
 func (e *SimpleEmulator) applyEscape(seq string) {
@@ -208,6 +215,13 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		return
 	}
 	if !strings.HasPrefix(seq, "[") {
+		// String-type sequences (DCS/APC/PM/SOS) are consumed and ignored. We
+		// don't render images (Sixel/Kitty graphics), but their payload must
+		// not spill onto the screen.
+		switch seq[0] {
+		case 'P', '_', '^', 'X':
+			return
+		}
 		// Non-CSI ("ESC <byte>") sequences.
 		switch seq {
 		case "7": // DECSC — save cursor

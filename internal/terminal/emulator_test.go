@@ -215,6 +215,30 @@ func TestSimpleEmulatorOriginMode(t *testing.T) {
 	}
 }
 
+func TestSimpleEmulatorConsumesStringSequences(t *testing.T) {
+	tests := []struct {
+		name string
+		seq  string
+	}{
+		{name: "DCS/Sixel", seq: "AB\x1bPq#0;2;0;0;0~~@@vvvv\x1b\\CD"},
+		{name: "APC/Kitty", seq: "AB\x1b_Gf=24,s=10,v=10;payloadbytes\x1b\\CD"},
+		{name: "PM", seq: "AB\x1b^private message\x1b\\CD"},
+		{name: "SOS", seq: "AB\x1bXstart of string\x1b\\CD"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			em := NewEmulator(40, 1)
+			if _, err := em.Feed([]byte(tc.seq)); err != nil {
+				t.Fatal(err)
+			}
+			got := rowText(em.Screen(), 0, 40)
+			if got != "ABCD" {
+				t.Errorf("string sequence leaked onto screen: row = %q, want %q", got, "ABCD")
+			}
+		})
+	}
+}
+
 func TestSimpleEmulatorTracksMouseModes(t *testing.T) {
 	em := NewEmulator(20, 3)
 	if em.MouseTrackingMode() || em.MouseSGRMode() {

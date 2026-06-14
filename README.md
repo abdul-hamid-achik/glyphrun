@@ -29,10 +29,12 @@ delete line (IL/DL), insert/delete character (ICH/DCH), scroll up/down (SU/SD),
 save/restore cursor (DECSC/DECRC), and origin mode (DECOM).
 
 It runs on Unix PTYs (macOS, Linux) and on Windows via ConPTY (Windows 10 1809+),
-behind a platform-neutral backend interface.
+behind a platform-neutral backend interface. SGR colors (16/256/truecolor),
+OSC 8 hyperlinks (`link` verifier), and mouse input (`mouse` step) are supported;
+graphics string sequences (Sixel, Kitty) are consumed safely rather than rendered.
 
 Some terminal features are intentionally still future work: remaining xterm edge
-cases, mouse protocols, Sixel / images, and terminal hyperlinks.
+cases and rendering inline images.
 
 ## Requirements
 
