@@ -25,12 +25,11 @@ func makeScreen(t *testing.T, cols, rows int, body string) terminal.Emulator {
 func intPtr(v int) *int { return &v }
 
 func TestCheckCount_NonEmptyFullScreen(t *testing.T) {
-	// 20×2: hand-counted non-blank is 11 + 11 = 22.
-	// We assert 20 to keep the test tied to the well-defined
-	// pre-scroll state: the cursor is on row 1 col 11 after the
-	// '\n' + "foo bar baz". A future test that wants to lock
-	// down the exact non-blank count can use Snapshot().Cells().
-	emu := makeScreen(t, 20, 2, "hello world\nfoo bar baz")
+	// 20×2: two lines, each starting at column 0. A newline that returns to
+	// column 0 is CR+LF ("\r\n") — a bare "\n" is a line feed only and keeps
+	// the column (LNM-reset default). Non-blank (non-space) cells:
+	// "hello world" = 10, "foo bar baz" = 9 → 19.
+	emu := makeScreen(t, 20, 2, "hello world\r\nfoo bar baz")
 	s := &runState{emulator: emu}
 	ok, msg, raw := s.checkCount(emu.Screen(), spec.CountCondition{Equals: intPtr(19)})
 	if !ok {

@@ -19,6 +19,13 @@ type SimpleEmulator struct {
 	seq     int64
 	escMode bool
 	escBuf  []byte
+	// utf8buf holds the bytes of a multi-byte rune that was split across a
+	// Feed() boundary (PTY reads chunk arbitrarily, so a 3-byte glyph like
+	// "•" can arrive 2 bytes in one read and 1 in the next). The fragment is
+	// prepended to the next Feed so the rune decodes as one cell instead of
+	// several raw bytes (which would corrupt the cell AND desync the cursor
+	// for the rest of the frame).
+	utf8buf []byte
 	style   Style
 
 	// pendingWrap implements the VT100 deferred-autowrap quirk: writing a
@@ -101,12 +108,26 @@ func (e *SimpleEmulator) Feed(data []byte) ([]Frame, error) {
 	raw := append([]byte(nil), data...)
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for len(data) > 0 {
-		r, size := utf8.DecodeRune(data)
-		if r == utf8.RuneError && size == 1 {
-			r = rune(data[0])
+	// Prepend any rune fragment buffered from the previous Feed (see utf8buf).
+	buf := data
+	if len(e.utf8buf) > 0 {
+		buf = append(e.utf8buf, data...)
+		e.utf8buf = nil
+	}
+	for len(buf) > 0 {
+		// A trailing fragment of a valid multi-byte rune (FullRune reports
+		// false only for an incomplete-but-valid prefix; a genuinely invalid
+		// byte decodes as RuneError width 1 and IS "full"). Stash it and wait
+		// for the rest in the next Feed instead of mangling it into raw bytes.
+		if !utf8.FullRune(buf) {
+			e.utf8buf = append([]byte(nil), buf...)
+			break
 		}
-		data = data[size:]
+		r, size := utf8.DecodeRune(buf)
+		if r == utf8.RuneError && size == 1 {
+			r = rune(buf[0])
+		}
+		buf = buf[size:]
 		e.feedRune(r)
 	}
 	e.seq++
@@ -164,7 +185,13 @@ func (e *SimpleEmulator) feedRune(r rune) {
 		e.pendingWrap = false
 		e.cursor.X = 0
 	case '\n':
-		e.newLine()
+		// Bare line feed: move DOWN one row, column unchanged (the default
+		// LNM-reset behavior of xterm et al.). It is NOT a carriage return —
+		// the column is only reset by an explicit '\r'. Full-screen renderers
+		// (Bubble Tea / ultraviolet) emit a bare LF to step down a row while
+		// keeping the column; treating it as CR+LF here put the next write at
+		// column 0 and corrupted the frame.
+		e.index()
 	case '\b':
 		e.pendingWrap = false
 		if e.cursor.X > 0 {
