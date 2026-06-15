@@ -16,6 +16,106 @@ func TestSimpleEmulatorFeedsAnsiScreen(t *testing.T) {
 	}
 }
 
+// TestSimpleEmulatorSplitRuneAcrossFeeds guards the PTY-chunk-boundary fix: a
+// multi-byte glyph (here "•", 0xE2 0x80 0xA2) can arrive split across two
+// Feed() calls. It must decode as ONE cell and advance the cursor by ONE
+// column — not be mangled into raw bytes (which corrupts the cell and desyncs
+// every later column on the frame).
+func TestSimpleEmulatorSplitRuneAcrossFeeds(t *testing.T) {
+	bullet := []byte("•") // 0xE2 0x80 0xA2
+	splits := []struct {
+		name string
+		a, b []byte
+	}{
+		{"after-1-byte", bullet[:1], bullet[1:]},
+		{"after-2-bytes", bullet[:2], bullet[2:]},
+	}
+	for _, sp := range splits {
+		t.Run(sp.name, func(t *testing.T) {
+			em := NewEmulator(10, 1)
+			if _, err := em.Feed(sp.a); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := em.Feed(sp.b); err != nil {
+				t.Fatal(err)
+			}
+			if got := em.Screen().Cell(0, 0).Char; got != "•" {
+				t.Fatalf("cell 0,0 = %q, want bullet", got)
+			}
+			if got := em.Screen().Cell(1, 0).Char; got != " " {
+				t.Fatalf("cell 1,0 = %q, want blank (split bytes leaked into extra cells)", got)
+			}
+			if x := em.Screen().Cursor().X; x != 1 {
+				t.Fatalf("cursor X = %d, want 1 (column desync from a split rune)", x)
+			}
+		})
+	}
+}
+
+// TestSimpleEmulatorSplitRuneMidLine proves a split rune in the middle of a
+// line does not shift the cells after it (the bug that produced "32 Projects"
+// and stale count digits in full-screen TUIs).
+func TestSimpleEmulatorSplitRuneMidLine(t *testing.T) {
+	em := NewEmulator(10, 1)
+	bullet := []byte("•")
+	if _, err := em.Feed(append([]byte("AB"), bullet[:2]...)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := em.Feed(append(append([]byte(nil), bullet[2:]...), []byte("CD")...)); err != nil {
+		t.Fatal(err)
+	}
+	if got := rowText(em.Screen(), 0, 5); got != "AB•CD" {
+		t.Fatalf("row = %q, want %q", got, "AB•CD")
+	}
+	if x := em.Screen().Cursor().X; x != 5 {
+		t.Fatalf("cursor X = %d, want 5", x)
+	}
+}
+
+// TestSimpleEmulatorInvalidByteNotBuffered makes sure a genuinely invalid byte
+// (not an incomplete-but-valid prefix) is processed immediately, never stuck in
+// the fragment buffer waiting for bytes that will never come.
+func TestSimpleEmulatorInvalidByteNotBuffered(t *testing.T) {
+	em := NewEmulator(10, 1)
+	if _, err := em.Feed([]byte{0xff}); err != nil { // 0xff can't start any rune
+		t.Fatal(err)
+	}
+	if _, err := em.Feed([]byte("X")); err != nil {
+		t.Fatal(err)
+	}
+	if got := em.Screen().Cell(1, 0).Char; got != "X" {
+		t.Fatalf("cell 1,0 = %q, want X (invalid byte was wrongly buffered)", got)
+	}
+}
+
+// TestSimpleEmulatorBareLineFeedPreservesColumn guards the LF-vs-CRLF fix: a
+// bare line feed moves DOWN one row but keeps the column (the default
+// LNM-reset behavior). Only an explicit carriage return resets the column.
+// Full-screen renderers emit a bare LF to step down while keeping the column;
+// treating it as CR+LF put the next write at column 0 and corrupted the frame.
+func TestSimpleEmulatorBareLineFeedPreservesColumn(t *testing.T) {
+	em := NewEmulator(20, 5)
+	// CUP to row 1 col 6 -> (5,0); print A (cursor 6,0); bare LF -> (6,1); print B.
+	if _, err := em.Feed([]byte("\x1b[1;6HA\nB")); err != nil {
+		t.Fatal(err)
+	}
+	if got := em.Screen().Cell(5, 0).Char; got != "A" {
+		t.Fatalf("A should be at (5,0), got %q", got)
+	}
+	if got := em.Screen().Cell(6, 1).Char; got != "B" {
+		t.Fatalf("bare LF must preserve the column: B should be at (6,1), got %q at (6,1) (column reset to 0?)", got)
+	}
+
+	// A carriage return DOES reset the column: CR+LF puts B at (0,1).
+	em2 := NewEmulator(20, 5)
+	if _, err := em2.Feed([]byte("\x1b[1;6HA\r\nB")); err != nil {
+		t.Fatal(err)
+	}
+	if got := em2.Screen().Cell(0, 1).Char; got != "B" {
+		t.Fatalf("CR+LF should put B at (0,1), got %q", got)
+	}
+}
+
 func TestSimpleEmulatorCursorMovementAndStyles(t *testing.T) {
 	em := NewEmulator(10, 3)
 	if _, err := em.Feed([]byte("ab\x1b[Dc\x1b[1mZ")); err != nil {
