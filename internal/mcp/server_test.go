@@ -55,11 +55,20 @@ func TestServeDocsWorksWithoutDocsDirectory(t *testing.T) {
 	}
 }
 
+// responsePayload extracts the JSON-RPC payload from a server response. The
+// server writes newline-delimited JSON-RPC (the stdio MCP convention used by
+// Claude Code, Codex, OpenCode, and Claude Desktop). For robustness against
+// future framing changes, this helper also accepts Content-Length-framed
+// output by splitting on the blank-line separator.
 func responsePayload(t *testing.T, framed string) []byte {
 	t.Helper()
-	parts := strings.SplitN(framed, "\r\n\r\n", 2)
-	if len(parts) != 2 {
-		t.Fatalf("response was not framed: %q", framed)
+	trimmed := strings.TrimRight(framed, "\n")
+	if strings.HasPrefix(strings.ToLower(trimmed), "content-length:") {
+		parts := strings.SplitN(trimmed, "\r\n\r\n", 2)
+		if len(parts) != 2 {
+			t.Fatalf("response was content-length framed but missing body: %q", framed)
+		}
+		return []byte(parts[1])
 	}
-	return []byte(parts[1])
+	return []byte(trimmed)
 }

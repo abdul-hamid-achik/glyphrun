@@ -2,10 +2,8 @@ package mcp
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -579,14 +577,19 @@ func readMessage(reader *bufio.Reader) ([]byte, error) {
 	return []byte(line), nil
 }
 
+// writeResponse writes a JSON-RPC response as a single JSON object followed by
+// a newline. This is the newline-delimited JSON-RPC framing that stdio MCP
+// clients (Claude Code, Codex, OpenCode, Claude Desktop) expect. The input
+// side (readMessage) still accepts Content-Length-framed requests for
+// backwards compatibility, but the output is line-delimited only because that
+// is what the MCP spec defines for stdio transport and what every known
+// consumer of `glyph mcp` uses.
 func writeResponse(out io.Writer, resp response) error {
 	data, err := json.Marshal(resp)
 	if err != nil {
 		return err
 	}
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "Content-Length: %d\r\n\r\n", len(data))
-	buf.Write(data)
-	_, err = out.Write(buf.Bytes())
+	data = append(data, '\n')
+	_, err = out.Write(data)
 	return err
 }
