@@ -6,6 +6,7 @@ type Spec struct {
 	ContractHash  string         `yaml:"contractHash,omitempty" json:"contractHash,omitempty"`
 	Intent        string         `yaml:"intent" json:"intent"`
 	Metadata      *Metadata      `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	CoversSymbol  string         `yaml:"coversSymbol,omitempty" json:"coversSymbol,omitempty"`
 	Imports       []string       `yaml:"imports,omitempty" json:"imports,omitempty"`
 	Target        Target         `yaml:"target" json:"target"`
 	Terminal      Terminal       `yaml:"terminal" json:"terminal"`

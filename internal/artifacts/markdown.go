@@ -15,6 +15,23 @@ func RenderRunMarkdown(result RunResult) string {
 	b.WriteString("## Summary\n\n")
 	fmt.Fprintf(&b, "- status: %s\n", result.Status)
 	fmt.Fprintf(&b, "- spec: `%s`\n", result.SpecName)
+	if result.ContractHash != "" {
+		fmt.Fprintf(&b, "- contract: `%s`\n", result.ContractHash)
+	}
+	if result.CoversSymbol != "" {
+		fmt.Fprintf(&b, "- covers symbol: `%s`\n", result.CoversSymbol)
+	}
+	if result.Metadata != nil {
+		if result.Metadata.Feature != "" {
+			fmt.Fprintf(&b, "- feature: `%s`\n", result.Metadata.Feature)
+		}
+		if result.Metadata.Owner != "" {
+			fmt.Fprintf(&b, "- owner: `%s`\n", result.Metadata.Owner)
+		}
+		if len(result.Metadata.Tags) > 0 {
+			fmt.Fprintf(&b, "- tags: %s\n", strings.Join(result.Metadata.Tags, ", "))
+		}
+	}
 	fmt.Fprintf(&b, "- run: `%s`\n", result.RunID)
 	fmt.Fprintf(&b, "- target: `%s`\n", shellJoin(result.Target.Cmd))
 	if result.Target.Cwd != "" {
@@ -90,6 +107,12 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string, recen
 	fmt.Fprintf(&b, "# Glyphrun Agent Context\n\n")
 	b.WriteString("## Run\n\n")
 	fmt.Fprintf(&b, "- spec: `%s`\n", result.SpecName)
+	if result.ContractHash != "" {
+		fmt.Fprintf(&b, "- contract: `%s`\n", result.ContractHash)
+	}
+	if result.CoversSymbol != "" {
+		fmt.Fprintf(&b, "- covers symbol: `%s`\n", result.CoversSymbol)
+	}
 	fmt.Fprintf(&b, "- run: `%s`\n", result.RunID)
 	fmt.Fprintf(&b, "- status: %s\n", result.Status)
 	fmt.Fprintf(&b, "- target: `%s`\n", shellJoin(result.Target.Cmd))

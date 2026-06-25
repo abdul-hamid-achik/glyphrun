@@ -278,11 +278,11 @@ Rules:
 - Per-spec values are layered on top of the config redactor, never replace it. The config's ` + "`headers`" + ` and ` + "`patterns`" + ` still apply.
 - The redactor only runs against text artifacts (` + "`run.md`" + `, ` + "`screens/*`" + `, ` + "`raw/pty.raw.log`" + `). The raw PTY log is also truncated at ` + "`artifacts.maxRawLogBytes`" + ` from the config; the truncation marker itself contains the byte cap so the loss is visible.
 
-Per-spec redaction is a contract — the spec's ` + "`contractHash`" + ` covers the ` + "`redaction:`" + ` block. Changing it invalidates the hash on the next run.
+Per-spec redaction is a contract — the spec's ` + "`contractHash`" + ` covers the ` + "`redaction:`" + ` block (and ` + "`coversSymbol`" + ` when set). Changing it invalidates the hash on the next run.
 `,
 	"contract-hash": `# Contract Hash Enforcement
 
-Specs carry a ` + "`contractHash`" + ` stamped over ` + "`intent`" + `, ` + "`outcomes`" + `, and the new ` + "`redaction:`" + ` block. Glyphrun refuses to run a spec whose on-disk content does not match the hash. The point is to detect silent contract drift: a contributor edits an outcome to make a flaky test pass, the hash stops matching, the run aborts with exit code ` + "`6`" + `, and the change shows up in code review.
+Specs carry a ` + "`contractHash`" + ` stamped over ` + "`intent`" + `, ` + "`outcomes`" + `, ` + "`redaction:`" + `, and ` + "`coversSymbol`" + ` (when set). Glyphrun refuses to run a spec whose on-disk content does not match the hash. The point is to detect silent contract drift: a contributor edits an outcome to make a flaky test pass, the hash stops matching, the run aborts with exit code ` + "`6`" + `, and the change shows up in code review.
 
 Workflow:
 

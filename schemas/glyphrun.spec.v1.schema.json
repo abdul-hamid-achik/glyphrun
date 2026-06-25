@@ -10,6 +10,7 @@
     "contractHash": { "type": "string" },
     "intent": { "type": "string", "minLength": 1 },
     "metadata": { "$ref": "#/$defs/metadata" },
+    "coversSymbol": { "type": "string", "minLength": 1 },
     "redaction": { "$ref": "#/$defs/redaction" },
     "artifacts": { "$ref": "#/$defs/capturePolicy" },
     "imports": { "type": "array", "items": { "type": "string" } },
