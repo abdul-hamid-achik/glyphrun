@@ -30,9 +30,32 @@
         "env": {
           "type": "object",
           "additionalProperties": { "type": "string" }
-        }
+        },
+        "secrets": { "$ref": "#/$defs/secrets" }
       },
       "additionalProperties": false
+    },
+    "secrets": {
+      "type": "object",
+      "description": "Declare a tvault env-group (or direct project) whose resolved secrets are injected into the run environment at start time. The config carries only group/env/project names — never secret values.",
+      "properties": {
+        "provider": { "type": "string", "enum": ["tvault"], "default": "tvault" },
+        "binary": { "type": "string", "minLength": 1, "description": "Path to the tvault executable (defaults to 'tvault' on PATH)" },
+        "group": { "type": "string", "minLength": 1, "description": "tvault environment group name" },
+        "env": { "type": "string", "minLength": 1, "description": "Environment name within the group" },
+        "project": { "type": "string", "minLength": 1, "description": "Direct tvault project name (mutually exclusive with group+env)" },
+        "only": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Allowlist of secret keys to inject (least privilege)"
+        },
+        "prefix": { "type": "string", "minLength": 1, "description": "Inject only keys with this prefix" }
+      },
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["group", "env"] },
+        { "required": ["project"] }
+      ]
     },
     "terminal": {
       "type": "object",

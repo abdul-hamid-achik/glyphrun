@@ -101,6 +101,41 @@ Use config for shared terminal defaults, artifact behavior, variables, and redac
 Use ` + "`glyph init [dir] --cmd <target> --ready <text>`" + ` to create ` + "`glyphrun.config.yml`" + `, ` + "`specs/glyphrun/smoke.yml`" + `, and ` + "`.gitignore`" + ` artifact entries.
 
 Use ` + "`terminal.alternateScreen: require`" + ` when a full-screen TUI must enter alternate screen mode, or ` + "`forbid`" + ` when a command must stay on the main terminal screen. The default is ` + "`auto`" + `.
+
+## Secrets (tvault env-group integration)
+
+Declare a tvault env-group (or direct project) in the environment block and glyphrun resolves the secrets at run time, injecting them into the process environment. The config file carries only group/env/project names — never secret values.
+
+` + "```" + `yaml
+environments:
+  local:
+    secrets:
+      group: liftclub        # tvault environment group
+      env: preview            # environment within the group
+      only:                   # optional: inject only these keys (least privilege)
+        - DATABASE_URL
+        - STRIPE_SECRET_KEY
+    env:
+      TVAULT_DIR: .glyphrun/tmp/vault
+      TVAULT_PASSPHRASE: glyphpass
+` + "```" + `
+
+Or use a direct project (no env group):
+
+` + "```" + `yaml
+environments:
+  ci:
+    secrets:
+      project: liftclub-preview
+` + "```" + `
+
+At run time glyphrun calls ` + "`tvault env --group <g> --env <e> --format json`" + ` (or ` + "`-p <project>`" + `), parses the JSON output, and merges the key/value pairs into the run environment. All resolved values are added to the per-run redactor so they are scrubbed from every artifact.
+
+` + "`TVAULT_DIR`" + ` and ` + "`TVAULT_PASSPHRASE`" + ` (or ` + "`TVAULT_IDENTITY_KEY`" + `) must be in the environment — set them in the config ` + "`env`" + ` block or export them before running glyph.
+
+The ` + "`only`" + ` allowlist and ` + "`prefix`" + ` filter are applied client-side after resolution. A key is kept if it matches either selector (union semantics, matching ` + "`tvault run --only/--prefix`" + `).
+
+When ` + "`secrets`" + ` is absent, behavior is identical to today — the block is purely additive.
 `,
 	"install": `# Install
 

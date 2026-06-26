@@ -121,7 +121,23 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		artifactRoot = filepath.Join(runtime.ProjectRoot, artifactRoot)
 	}
 	runDir := filepath.Join(artifactRoot, runID)
-	writer := artifacts.NewWriter(runDir, buildRedactor(runtime.Config.Redaction, parse.Spec.Redaction))
+
+	// Resolve tvault env-group secrets before building the redactor so the
+	// resolved values are available to both the run environment and the
+	// redactor. The resolution is a no-op when the config has no secrets block.
+	var secretValues []string
+	if runtime.Secrets != nil {
+		secretEnv, values, err := resolveSecrets(ctx, runtime.Secrets, envSlice(runtime.Env))
+		if err != nil {
+			return earlyError(runDir, started, resolved.Name, fmt.Sprintf("secret resolution failed: %v", err), exitErrored), nil
+		}
+		for k, v := range secretEnv {
+			runtime.Env[k] = v
+		}
+		secretValues = values
+	}
+
+	writer := artifacts.NewWriter(runDir, buildRedactor(runtime.Config.Redaction, parse.Spec.Redaction, secretValues))
 	if err := writer.EnsureDirs(); err != nil {
 		return artifacts.RunResult{}, err
 	}
@@ -744,13 +760,13 @@ func (s *runState) executeBatch(ctx context.Context, steps []spec.Step) (stepExe
 // Per-spec patterns are not exposed in the spec schema today (only
 // `values` is), but the helper accepts them anyway so a future
 // schema bump doesn't require a runner change.
-func buildRedactor(cfg config.Redaction, specRedaction *spec.Redaction) artifacts.Redactor {
+func buildRedactor(cfg config.Redaction, specRedaction *spec.Redaction, secretValues []string) artifacts.Redactor {
 	r := artifacts.NewRedactor(cfg)
-	if specRedaction == nil {
-		return r
-	}
-	if len(specRedaction.Values) > 0 {
+	if specRedaction != nil && len(specRedaction.Values) > 0 {
 		r = r.WithValues(specRedaction.Values)
+	}
+	if len(secretValues) > 0 {
+		r = r.WithValues(secretValues)
 	}
 	return r
 }
@@ -1713,6 +1729,13 @@ func renderEnvironmentDiagnostic(rt config.Runtime, s spec.Spec, result artifact
 	}
 	if len(s.Target.Env) > 0 {
 		fmt.Fprintf(&b, "- target env overrides: %d keys\n", len(s.Target.Env))
+	}
+	if rt.Secrets != nil {
+		source := rt.Secrets.Project
+		if rt.Secrets.Group != "" {
+			source = rt.Secrets.Group + "/" + rt.Secrets.Env
+		}
+		fmt.Fprintf(&b, "- secrets: resolved from %s\n", source)
 	}
 	b.WriteString("\n## Terminal\n\n")
 	fmt.Fprintf(&b, "- size: %dx%d\n", s.Terminal.Cols, s.Terminal.Rows)

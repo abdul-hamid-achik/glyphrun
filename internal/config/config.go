@@ -23,8 +23,52 @@ type Config struct {
 }
 
 type Environment struct {
-	Vars map[string]string `yaml:"vars" json:"vars"`
-	Env  map[string]string `yaml:"env" json:"env"`
+	Vars    map[string]string `yaml:"vars" json:"vars"`
+	Env     map[string]string `yaml:"env" json:"env"`
+	Secrets *Secrets          `yaml:"secrets,omitempty" json:"secrets,omitempty"`
+}
+
+// Secrets declares a tvault env-group whose resolved values are injected
+// into the run environment at start time. The config file carries only the
+// group/env names (or a direct project) — never secret values. At run time
+// glyphrun calls `tvault env --group <g> --env <e> --format json`, parses the
+// output, and merges the key/value pairs into the process environment. All
+// resolved values are also added to the per-run redactor so they are scrubbed
+// from every artifact before it lands on disk.
+//
+// Either (Group + Env) or Project must be set. If neither is set, the block is
+// a no-op (useful for sharing a config across environments where only some
+// have a tvault backend).
+//
+// Only and Prefix are optional least-privilege filters applied client-side
+// after resolution. A key is kept if it matches either filter.
+type Secrets struct {
+	// Provider is the secrets backend. Currently only "tvault" is supported.
+	// Defaults to "tvault" when empty.
+	Provider string `yaml:"provider,omitempty" json:"provider,omitempty"`
+
+	// Binary is the path to the tvault executable. Defaults to "tvault"
+	// (looked up on PATH).
+	Binary string `yaml:"binary,omitempty" json:"binary,omitempty"`
+
+	// Group is the tvault environment group name (e.g. "liftclub").
+	// Requires Env to also be set.
+	Group string `yaml:"group,omitempty" json:"group,omitempty"`
+
+	// Env is the environment name within the group (e.g. "preview").
+	// Requires Group to also be set.
+	Env string `yaml:"env,omitempty" json:"env,omitempty"`
+
+	// Project is a direct tvault project name, used when the project is not
+	// part of an environment group. Mutually exclusive with Group+Env.
+	Project string `yaml:"project,omitempty" json:"project,omitempty"`
+
+	// Only is an explicit allowlist of secret keys to inject. Keys not in
+	// this list are dropped after resolution.
+	Only []string `yaml:"only,omitempty" json:"only,omitempty"`
+
+	// Prefix injects only secret keys that start with this prefix.
+	Prefix string `yaml:"prefix,omitempty" json:"prefix,omitempty"`
 }
 
 type Terminal struct {
@@ -84,6 +128,7 @@ type Runtime struct {
 	Environment string
 	Vars        map[string]string
 	Env         map[string]string
+	Secrets     *Secrets
 }
 
 func Defaults() Config {

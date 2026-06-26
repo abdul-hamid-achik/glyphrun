@@ -49,6 +49,7 @@ func LoadRuntime(startPath string, explicitPath string, environment string) (Run
 
 	vars := map[string]string{}
 	env := defaultEnv()
+	var secrets *Secrets
 	if selected, ok := cfg.Environments[envName]; ok {
 		for k, v := range selected.Vars {
 			vars[k] = v
@@ -56,6 +57,7 @@ func LoadRuntime(startPath string, explicitPath string, environment string) (Run
 		for k, v := range selected.Env {
 			env[k] = v
 		}
+		secrets = selected.Secrets
 	}
 	for _, pair := range os.Environ() {
 		key, value, ok := splitEnv(pair)
@@ -71,6 +73,7 @@ func LoadRuntime(startPath string, explicitPath string, environment string) (Run
 		Environment: envName,
 		Vars:        vars,
 		Env:         env,
+		Secrets:     secrets,
 	}, nil
 }
 

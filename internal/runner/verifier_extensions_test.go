@@ -373,7 +373,7 @@ outcomes:
 func TestBuildRedactor_LongestWins(t *testing.T) {
 	r := buildRedactor(config.Redaction{Enabled: true}, &spec.Redaction{
 		Values: []string{"abc", "abc-123-xyz"},
-	})
+	}, nil)
 	out := r.Text("the token is abc-123-xyz and abc alone is fine")
 	want := "the token is [redacted] and abc alone is fine"
 	if out != want {

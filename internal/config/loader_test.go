@@ -107,3 +107,97 @@ terminal:
 		t.Fatal("normalizeLineEndings default should survive when only trimRight is set")
 	}
 }
+
+func TestLoadRuntimeSecretsBlock(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	yaml := `version: 1
+environments:
+  local:
+    secrets:
+      group: liftclub
+      env: preview
+      only:
+        - DATABASE_URL
+        - STRIPE_SECRET_KEY
+    env:
+      TVAULT_DIR: .glyphrun/tmp/vault
+      TVAULT_PASSPHRASE: glyphpass
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rt, err := LoadRuntime(dir, cfgPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rt.Secrets == nil {
+		t.Fatal("expected Secrets to be populated")
+	}
+	if rt.Secrets.Group != "liftclub" {
+		t.Fatalf("Group = %q, want %q", rt.Secrets.Group, "liftclub")
+	}
+	if rt.Secrets.Env != "preview" {
+		t.Fatalf("Env = %q, want %q", rt.Secrets.Env, "preview")
+	}
+	if len(rt.Secrets.Only) != 2 {
+		t.Fatalf("Only = %v, want 2 entries", rt.Secrets.Only)
+	}
+	if rt.Secrets.Only[0] != "DATABASE_URL" {
+		t.Fatalf("Only[0] = %q, want %q", rt.Secrets.Only[0], "DATABASE_URL")
+	}
+}
+
+func TestLoadRuntimeSecretsProjectMode(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	yaml := `version: 1
+environments:
+  ci:
+    secrets:
+      project: liftclub-preview
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rt, err := LoadRuntime(dir, cfgPath, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rt.Secrets == nil {
+		t.Fatal("expected Secrets to be populated")
+	}
+	if rt.Secrets.Project != "liftclub-preview" {
+		t.Fatalf("Project = %q, want %q", rt.Secrets.Project, "liftclub-preview")
+	}
+	if rt.Secrets.Group != "" {
+		t.Fatalf("Group = %q, want empty", rt.Secrets.Group)
+	}
+}
+
+func TestLoadRuntimeNoSecretsBlockIsNil(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	yaml := `version: 1
+environments:
+  local:
+    env:
+      TERM: xterm-256color
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rt, err := LoadRuntime(dir, cfgPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rt.Secrets != nil {
+		t.Fatalf("expected nil Secrets, got %+v", rt.Secrets)
+	}
+}
