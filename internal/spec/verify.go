@@ -19,6 +19,9 @@ func Validate(s Spec) error {
 	if err := validateMetadata(s.Metadata); err != nil {
 		return err
 	}
+	if err := validateCoversSymbol(s.CoversSymbol); err != nil {
+		return err
+	}
 	if len(s.Target.Cmd) == 0 || s.Target.Cmd[0] == "" {
 		return fmt.Errorf("target.cmd must contain at least one argv item")
 	}
@@ -55,6 +58,21 @@ func validateMetadata(m *Metadata) error {
 	case "", "low", "normal", "high", "critical":
 	default:
 		return fmt.Errorf("metadata.priority must be one of: low, normal, high, critical")
+	}
+	return nil
+}
+
+// validateCoversSymbol checks the optional coversSymbol binding. When present
+// it must be a non-empty, non-whitespace string — it identifies a code symbol
+// the spec exercises, feeding codemap's blast-radius-driven spec selection.
+func validateCoversSymbol(s string) error {
+	if strings.TrimSpace(s) == "" {
+		// Empty after trim is fine (field is optional), but a string of only
+		// whitespace is not — it means the author intended a value but typed
+		// spaces.
+		if s != "" {
+			return fmt.Errorf("coversSymbol must not be blank")
+		}
 	}
 	return nil
 }

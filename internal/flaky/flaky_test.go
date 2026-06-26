@@ -92,6 +92,37 @@ func TestSummarize(t *testing.T) {
 	})
 }
 
+func TestSummarizeCollectsDurations(t *testing.T) {
+	mk := func(status artifacts.RunStatus, dur int64) artifacts.RunResult {
+		return artifacts.RunResult{
+			Status:     status,
+			DurationMS: dur,
+			Outcomes:   []artifacts.OutcomeResult{{ID: "a", Status: outcomeFor(status)}},
+		}
+	}
+	r := Summarize("spec", 3, []artifacts.RunResult{
+		mk(artifacts.StatusPassed, 100),
+		mk(artifacts.StatusPassed, 200),
+		mk(artifacts.StatusPassed, 300),
+	})
+	if len(r.Durations) != 3 {
+		t.Fatalf("expected 3 durations, got %d", len(r.Durations))
+	}
+	want := []int64{100, 200, 300}
+	for i, w := range want {
+		if r.Durations[i] != w {
+			t.Errorf("Durations[%d] = %d, want %d", i, r.Durations[i], w)
+		}
+	}
+}
+
+func TestSummarizeDurationsEmptyForNoRuns(t *testing.T) {
+	r := Summarize("spec", 0, nil)
+	if len(r.Durations) != 0 {
+		t.Errorf("expected empty Durations for no runs, got %v", r.Durations)
+	}
+}
+
 func outcomeFor(s artifacts.RunStatus) artifacts.OutcomeStatus {
 	if s == artifacts.StatusPassed {
 		return artifacts.OutcomePassed

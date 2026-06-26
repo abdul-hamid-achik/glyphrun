@@ -101,6 +101,41 @@ Use config for shared terminal defaults, artifact behavior, variables, and redac
 Use ` + "`glyph init [dir] --cmd <target> --ready <text>`" + ` to create ` + "`glyphrun.config.yml`" + `, ` + "`specs/glyphrun/smoke.yml`" + `, and ` + "`.gitignore`" + ` artifact entries.
 
 Use ` + "`terminal.alternateScreen: require`" + ` when a full-screen TUI must enter alternate screen mode, or ` + "`forbid`" + ` when a command must stay on the main terminal screen. The default is ` + "`auto`" + `.
+
+## Secrets (tvault env-group integration)
+
+Declare a tvault env-group (or direct project) in the environment block and glyphrun resolves the secrets at run time, injecting them into the process environment. The config file carries only group/env/project names — never secret values.
+
+` + "```" + `yaml
+environments:
+  local:
+    secrets:
+      group: liftclub        # tvault environment group
+      env: preview            # environment within the group
+      only:                   # optional: inject only these keys (least privilege)
+        - DATABASE_URL
+        - STRIPE_SECRET_KEY
+    env:
+      TVAULT_DIR: .glyphrun/tmp/vault
+      TVAULT_PASSPHRASE: glyphpass
+` + "```" + `
+
+Or use a direct project (no env group):
+
+` + "```" + `yaml
+environments:
+  ci:
+    secrets:
+      project: liftclub-preview
+` + "```" + `
+
+At run time glyphrun calls ` + "`tvault env --group <g> --env <e> --format json`" + ` (or ` + "`-p <project>`" + `), parses the JSON output, and merges the key/value pairs into the run environment. All resolved values are added to the per-run redactor so they are scrubbed from every artifact.
+
+` + "`TVAULT_DIR`" + ` and ` + "`TVAULT_PASSPHRASE`" + ` (or ` + "`TVAULT_IDENTITY_KEY`" + `) must be in the environment — set them in the config ` + "`env`" + ` block or export them before running glyph.
+
+The ` + "`only`" + ` allowlist and ` + "`prefix`" + ` filter are applied client-side after resolution. A key is kept if it matches either selector (union semantics, matching ` + "`tvault run --only/--prefix`" + `).
+
+When ` + "`secrets`" + ` is absent, behavior is identical to today — the block is purely additive.
 `,
 	"install": `# Install
 
@@ -278,11 +313,11 @@ Rules:
 - Per-spec values are layered on top of the config redactor, never replace it. The config's ` + "`headers`" + ` and ` + "`patterns`" + ` still apply.
 - The redactor only runs against text artifacts (` + "`run.md`" + `, ` + "`screens/*`" + `, ` + "`raw/pty.raw.log`" + `). The raw PTY log is also truncated at ` + "`artifacts.maxRawLogBytes`" + ` from the config; the truncation marker itself contains the byte cap so the loss is visible.
 
-Per-spec redaction is a contract — the spec's ` + "`contractHash`" + ` covers the ` + "`redaction:`" + ` block. Changing it invalidates the hash on the next run.
+Per-spec redaction is a contract — the spec's ` + "`contractHash`" + ` covers the ` + "`redaction:`" + ` block (and ` + "`coversSymbol`" + ` when set). Changing it invalidates the hash on the next run.
 `,
 	"contract-hash": `# Contract Hash Enforcement
 
-Specs carry a ` + "`contractHash`" + ` stamped over ` + "`intent`" + `, ` + "`outcomes`" + `, and the new ` + "`redaction:`" + ` block. Glyphrun refuses to run a spec whose on-disk content does not match the hash. The point is to detect silent contract drift: a contributor edits an outcome to make a flaky test pass, the hash stops matching, the run aborts with exit code ` + "`6`" + `, and the change shows up in code review.
+Specs carry a ` + "`contractHash`" + ` stamped over ` + "`intent`" + `, ` + "`outcomes`" + `, ` + "`redaction:`" + `, and ` + "`coversSymbol`" + ` (when set). Glyphrun refuses to run a spec whose on-disk content does not match the hash. The point is to detect silent contract drift: a contributor edits an outcome to make a flaky test pass, the hash stops matching, the run aborts with exit code ` + "`6`" + `, and the change shows up in code review.
 
 Workflow:
 

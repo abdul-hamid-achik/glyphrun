@@ -21,6 +21,9 @@ type RunResult struct {
 	SchemaVersion  int                      `json:"schemaVersion" yaml:"schemaVersion"`
 	RunID          string                   `json:"runId" yaml:"runId"`
 	SpecName       string                   `json:"specName" yaml:"specName"`
+	ContractHash   string                   `json:"contractHash,omitempty" yaml:"contractHash,omitempty"`
+	Metadata       *spec.Metadata           `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+	CoversSymbol   string                   `json:"coversSymbol,omitempty" yaml:"coversSymbol,omitempty"`
 	Status         RunStatus                `json:"status" yaml:"status"`
 	StartedAt      string                   `json:"startedAt" yaml:"startedAt"`
 	EndedAt        string                   `json:"endedAt" yaml:"endedAt"`

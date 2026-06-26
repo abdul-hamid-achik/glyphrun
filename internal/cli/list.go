@@ -83,6 +83,7 @@ type listRow struct {
 	Priority     string   `json:"priority,omitempty" yaml:"priority,omitempty"`
 	Tags         []string `json:"tags,omitempty" yaml:"tags,omitempty"`
 	ContractHash string   `json:"contractHash,omitempty" yaml:"contractHash,omitempty"`
+	CoversSymbol string   `json:"coversSymbol,omitempty" yaml:"coversSymbol,omitempty"`
 	StepCount    int      `json:"stepCount" yaml:"stepCount"`
 	OutcomeCount int      `json:"outcomeCount" yaml:"outcomeCount"`
 	ParseError   string   `json:"parseError,omitempty" yaml:"parseError,omitempty"`
@@ -128,6 +129,7 @@ func listSpecs(paths []string, opts *globalOptions, filters listFilters) ([]list
 			row.Tags = append([]string(nil), parsed.Spec.Metadata.Tags...)
 		}
 		row.ContractHash = parsed.ContractHash
+		row.CoversSymbol = parsed.Spec.CoversSymbol
 		row.StepCount = len(parsed.Resolved.Steps)
 		row.OutcomeCount = len(parsed.Resolved.Outcomes)
 		// Apply filters.

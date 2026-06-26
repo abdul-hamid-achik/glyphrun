@@ -17,6 +17,10 @@ import (
 // Result is the per-spec stability summary. A spec is Stable when every
 // iteration produced the same outcome statuses AND the same final screen; it is
 // Flaky when iterations disagree on pass/fail.
+//
+// Durations holds the per-iteration DurationMS values so downstream consumers
+// (e.g. a codemap hotspot adapter) can compute p50/p90 without re-reading each
+// run.json from RunDirs.
 type Result struct {
 	Spec       string   `json:"spec" yaml:"spec"`
 	Runs       int      `json:"runs" yaml:"runs"`
@@ -26,12 +30,14 @@ type Result struct {
 	Flaky      bool     `json:"flaky" yaml:"flaky"`
 	Divergence string   `json:"divergence,omitempty" yaml:"divergence,omitempty"`
 	RunDirs    []string `json:"runDirs" yaml:"runDirs"`
+	Durations  []int64  `json:"durations,omitempty" yaml:"durations,omitempty"`
 }
 
 // Summarize folds one spec's per-iteration run results into a stability Result.
 func Summarize(spec string, runs int, results []artifacts.RunResult) Result {
 	r := Result{Spec: spec, Runs: runs}
 	signatures := make([]string, 0, len(results))
+	r.Durations = make([]int64, 0, len(results))
 	for _, res := range results {
 		if res.Status == artifacts.StatusPassed {
 			r.Passed++
@@ -39,6 +45,7 @@ func Summarize(spec string, runs int, results []artifacts.RunResult) Result {
 			r.Failed++
 		}
 		r.RunDirs = append(r.RunDirs, res.RunDir)
+		r.Durations = append(r.Durations, res.DurationMS)
 		signatures = append(signatures, Signature(res))
 	}
 	r.Stable = allEqual(signatures)

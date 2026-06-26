@@ -52,7 +52,7 @@ func TestBuildSpec(t *testing.T) {
 	term := spec.Terminal{Cols: 80, Rows: 24, Profile: "xterm-256color"}
 
 	t.Run("ready and clean exit", func(t *testing.T) {
-		s, ready, needsEdit := buildSpec("app_smoke", []string{"./app"}, ".", term, "Welcome to app", ptyrunner.ExitState{Exited: true, ExitCode: 0})
+		s, ready, needsEdit := buildSpec("app_smoke", []string{"./app"}, ".", term, "Welcome to app", ptyrunner.ExitState{Exited: true, ExitCode: 0}, "")
 		if needsEdit {
 			t.Errorf("did not expect needsEdit")
 		}
@@ -68,7 +68,7 @@ func TestBuildSpec(t *testing.T) {
 	})
 
 	t.Run("killed process skips clean_exit", func(t *testing.T) {
-		s, _, _ := buildSpec("app_smoke", []string{"./app"}, ".", term, "Welcome to app", ptyrunner.ExitState{Exited: true, ExitCode: -1})
+		s, _, _ := buildSpec("app_smoke", []string{"./app"}, ".", term, "Welcome to app", ptyrunner.ExitState{Exited: true, ExitCode: -1}, "")
 		for _, o := range s.Outcomes {
 			if o.ID == "clean_exit" {
 				t.Errorf("killed process should not produce clean_exit outcome")
@@ -77,7 +77,7 @@ func TestBuildSpec(t *testing.T) {
 	})
 
 	t.Run("no signal needs edit", func(t *testing.T) {
-		s, ready, needsEdit := buildSpec("app_smoke", []string{"./app"}, ".", term, "   \n----", ptyrunner.ExitState{Exited: true, ExitCode: -1})
+		s, ready, needsEdit := buildSpec("app_smoke", []string{"./app"}, ".", term, "   \n----", ptyrunner.ExitState{Exited: true, ExitCode: -1}, "")
 		if !needsEdit {
 			t.Errorf("expected needsEdit when nothing is observable")
 		}
@@ -86,6 +86,20 @@ func TestBuildSpec(t *testing.T) {
 		}
 		if len(s.Outcomes) != 1 {
 			t.Fatalf("expected 1 placeholder outcome, got %d", len(s.Outcomes))
+		}
+	})
+
+	t.Run("coversSymbol is seeded into the spec", func(t *testing.T) {
+		s, _, _ := buildSpec("app_smoke", []string{"./app"}, ".", term, "Welcome", ptyrunner.ExitState{Exited: true, ExitCode: 0}, "github.com/org/repo.Handler.ServeHTTP")
+		if s.CoversSymbol != "github.com/org/repo.Handler.ServeHTTP" {
+			t.Errorf("expected CoversSymbol to be set, got %q", s.CoversSymbol)
+		}
+	})
+
+	t.Run("coversSymbol defaults to empty when not provided", func(t *testing.T) {
+		s, _, _ := buildSpec("app_smoke", []string{"./app"}, ".", term, "Welcome", ptyrunner.ExitState{Exited: true, ExitCode: 0}, "")
+		if s.CoversSymbol != "" {
+			t.Errorf("expected empty CoversSymbol, got %q", s.CoversSymbol)
 		}
 	})
 }

@@ -20,14 +20,15 @@ import (
 
 // Params describes a recorded session to scaffold a spec from.
 type Params struct {
-	Path        string // where to write the draft spec
-	Argv        []string
-	Cwd         string
-	Terminal    spec.Terminal
-	FinalScreen string
-	Exit        ptyrunner.ExitState
-	ConfigPath  string
-	Environment string
+	Path         string // where to write the draft spec
+	Argv         []string
+	Cwd          string
+	Terminal     spec.Terminal
+	FinalScreen  string
+	Exit         ptyrunner.ExitState
+	ConfigPath   string
+	Environment  string
+	CoversSymbol string // optional: symbol the scaffolded spec exercises (from codemap)
 }
 
 // Result summarizes what FromSession produced.
@@ -46,7 +47,7 @@ type Result struct {
 // input. The contract is what matters; steps are repairable hints.
 func FromSession(p Params) (*Result, error) {
 	name := deriveSpecName(p.Argv)
-	draft, ready, needsEdit := buildSpec(name, p.Argv, p.Cwd, p.Terminal, p.FinalScreen, p.Exit)
+	draft, ready, needsEdit := buildSpec(name, p.Argv, p.Cwd, p.Terminal, p.FinalScreen, p.Exit, p.CoversSymbol)
 
 	data, err := yaml.Marshal(draft)
 	if err != nil {
@@ -89,7 +90,7 @@ func FromSession(p Params) (*Result, error) {
 // buildSpec assembles the draft spec. It returns the spec, the inferred ready
 // string (may be empty), and whether the author still needs to fill in a real
 // assertion.
-func buildSpec(name string, argv []string, cwd string, term spec.Terminal, finalScreen string, exit ptyrunner.ExitState) (spec.Spec, string, bool) {
+func buildSpec(name string, argv []string, cwd string, term spec.Terminal, finalScreen string, exit ptyrunner.ExitState, coversSymbol string) (spec.Spec, string, bool) {
 	ready := pickReadyLine(finalScreen)
 	var steps []spec.Step
 	var outcomes []spec.Outcome
@@ -132,13 +133,14 @@ func buildSpec(name string, argv []string, cwd string, term spec.Terminal, final
 	}
 
 	s := spec.Spec{
-		Version:  1,
-		Name:     name,
-		Intent:   fmt.Sprintf("a user can run %s and it reaches its expected state.\n", strings.Join(argv, " ")),
-		Target:   spec.Target{Cmd: argv, Cwd: cwd},
-		Terminal: term,
-		Steps:    steps,
-		Outcomes: outcomes,
+		Version:      1,
+		Name:         name,
+		Intent:       fmt.Sprintf("a user can run %s and it reaches its expected state.\n", strings.Join(argv, " ")),
+		CoversSymbol: coversSymbol,
+		Target:       spec.Target{Cmd: argv, Cwd: cwd},
+		Terminal:     term,
+		Steps:        steps,
+		Outcomes:     outcomes,
 	}
 	return s, ready, needsEdit
 }

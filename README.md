@@ -294,7 +294,7 @@ Values shorter than 4 characters are dropped, and the list is sorted longest-fir
 
 ## Contract Hash
 
-Specs carry a `contractHash` stamped over `intent`, `outcomes`, and `redaction:`. `glyph run` refuses to start a spec whose on-disk content does not match the hash, exiting with code `6`. This catches silent contract drift: a contributor edits an outcome to make a flaky test pass, the hash stops matching, the run aborts, and the change shows up in review.
+Specs carry a `contractHash` stamped over `intent`, `outcomes`, `redaction:`, and `coversSymbol` (when set). `glyph run` refuses to start a spec whose on-disk content does not match the hash, exiting with code `6`. This catches silent contract drift: a contributor edits an outcome to make a flaky test pass, the hash stops matching, the run aborts, and the change shows up in review.
 
 ```bash
 glyph spec verify <spec> --stamp    # regenerate the hash after an intentional contract change

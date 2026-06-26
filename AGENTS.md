@@ -62,6 +62,7 @@ The "no per-agent code paths" rule applies: any surface that touches a coding ag
 - **Add a new CLI command**: create `internal/cli/<name>.go`, register in `newRootCommand` in `internal/cli/root.go`. Always accept `--format` and route through `resolveFormat` + `emitForCLI`. JSON/YAML output must never prompt or read stdin. Add the command to the `commands` list in `internal/cli/explain.go`.
 - **Add a new artifact field**: extend `artifacts.RunResult` (`internal/artifacts/types.go`), populate in `runner.finish`, and surface in `RenderRunMarkdown` and `RenderAgentContext`. Update `schemas/glyphrun.run.v1.schema.json`.
 - **Add a new redaction pattern**: append to `Defaults().Redaction.Patterns` in `internal/config/config.go`. The redactor compiles them on construction.
+- **Add a secrets provider**: the `secrets` config block (`internal/config/config.go`) currently supports only `tvault`. To add a provider, extend `Secrets.Provider`, add resolution logic in `internal/runner/secrets.go`, and update the schema `anyOf` for provider-specific validation. Resolved values must be added to the per-run redactor via `buildRedactor`.
 
 ### Things To Avoid
 
