@@ -39,6 +39,7 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph mcp",
 					"glyph list",
 					"glyph import bats <file>",
+					"glyph affected-specs --since <ref>",
 					"glyph export bats <spec>",
 					"glyph clean",
 					"glyph version",
