@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
@@ -52,6 +53,7 @@ func newSpecVerifyCommand(opts *globalOptions) *cobra.Command {
 				"valid":             true,
 				"name":              parsed.Spec.Name,
 				"path":              parsed.Path,
+				"intent":            strings.TrimSpace(parsed.Spec.Intent),
 				"contractHash":      parsed.ContractHash,
 				"contractHashValid": parsed.ContractHashValid || stamp,
 				"steps":             len(parsed.Resolved.Steps),

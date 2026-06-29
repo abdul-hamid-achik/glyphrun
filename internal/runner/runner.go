@@ -1529,7 +1529,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		SchemaVersion: 1,
 		RunID:         makeRunID(started, s.spec.Name),
 		SpecName:      s.spec.Name,
-		ContractHash:  s.spec.ContractHash,
+		Intent:        strings.TrimSpace(s.spec.Intent),
 		Metadata:      s.spec.Metadata,
 		CoversSymbol:  s.spec.CoversSymbol,
 		Status:        status,

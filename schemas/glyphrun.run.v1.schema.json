@@ -22,6 +22,7 @@
     "schemaVersion": { "const": 1 },
     "runId": { "type": "string", "minLength": 1 },
     "specName": { "type": "string", "minLength": 1 },
+    "intent": { "type": "string" },
     "contractHash": { "type": "string" },
     "metadata": { "$ref": "#/$defs/metadata" },
     "coversSymbol": { "type": "string", "minLength": 1 },

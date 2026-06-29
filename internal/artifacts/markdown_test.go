@@ -53,6 +53,7 @@ func TestRenderRunMarkdownIncludesContractAndMetadata(t *testing.T) {
 	result := RunResult{
 		RunID:        "2026-demo",
 		SpecName:     "tui_smoke",
+		Intent:       "the handler serves HTTP requests",
 		ContractHash: "sha256:abcdef",
 		CoversSymbol: "github.com/org/repo.Handler.ServeHTTP",
 		Metadata: &spec.Metadata{
@@ -73,6 +74,7 @@ func TestRenderRunMarkdownIncludesContractAndMetadata(t *testing.T) {
 
 	md := RenderRunMarkdown(result)
 	for _, want := range []string{
+		"- intent: the handler serves HTTP requests",
 		"- contract: `sha256:abcdef`",
 		"- covers symbol: `github.com/org/repo.Handler.ServeHTTP`",
 		"- feature: `auth`",
@@ -101,7 +103,7 @@ func TestRenderRunMarkdownOmitsEmptyContractAndMetadata(t *testing.T) {
 	md := RenderRunMarkdown(result)
 	for _, absent := range []string{
 		"- contract:",
-		"- covers symbol:",
+		"- intent:",
 		"- feature:",
 		"- owner:",
 		"- tags:",

@@ -15,6 +15,9 @@ func RenderRunMarkdown(result RunResult) string {
 	b.WriteString("## Summary\n\n")
 	fmt.Fprintf(&b, "- status: %s\n", result.Status)
 	fmt.Fprintf(&b, "- spec: `%s`\n", result.SpecName)
+	if strings.TrimSpace(result.Intent) != "" {
+		fmt.Fprintf(&b, "- intent: %s\n", strings.TrimSpace(result.Intent))
+	}
 	if result.ContractHash != "" {
 		fmt.Fprintf(&b, "- contract: `%s`\n", result.ContractHash)
 	}
