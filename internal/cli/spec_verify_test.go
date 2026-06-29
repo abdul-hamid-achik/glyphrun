@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/abdul-hamid-achik/glyphrun/internal/config"
+	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 )
 
 // TestSpecVerifyContractHashMismatchExitCode guards that `glyph spec verify`
@@ -94,4 +98,71 @@ outcomes:
 	if !bytes.Contains(stdout.Bytes(), []byte(`"intent": "the user can quit the app with q."`)) {
 		t.Fatalf("verify json missing trimmed intent:\n%s", stdout.String())
 	}
+}
+
+// TestSpecScaffoldCoversSymbol guards that `glyph spec scaffold
+// --coversSymbol <sym>` writes the binding into the starter spec (so the stub
+// is immediately selectable by `glyph affected-specs`), that it is omitted when
+// not requested, and that --kind action rejects it (actions have no contract).
+func TestSpecScaffoldCoversSymbol(t *testing.T) {
+	t.Run("spec kind writes coversSymbol", func(t *testing.T) {
+		opts := &globalOptions{}
+		cmd := newRootCommand(opts)
+		var stdout bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetArgs([]string{"spec", "scaffold", "--coversSymbol", "github.com/org/repo.Handler.ServeHTTP"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		out := stdout.String()
+		if !strings.Contains(out, "coversSymbol: github.com/org/repo.Handler.ServeHTTP\n") {
+			t.Fatalf("scaffold missing coversSymbol line:\n%s", out)
+		}
+		// The stub must still parse as a valid spec: write it and verify.
+		dir := t.TempDir()
+		specPath := filepath.Join(dir, "stub.yml")
+		if err := os.WriteFile(specPath, []byte(out), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		rt, err := config.LoadRuntime(specPath, "", "")
+		if err != nil {
+			t.Fatalf("load runtime: %v", err)
+		}
+		parsed, err := spec.ParseFile(specPath, rt.SpecParseOptions())
+		if err != nil {
+			t.Fatalf("scaffolded stub does not parse: %v\n%s", err, out)
+		}
+		if parsed.Spec.CoversSymbol != "github.com/org/repo.Handler.ServeHTTP" {
+			t.Errorf("parsed CoversSymbol = %q, want the symbol", parsed.Spec.CoversSymbol)
+		}
+	})
+
+	t.Run("spec kind omits coversSymbol when not set", func(t *testing.T) {
+		opts := &globalOptions{}
+		cmd := newRootCommand(opts)
+		var stdout bytes.Buffer
+		cmd.SetOut(&stdout)
+		cmd.SetArgs([]string{"spec", "scaffold"})
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		if strings.Contains(stdout.String(), "coversSymbol:") {
+			t.Errorf("scaffold should not emit coversSymbol when unset:\n%s", stdout.String())
+		}
+	})
+
+	t.Run("action kind rejects coversSymbol", func(t *testing.T) {
+		opts := &globalOptions{}
+		cmd := newRootCommand(opts)
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetArgs([]string{"spec", "scaffold", "--kind", "action", "--coversSymbol", "X"})
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatalf("expected error for --kind action --coversSymbol, got nil")
+		}
+		ee, ok := err.(exitError)
+		if !ok || ee.code != 2 {
+			t.Errorf("err = %v, want exitError code 2", err)
+		}
+	})
 }

@@ -23,7 +23,7 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph spec verify <spec>",
 					"glyph spec scaffold",
 					"glyph spec scaffold --kind action",
-					"glyph snapshot update <spec...>",
+					"glyph spec scaffold --coversSymbol <sym>",
 					"glyph diff <runA> <runB>",
 					"glyph record -- <command...>",
 					"glyph record --scaffold <path> -- <command...>",

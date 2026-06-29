@@ -26,6 +26,7 @@ func newRecordCommand(opts *globalOptions) *cobra.Command {
 	var timeoutMS int
 	var cwd string
 	var scaffoldPath string
+	var coversSymbol string
 	cmd := &cobra.Command{
 		Use:   "record -- <command...>",
 		Short: "Record a terminal command into a Glyphrun artifact pack",
@@ -35,7 +36,7 @@ func newRecordCommand(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
-			result, scaf, err := recordCommand(context.Background(), opts, args, cwd, timeoutMS, format == formatMD, scaffoldPath)
+			result, scaf, err := recordCommand(context.Background(), opts, args, cwd, timeoutMS, format == formatMD, scaffoldPath, coversSymbol)
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
@@ -63,6 +64,7 @@ func newRecordCommand(opts *globalOptions) *cobra.Command {
 	cmd.Flags().IntVar(&timeoutMS, "timeout-ms", 0, "stop recording after this timeout")
 	cmd.Flags().StringVar(&cwd, "cwd", ".", "working directory for the recorded command")
 	cmd.Flags().StringVar(&scaffoldPath, "scaffold", "", "write a draft spec inferred from the recorded session to this path")
+	cmd.Flags().StringVar(&coversSymbol, "coversSymbol", "", "bind a scaffolded spec to the code symbol it exercises (use with --scaffold)")
 	return cmd
 }
 
@@ -82,7 +84,7 @@ func renderScaffoldMarkdown(s *scaffold.Result) string {
 	return b.String()
 }
 
-func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd string, timeoutMS int, echoOutput bool, scaffoldPath string) (artifacts.RunResult, *scaffold.Result, error) {
+func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd string, timeoutMS int, echoOutput bool, scaffoldPath string, coversSymbol string) (artifacts.RunResult, *scaffold.Result, error) {
 	rt, err := config.LoadRuntime(".", opts.configPath, opts.environment)
 	if err != nil {
 		return artifacts.RunResult{}, nil, err
@@ -189,14 +191,15 @@ func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd 
 	var scaffoldResult *scaffold.Result
 	if scaffoldPath != "" {
 		scaffoldResult, err = scaffold.FromSession(scaffold.Params{
-			Path:        scaffoldPath,
-			Argv:        argv,
-			Cwd:         cwd,
-			Terminal:    result.Terminal,
-			FinalScreen: finalSnapshot.Text,
-			Exit:        exit,
-			ConfigPath:  opts.configPath,
-			Environment: opts.environment,
+			Path:         scaffoldPath,
+			Argv:         argv,
+			Cwd:          cwd,
+			Terminal:     result.Terminal,
+			FinalScreen:  finalSnapshot.Text,
+			Exit:         exit,
+			ConfigPath:   opts.configPath,
+			Environment:  opts.environment,
+			CoversSymbol: coversSymbol,
 		})
 		if err != nil {
 			return result, nil, fmt.Errorf("scaffold: %w", err)

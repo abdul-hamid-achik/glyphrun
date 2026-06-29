@@ -76,60 +76,26 @@ func newSpecVerifyCommand(opts *globalOptions) *cobra.Command {
 
 func newSpecScaffoldCommand() *cobra.Command {
 	var kind string
+	var coversSymbol string
 	cmd := &cobra.Command{
 		Use:   "scaffold",
 		Short: "Print a starter spec",
+		Long: "Print a starter spec (or reusable action) to seed a new spec file.\n\n" +
+			"--coversSymbol <sym> binds the starter spec to the code symbol it exercises,\n" +
+			"so `glyph affected-specs` can select it when that symbol's blast radius is hit.\n" +
+			"An uncovered symbol (e.g. from `codemap orphans`) can scaffold a stub with this\n" +
+			"binding in one call. Only the `spec` kind carries coversSymbol — actions are\n" +
+			"reusable step libraries with no contract.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch kind {
 			case "spec":
-				cmd.Print(`version: 1
-name: hello_quits
-
-intent: |
-  a user can open the app and quit cleanly.
-
-target:
-  cmd: ["./bin/app"]
-  cwd: "."
-
-terminal:
-  cols: 80
-  rows: 24
-  profile: xterm-256color
-
-steps:
-  - wait:
-      screen:
-        contains: "ready"
-  - press: "q"
-  - wait:
-      process:
-        exitCode: 0
-
-outcomes:
-  - id: ready_visible
-    description: the app renders its ready state
-    verify:
-      screen:
-        contains: "ready"
-`)
+				cmd.Print(starterSpecTemplate(coversSymbol))
 				return nil
 			case "action":
-				cmd.Print(`version: 1
-name: wait_for_ready_and_quit
-
-steps:
-  - wait:
-      screen:
-        contains: "ready"
-      timeoutMs: 5000
-  - snapshot: ready
-  - press: "q"
-  - wait:
-      process:
-        exitCode: 0
-      timeoutMs: 3000
-`)
+				if strings.TrimSpace(coversSymbol) != "" {
+					return exitError{code: 2, err: fmt.Errorf("--coversSymbol applies to --kind spec only; actions have no contract")}
+				}
+				cmd.Print(starterActionTemplate())
 				return nil
 			default:
 				return exitError{code: 2, err: fmt.Errorf("unsupported --kind %q", kind)}
@@ -137,5 +103,60 @@ steps:
 		},
 	}
 	cmd.Flags().StringVar(&kind, "kind", "spec", "starter kind: spec, action")
+	cmd.Flags().StringVar(&coversSymbol, "coversSymbol", "", "bind the starter spec to the code symbol it exercises (kind=spec only)")
 	return cmd
+}
+
+// starterSpecTemplate returns the starter spec template. When coversSymbol is
+// non-empty it is written as a top-level field so the stub is immediately
+// selectable by `glyph affected-specs` without a manual edit.
+func starterSpecTemplate(coversSymbol string) string {
+	cs := ""
+	if c := strings.TrimSpace(coversSymbol); c != "" {
+		cs = "coversSymbol: " + c + "\n"
+	}
+	return "version: 1\n" +
+		"name: hello_quits\n" +
+		cs +
+		"\nintent: |\n" +
+		"  a user can open the app and quit cleanly.\n" +
+		"\ntarget:\n" +
+		"  cmd: [\"./bin/app\"]\n" +
+		"  cwd: \".\"\n" +
+		"\nterminal:\n" +
+		"  cols: 80\n" +
+		"  rows: 24\n" +
+		"  profile: xterm-256color\n" +
+		"\nsteps:\n" +
+		"  - wait:\n" +
+		"      screen:\n" +
+		"        contains: \"ready\"\n" +
+		"  - press: \"q\"\n" +
+		"  - wait:\n" +
+		"      process:\n" +
+		"        exitCode: 0\n" +
+		"\noutcomes:\n" +
+		"  - id: ready_visible\n" +
+		"    description: the app renders its ready state\n" +
+		"    verify:\n" +
+		"      screen:\n" +
+		"        contains: \"ready\"\n"
+}
+
+// starterActionTemplate returns the reusable-action template (no contract, no
+// coversSymbol — actions are step libraries imported by specs).
+func starterActionTemplate() string {
+	return "version: 1\n" +
+		"name: wait_for_ready_and_quit\n" +
+		"\nsteps:\n" +
+		"  - wait:\n" +
+		"      screen:\n" +
+		"        contains: \"ready\"\n" +
+		"      timeoutMs: 5000\n" +
+		"  - snapshot: ready\n" +
+		"  - press: \"q\"\n" +
+		"  - wait:\n" +
+		"      process:\n" +
+		"        exitCode: 0\n" +
+		"      timeoutMs: 3000\n"
 }
