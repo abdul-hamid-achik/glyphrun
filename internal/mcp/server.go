@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
@@ -121,10 +122,16 @@ func tools() []map[string]any {
 			"required":   []string{"path"},
 			"properties": map[string]any{"path": map[string]any{"type": "string"}},
 		}),
-		tool("glyph_run", "Run a Glyphrun spec.", map[string]any{
-			"type":       "object",
-			"required":   []string{"path"},
-			"properties": map[string]any{"path": map[string]any{"type": "string"}, "updateSnapshots": map[string]any{"type": "boolean"}},
+		tool("glyph_run", "Run a Glyphrun spec. Set monitor to capture process telemetry of the spawned target via the monitor CLI.", map[string]any{
+			"type":     "object",
+			"required": []string{"path"},
+			"properties": map[string]any{
+				"path":            map[string]any{"type": "string"},
+				"updateSnapshots": map[string]any{"type": "boolean"},
+				"monitor":         map[string]any{"type": "string", "description": "path to the monitor binary; enables process-telemetry sampling -> diagnostics/process.{md,json}"},
+				"monitorProfile":  map[string]any{"type": "string", "enum": []string{"heap", "cpu", "goroutine", "sample"}, "description": "capture an end-of-run process profile (use with monitor)"},
+				"monitorInterval": map[string]any{"type": "string", "description": "sample interval as a Go duration, e.g. 250ms (use with monitor)"},
+			},
 		}),
 		tool("glyph_context", "Return agent_context.md for a run or latest.", map[string]any{
 			"type":       "object",
@@ -140,9 +147,12 @@ func tools() []map[string]any {
 			"required":   []string{"runA", "runB"},
 			"properties": map[string]any{"runA": map[string]any{"type": "string"}, "runB": map[string]any{"type": "string"}},
 		}),
-		tool("glyph_spec_scaffold", "Return a starter Glyphrun spec or reusable action.", map[string]any{
-			"type":       "object",
-			"properties": map[string]any{"kind": map[string]any{"type": "string", "enum": []string{"spec", "action"}}},
+		tool("glyph_spec_scaffold", "Return a starter Glyphrun spec or reusable action. coversSymbol (spec kind only) binds the stub to the code symbol it exercises, so glyph affected-specs can select it.", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"kind":         map[string]any{"type": "string", "enum": []string{"spec", "action"}},
+				"coversSymbol": map[string]any{"type": "string"},
+			},
 		}),
 		tool("glyph_render", "Render a run's final screen to a deterministic SVG and return it.", map[string]any{
 			"type":       "object",
@@ -166,9 +176,9 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		return toolText(map[string]any{
 			"project":   "glyphrun",
 			"binary":    "glyph",
-			"commands":  []string{"init", "run", "spec verify", "spec scaffold", "spec scaffold --kind action", "snapshot update", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "mcp"},
-			"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "download", "transform", "batch", "when"},
-			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link"},
+			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "mcp"},
+			"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "download", "transform", "monitor", "batch", "when"},
+			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"},
 			"namedArtifacts": map[string]any{
 				"placeholders": []string{"${artifacts.<name>.path}", "${artifacts.<name>.relativePath}"},
 				"stepKinds":    []string{"download", "transform"},
@@ -211,13 +221,21 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		if path == "" {
 			return nil, &responseError{Code: -32602, Message: "path is required"}
 		}
-		result, err := runner.RunSpec(ctx, runner.Options{
+		runOpts := runner.Options{
 			SpecPath:        path,
 			ConfigPath:      opts.ConfigPath,
 			Environment:     opts.Environment,
 			ArtifactRoot:    opts.ArtifactRoot,
 			UpdateSnapshots: boolArg(params.Arguments, "updateSnapshots", false),
-		})
+		}
+		if bin := stringArg(params.Arguments, "monitor", ""); bin != "" {
+			interval := 250 * time.Millisecond
+			if d, err := time.ParseDuration(stringArg(params.Arguments, "monitorInterval", "")); err == nil && d > 0 {
+				interval = d
+			}
+			runOpts.Procmon = &runner.ProcmonConfig{Bin: bin, Interval: interval, Profile: stringArg(params.Arguments, "monitorProfile", "")}
+		}
+		result, err := runner.RunSpec(ctx, runOpts)
 		if err != nil {
 			return toolError(err)
 		}
@@ -276,7 +294,7 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		}
 		return toolText(diff)
 	case "glyph_spec_scaffold":
-		return map[string]any{"content": []map[string]string{{"type": "text", "text": scaffoldSpec(stringArg(params.Arguments, "kind", "spec"))}}}, nil
+		return map[string]any{"content": []map[string]string{{"type": "text", "text": scaffoldSpec(stringArg(params.Arguments, "kind", "spec"), stringArg(params.Arguments, "coversSymbol", ""))}}}, nil
 	case "glyph_render":
 		run := stringArg(params.Arguments, "run", "latest")
 		screen := stringArg(params.Arguments, "screen", "final")
@@ -298,57 +316,6 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 	default:
 		return nil, &responseError{Code: -32602, Message: "unknown tool: " + params.Name}
 	}
-}
-
-func scaffoldSpec(kind string) string {
-	if kind == "action" {
-		return `version: 1
-name: wait_for_ready_and_quit
-
-steps:
-  - wait:
-      screen:
-        contains: "ready"
-      timeoutMs: 5000
-  - snapshot: ready
-  - press: "q"
-  - wait:
-      process:
-        exitCode: 0
-      timeoutMs: 3000
-`
-	}
-	return `version: 1
-name: hello_quits
-
-intent: |
-  a user can open the app and quit cleanly.
-
-target:
-  cmd: ["./bin/app"]
-  cwd: "."
-
-terminal:
-  cols: 80
-  rows: 24
-  profile: xterm-256color
-
-steps:
-  - wait:
-      screen:
-        contains: "ready"
-  - press: "q"
-  - wait:
-      process:
-        exitCode: 0
-
-outcomes:
-  - id: ready_visible
-    description: the app renders its ready state
-    verify:
-      screen:
-        contains: "ready"
-`
 }
 
 func toolText(value any) (any, *responseError) {
@@ -592,4 +559,59 @@ func writeResponse(out io.Writer, resp response) error {
 	data = append(data, '\n')
 	_, err = out.Write(data)
 	return err
+}
+
+func scaffoldSpec(kind, coversSymbol string) string {
+	if kind == "action" {
+		return `version: 1
+name: wait_for_ready_and_quit
+
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 5000
+  - snapshot: ready
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 3000
+`
+	}
+	cs := ""
+	if strings.TrimSpace(coversSymbol) != "" {
+		cs = "coversSymbol: " + strings.TrimSpace(coversSymbol) + "\n"
+	}
+	return `version: 1
+name: hello_quits
+` + cs + `
+intent: |
+  a user can open the app and quit cleanly.
+
+target:
+  cmd: ["./bin/app"]
+  cwd: "."
+
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+  - press: "q"
+  - wait:
+      process:
+        exitCode: 0
+
+outcomes:
+  - id: ready_visible
+    description: the app renders its ready state
+    verify:
+      screen:
+        contains: "ready"
+`
 }
