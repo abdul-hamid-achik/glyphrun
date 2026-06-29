@@ -41,6 +41,7 @@ type backend interface {
 	softStop() error // graceful terminate (best-effort; may be a no-op)
 	hardStop() error // force kill
 	closePTY() error // close the PTY handle so a blocked Read returns
+	pid() int        // target process PID, or 0 if unavailable (Windows ConPTY)
 }
 
 type Session struct {
@@ -98,6 +99,12 @@ func (s *Session) ExitState() ExitState {
 
 func (s *Session) WaitCh() <-chan ExitState {
 	return s.done
+}
+
+// PID returns the target process's PID, or 0 if the backend cannot expose it
+// (Windows ConPTY). Used by the opt-in `--monitor` process-telemetry capture.
+func (s *Session) PID() int {
+	return s.backend.pid()
 }
 
 func (s *Session) LastOutputAt() time.Time {

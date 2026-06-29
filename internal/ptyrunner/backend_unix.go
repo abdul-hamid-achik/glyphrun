@@ -60,3 +60,10 @@ func (b *unixBackend) hardStop() error {
 func (b *unixBackend) closePTY() error {
 	return b.ptmx.Close()
 }
+
+func (b *unixBackend) pid() int {
+	if b.cmd == nil || b.cmd.Process == nil {
+		return 0
+	}
+	return b.cmd.Process.Pid
+}

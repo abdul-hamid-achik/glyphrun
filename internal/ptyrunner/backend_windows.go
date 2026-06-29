@@ -67,6 +67,11 @@ func (b *windowsBackend) close() error {
 	return err
 }
 
+// pid returns 0 on Windows: ConPTY owns the child process and does not expose
+// its PID through the conpty wrapper, so process telemetry (monitor sampling)
+// is unavailable on this backend. The procmon feature degrades gracefully.
+func (b *windowsBackend) pid() int { return 0 }
+
 // buildCommandLine renders argv into a single Windows command-line string with
 // each argument escaped per the CommandLineToArgvW rules (via syscall).
 func buildCommandLine(argv []string) string {
