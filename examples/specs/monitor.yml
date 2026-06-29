@@ -1,0 +1,30 @@
+version: 1
+name: monitor_process
+intent: |
+  a `monitor:` step captures the live target's process telemetry (snapshot +
+  tree + profile) as a named artifact, and a `metrics:` outcome asserts a
+  perf budget against the run's sampled summary. Requires the `monitor` CLI
+  on $PATH and `glyph run --monitor <path>` for the metrics outcome.
+coversSymbol: executeMonitor
+target:
+  cmd: ["/bin/sh", "-lc", "printf 'ready\n'; sleep 1; printf 'done\n'; exit 0"]
+  cwd: "."
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait: { screen: { contains: "ready" } }
+  - monitor:
+      saveAs: mid_run
+      tree: true
+  - wait: { process: { exitCode: 0 } }
+outcomes:
+  - id: clean_exit
+    description: the target exits cleanly (the monitor step's artifact is at monitors/mid_run.md)
+    verify: { process: { exitCode: 0 } }
+  - id: rss_budget
+    description: peak RSS stayed under 256 MiB
+    verify:
+      metrics:
+        peakRss: 268435456

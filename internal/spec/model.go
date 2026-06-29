@@ -136,6 +136,7 @@ type Step struct {
 	Use       string         `yaml:"use,omitempty" json:"use,omitempty"`
 	Download  *DownloadStep  `yaml:"download,omitempty" json:"download,omitempty"`
 	Transform *TransformStep `yaml:"transform,omitempty" json:"transform,omitempty"`
+	Monitor   *MonitorStep   `yaml:"monitor,omitempty" json:"monitor,omitempty"`
 	Batch     []Step         `yaml:"batch,omitempty" json:"batch,omitempty"`
 }
 
@@ -164,6 +165,20 @@ type TransformStep struct {
 	Assign    string            `yaml:"assign,omitempty" json:"assign,omitempty"`
 	Fixtures  map[string]string `yaml:"fixtures,omitempty" json:"fixtures,omitempty"`
 	TimeoutMS int               `yaml:"timeoutMs,omitempty" json:"timeoutMs,omitempty"`
+}
+
+// MonitorStep captures process telemetry of the live target at a point in the
+// flow via the `monitor` CLI and stores it as a named artifact — evidence a
+// spec author can keep or assert on later. It is the step-level sibling of
+// `glyph run --monitor` (run-level sampling): a one-shot reading (always),
+// optionally a process tree and/or a profile. Requires monitor on $PATH (or
+// the run's --monitor binary); a missing monitor or an unavailable PID
+// (Windows ConPTY) fails the step with a clear message.
+type MonitorStep struct {
+	SaveAs    string `yaml:"saveAs,omitempty" json:"saveAs,omitempty"`   // named artifact name (default: "monitor")
+	Tree      bool   `yaml:"tree,omitempty" json:"tree,omitempty"`       // capture the process subtree
+	Profile   string `yaml:"profile,omitempty" json:"profile,omitempty"` // heap|cpu|goroutine|sample
+	TimeoutMS int    `yaml:"timeoutMs,omitempty" json:"timeoutMs,omitempty"`
 }
 
 type SendStep struct {
@@ -212,6 +227,7 @@ type Verify struct {
 	Script   *ScriptCondition   `yaml:"script,omitempty" json:"script,omitempty"`
 	Count    *CountCondition    `yaml:"count,omitempty" json:"count,omitempty"`
 	Link     *LinkCondition     `yaml:"link,omitempty" json:"link,omitempty"`
+	Metrics  *MetricsCondition  `yaml:"metrics,omitempty" json:"metrics,omitempty"`
 }
 
 // LinkCondition asserts that an OSC 8 hyperlink is present on the screen. `url`
@@ -220,6 +236,18 @@ type Verify struct {
 type LinkCondition struct {
 	URL  string `yaml:"url,omitempty" json:"url,omitempty"`
 	Text string `yaml:"text,omitempty" json:"text,omitempty"`
+}
+
+// MetricsCondition asserts process-telemetry perf budgets against the run's
+// sampled summary (collected by `glyph run --monitor`). Each set field is an
+// upper bound (<=): the run passes only if the observed peak/mean stays at or
+// below the budget. Requires process telemetry — run with `--monitor` (or add
+// a `monitor:` step); without samples the outcome fails with a clear message.
+type MetricsCondition struct {
+	PeakCpuPercent *float64 `yaml:"peakCpuPercent,omitempty" json:"peakCpuPercent,omitempty"`
+	PeakRss        *int64   `yaml:"peakRss,omitempty" json:"peakRss,omitempty"` // bytes
+	MeanCpuPercent *float64 `yaml:"meanCpuPercent,omitempty" json:"meanCpuPercent,omitempty"`
+	MeanRss        *int64   `yaml:"meanRss,omitempty" json:"meanRss,omitempty"` // bytes
 }
 
 // CountCondition asserts a count of cells in a region. The matcher

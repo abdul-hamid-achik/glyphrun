@@ -238,6 +238,8 @@ func stepSummary(step spec.Step) string {
 		return prefix + downloadSummary(*step.Download)
 	case step.Transform != nil:
 		return prefix + transformSummary(*step.Transform)
+	case step.Monitor != nil:
+		return prefix + monitorStepSummary(*step.Monitor)
 	case len(step.Batch) > 0:
 		return prefix + batchSummary(step.Batch)
 	default:
@@ -267,6 +269,21 @@ func transformSummary(t spec.TransformStep) string {
 		runtime = "shell"
 	}
 	return fmt.Sprintf("transform(%s) -> %s", runtime, assign)
+}
+
+func monitorStepSummary(m spec.MonitorStep) string {
+	name := m.SaveAs
+	if name == "" {
+		name = "monitor"
+	}
+	parts := []string{"snapshot"}
+	if m.Tree {
+		parts = append(parts, "tree")
+	}
+	if p := strings.TrimSpace(m.Profile); p != "" {
+		parts = append(parts, "profile:"+p)
+	}
+	return fmt.Sprintf("monitor(%s) -> %s", strings.Join(parts, "+"), name)
 }
 
 func batchSummary(steps []spec.Step) string {

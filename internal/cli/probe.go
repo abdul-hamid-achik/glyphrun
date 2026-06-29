@@ -23,7 +23,7 @@ func runFlakinessProbe(cmd *cobra.Command, opts *globalOptions, format outputFor
 	for iter := 0; iter < repeat; iter++ {
 		// Run iterations without a live listener; the probe prints its own
 		// compact per-iteration marker to stderr.
-		results, exitCode, err := runSpecs(context.Background(), specPaths, parallel, opts, updateSnapshots, nil)
+		results, exitCode, err := runSpecs(context.Background(), specPaths, parallel, opts, updateSnapshots, nil, nil)
 		if err != nil {
 			return classifyRunError(err)
 		}

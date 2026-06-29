@@ -49,7 +49,7 @@ func runWatch(cmd *cobra.Command, opts *globalOptions, format outputFormat, spec
 			fmt.Fprintln(stderr, err)
 			return
 		}
-		results, _, runErr := runSpecs(ctx, specPaths, parallel, opts, updateSnapshots, listener)
+		results, _, runErr := runSpecs(ctx, specPaths, parallel, opts, updateSnapshots, listener, nil)
 		if runErr != nil && ctx.Err() == nil {
 			fmt.Fprintln(stderr, runErr)
 		}

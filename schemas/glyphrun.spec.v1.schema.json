@@ -170,6 +170,7 @@
         { "required": ["use"] },
         { "required": ["download"] },
         { "required": ["transform"] },
+        { "required": ["monitor"] },
         { "required": ["batch"] }
       ],
       "properties": {
@@ -210,6 +211,7 @@
         "use": { "type": "string", "minLength": 1 },
         "download": { "$ref": "#/$defs/download" },
         "transform": { "$ref": "#/$defs/transform" },
+        "monitor": { "$ref": "#/$defs/monitorStep" },
         "batch": {
           "type": "array",
           "minItems": 2,
@@ -251,6 +253,20 @@
         },
         "timeoutMs": { "type": "integer", "minimum": 1 }
       },
+      "additionalProperties": false
+    },
+    "monitorStep": {
+      "type": "object",
+      "properties": {
+        "saveAs": { "type": "string", "minLength": 1 },
+        "tree": { "type": "boolean" },
+        "profile": { "enum": ["heap", "cpu", "goroutine", "sample"] },
+        "timeoutMs": { "type": "integer", "minimum": 1 }
+      },
+      "anyOf": [
+        { "required": ["tree"] },
+        { "required": ["profile"] }
+      ],
       "additionalProperties": false
     },
     "batchSubStep": {
@@ -313,7 +329,8 @@
         { "required": ["file"] },
         { "required": ["script"] },
         { "required": ["count"] },
-        { "required": ["link"] }
+        { "required": ["link"] },
+        { "required": ["metrics"] }
       ],
       "properties": {
         "link": {
@@ -412,6 +429,22 @@
               "maxItems": 2
             }
           },
+          "additionalProperties": false
+        },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "peakCpuPercent": { "type": "number", "minimum": 0 },
+            "peakRss": { "type": "integer", "minimum": 0 },
+            "meanCpuPercent": { "type": "number", "minimum": 0 },
+            "meanRss": { "type": "integer", "minimum": 0 }
+          },
+          "anyOf": [
+            { "required": ["peakCpuPercent"] },
+            { "required": ["peakRss"] },
+            { "required": ["meanCpuPercent"] },
+            { "required": ["meanRss"] }
+          ],
           "additionalProperties": false
         }
       },

@@ -43,7 +43,7 @@ outcomes:
 	// exercised. The contract-hash mismatch fires inside
 	// spec.ParseFile, which is what we want to test.
 	_ = io.Discard
-	_, _, err := runSpecs(context.Background(), []string{specPath}, 1, opts, false, nil)
+	_, _, err := runSpecs(context.Background(), []string{specPath}, 1, opts, false, nil, nil)
 	if err == nil {
 		t.Fatal("expected error from mismatched contract hash, got nil")
 	}

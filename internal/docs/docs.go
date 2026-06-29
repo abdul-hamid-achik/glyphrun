@@ -35,7 +35,7 @@ Use trusted ` + "`command`" + ` verifiers for Bash checks such as ` + "`test -x 
 `,
 	"steps": `# Steps
 
-Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + "`send`" + `, ` + "`mouse`" + `, ` + "`wait`" + `, ` + "`resize`" + `, ` + "`snapshot`" + `, imported ` + "`use`" + ` actions, ` + "`when`" + ` guards, and the artifact-pipeline steps ` + "`download`" + `, ` + "`transform`" + `, and ` + "`batch`" + ` (see ` + "`artifacts-pipeline`" + `).
+Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + "`send`" + `, ` + "`mouse`" + `, ` + "`wait`" + `, ` + "`resize`" + `, ` + "`snapshot`" + `, imported ` + "`use`" + ` actions, ` + "`when`" + ` guards, the artifact-pipeline steps ` + "`download`" + `, ` + "`transform`" + `, ` + "`batch`" + ` (see ` + "`artifacts-pipeline`" + `), and the process-telemetry ` + "`monitor`" + ` step (see ` + "`process-telemetry`" + `).
 
 ` + "`mouse: { x, y, button?, action? }`" + ` sends a mouse event at the 0-based cell (button: left/middle/right/wheelUp/wheelDown; action: click/press/release/move). The runner encodes it as SGR (1006) or legacy X10 depending on the mode the target enabled.
 
@@ -45,7 +45,7 @@ Every step can include a ` + "`when`" + ` guard that uses the same verifier shap
 `,
 	"verifiers": `# Verifiers
 
-Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, ` + "`link`" + `, and trusted ` + "`command`" + `.
+Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, ` + "`link`" + `, trusted ` + "`command`" + `, and the process-telemetry ` + "`metrics`" + ` verifier (see ` + "`process-telemetry`" + `).
 
 Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes (fg, bg, bold, dim, italic, underline, reverse). Process verifiers can check exit state and exit code.
 
@@ -463,6 +463,45 @@ Region (optional):
 Evidence: the verifier returns the matched count as ` + "`{ matched, comparator, expected }`" + ` in ` + "`outcomes/<id>.raw.json`" + ` so a passing run can be inspected without re-running.
 `,
 
+	"process-telemetry": `# Process Telemetry (monitor integration)
+
+Glyphrun can capture process-level telemetry of the target it spawns via the ` + "`monitor`" + ` CLI (~/projects/monitor): CPU, RSS, thread count, the process tree, and pprof/` + "`sample`" + ` profiles. Three opt-in surfaces share one foundation.
+
+## Run-level sampling: ` + "`glyph run --monitor <path>`" + `
+
+` + "`glyph run specs/foo.yml --monitor ./bin/monitor`" + ` samples the spawned target's CPU/RSS on a tick (default 250ms; ` + "`--monitor-interval`" + `) and writes ` + "`diagnostics/process.md`" + ` + ` + "`diagnostics/process.json`" + ` (peak/mean CPU+RSS, the sample timeline) into the run dir. Add ` + "`--monitor-profile heap|cpu|goroutine|sample`" + ` to capture an end-of-run profile. Zero-cost when the flag is absent. On Windows ConPTY the target PID is unavailable, so sampling is skipped with a note.
+
+When glyphrun is launched by ` + "`monitor run <spec>`" + ` it detects ` + "`MONITOR=1`" + ` and writes the target PID (` + "`target.pid`" + ` in the run dir, and ` + "`glyphrun-target.pid`" + ` in ` + "`$MONITOR_RUN_DIR`" + ` when set) so the parent monitor can observe the exact process without ` + "`--monitor`" + `.
+
+## Step-level capture: the ` + "`monitor:`" + ` step
+
+A ` + "`monitor:`" + ` step takes a one-shot reading of the live target at a point in the flow and stores it as a named artifact (evidence to keep or assert on later). A snapshot is always captured; ` + "`tree`" + ` and ` + "`profile`" + ` add the process subtree and/or a profile.
+
+` + "```yaml" + `
+steps:
+  - wait: { screen: { contains: "dashboard" } }
+  - monitor:
+      saveAs: dashboard_load
+      tree: true
+      profile: heap
+` + "```" + `
+
+The artifact lands at ` + "`monitors/<saveAs>.md`" + ` (+ ` + "`.json`" + `), addressable as ` + "`${artifacts.dashboard_load.path}`" + ` by later steps. Requires the target PID (Windows ConPTY: no) and ` + "`monitor`" + ` on $PATH (or the run's ` + "`--monitor`" + ` binary).
+
+## Perf budgets: the ` + "`metrics:`" + ` verifier
+
+An outcome can assert process-telemetry budgets against the run's sampled summary. Each set field is an upper bound (<=). Requires ` + "`--monitor`" + ` (or a ` + "`monitor:`" + ` step) — without samples the outcome fails with a clear message instead of silently passing.
+
+` + "```yaml" + `
+outcomes:
+  - id: rss_budget
+    description: peak RSS stays under 512 MiB
+    verify:
+      metrics:
+        peakRss: 536870912
+        peakCpuPercent: 90
+` + "```" + `
+`,
 	"github": `# GitHub Integration
 
 Run specs in CI and surface the results on the pull request:
@@ -507,6 +546,7 @@ Cut a release by pushing a ` + "`v*`" + ` tag: ` + "`.github/workflows/release.y
 - rerun-failed
 - capture-policy
 - count-verifier
+- process-telemetry
 - github
 - distribution
 - install

@@ -338,3 +338,72 @@ func TestValidateCoversSymbol(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateMonitorStep(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		m       MonitorStep
+		wantErr string
+	}{
+		{"tree only", MonitorStep{Tree: true}, ""},
+		{"profile heap", MonitorStep{Profile: "heap"}, ""},
+		{"tree + profile sample", MonitorStep{Tree: true, Profile: "sample"}, ""},
+		{"neither set", MonitorStep{}, "monitor step must request tree, profile, or both"},
+		{"bad profile", MonitorStep{Profile: "flame"}, "is not one of heap|cpu|goroutine|sample"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateMonitorStep(tc.m)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("want err containing %q, got %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestValidateMetricsCondition(t *testing.T) {
+	t.Parallel()
+	peakCpu := 90.0
+	peakRss := int64(1 << 30)
+	if err := validateMetricsCondition(MetricsCondition{PeakCpuPercent: &peakCpu, PeakRss: &peakRss}); err != nil {
+		t.Fatalf("valid budgets: unexpected error %v", err)
+	}
+	if err := validateMetricsCondition(MetricsCondition{}); err == nil {
+		t.Fatalf("expected error when no budget is set, got nil")
+	}
+	neg := -1.0
+	if err := validateMetricsCondition(MetricsCondition{PeakCpuPercent: &neg}); err == nil {
+		t.Fatalf("expected error for negative budget, got nil")
+	}
+}
+
+func TestValidateStep_AcceptsMonitorStep(t *testing.T) {
+	t.Parallel()
+	if err := validateStep(Step{Monitor: &MonitorStep{Tree: true}}); err != nil {
+		t.Fatalf("valid monitor step: %v", err)
+	}
+	// Two actions must still be rejected.
+	if err := validateStep(Step{Monitor: &MonitorStep{Tree: true}, Press: "q"}); err == nil {
+		t.Fatalf("expected error for monitor + press, got nil")
+	}
+}
+
+func TestValidateVerify_AcceptsMetricsVerifier(t *testing.T) {
+	t.Parallel()
+	peakRss := int64(512 << 20)
+	if err := validateVerify(Verify{Metrics: &MetricsCondition{PeakRss: &peakRss}}); err != nil {
+		t.Fatalf("valid metrics verifier: %v", err)
+	}
+	if err := validateVerify(Verify{Metrics: &MetricsCondition{}}); err == nil {
+		t.Fatalf("expected error for empty metrics verifier, got nil")
+	}
+}

@@ -19,6 +19,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	"github.com/abdul-hamid-achik/glyphrun/internal/input"
+	"github.com/abdul-hamid-achik/glyphrun/internal/procmon"
 	"github.com/abdul-hamid-achik/glyphrun/internal/ptyrunner"
 	"github.com/abdul-hamid-achik/glyphrun/internal/render"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
@@ -79,6 +80,17 @@ type Options struct {
 	ArtifactRoot    string
 	UpdateSnapshots bool
 	Listener        ProgressListener
+	// Procmon enables opt-in process telemetry of the spawned target via the
+	// `monitor` CLI. When nil, no sampling runs and no process artifacts are
+	// written — the feature is zero-cost for runs that don't opt in.
+	Procmon *ProcmonConfig
+}
+
+// ProcmonConfig configures `glyph run --monitor` process-telemetry capture.
+type ProcmonConfig struct {
+	Bin      string        // path to the monitor binary (default: monitor on $PATH)
+	Interval time.Duration // sample interval; clamped to >=50ms, default 250ms
+	Profile  string        // optional end-of-run profile type: heap|cpu|goroutine|sample
 }
 
 type ProgressStatus string
@@ -156,6 +168,13 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	if err := state.startTarget(); err != nil {
 		return state.finish(started, artifacts.StatusErrored, nil, fmt.Sprintf("target failed to start: %v", err)), nil
 	}
+	state.startProcmon(ctx, opts.Procmon)
+	if opts.Procmon != nil && opts.Procmon.Bin != "" {
+		state.monitorBin = opts.Procmon.Bin
+	} else {
+		state.monitorBin = "monitor"
+	}
+	state.writeTargetPID()
 	defer state.cleanup()
 	runCtx := ctx
 	var cancelRun context.CancelFunc
@@ -269,6 +288,14 @@ type runState struct {
 	// appends a marker to the artifact and emits a pty.truncated event
 	// so the loss is visible in events.ndjson and agent_context.md.
 	rawPTYTruncated bool
+
+	// procmon is the opt-in process-telemetry sampler for the spawned
+	// target. nil unless Options.Procmon is set AND the backend exposes a
+	// PID. One supervised goroutine ticks SampleOnce into procmon.samples
+	// until finalizeProcmon() cancels it; the mutex on procmonRun guards
+	// the sample slice across that goroutine and the finish() reader.
+	procmon    *procmonRun
+	monitorBin string // monitor binary path for `monitor:` steps (default "monitor")
 }
 
 func newRunState(s spec.Spec, rt config.Runtime, writer *artifacts.Writer, updateSnapshots bool, listener ProgressListener) *runState {
@@ -418,6 +445,8 @@ func (s *runState) executeStep(ctx context.Context, step spec.Step) (stepExecuti
 		return s.executeDownload(ctx, *step.Download)
 	case step.Transform != nil:
 		return s.executeTransform(ctx, *step.Transform)
+	case step.Monitor != nil:
+		return s.executeMonitor(ctx, *step.Monitor)
 	case len(step.Batch) > 0:
 		return s.executeBatch(ctx, step.Batch)
 	default:
@@ -1045,9 +1074,78 @@ func (s *runState) checkVerifyWithEvidence(ctx context.Context, verify spec.Veri
 	case verify.Link != nil:
 		ok, message, evidence := checkLink(screen, *verify.Link)
 		return ok, message, evidence
+	case verify.Metrics != nil:
+		ok, message := s.checkMetrics(*verify.Metrics)
+		return ok, message, nil
 	default:
 		return false, "unsupported verifier", nil
 	}
+}
+
+// executeMonitor runs a `monitor:` step: a one-shot capture of the live
+// target's process telemetry via the monitor CLI, stored as a named artifact.
+// A snapshot (process reading) is always captured; `tree` and `profile` add
+// the process subtree and/or a profile. Requires the target PID (Windows
+// ConPTY backends have none → clear error) and monitor on $PATH or the run's
+// --monitor binary.
+func (s *runState) executeMonitor(ctx context.Context, m spec.MonitorStep) (stepExecutionResult, error) {
+	if s.session == nil {
+		return stepExecutionResult{}, fmt.Errorf("monitor step: target session has not started")
+	}
+	pid := s.session.PID()
+	if pid == 0 {
+		return stepExecutionResult{}, fmt.Errorf("monitor step: target PID unavailable (Windows ConPTY does not expose it)")
+	}
+	client := &procmon.Client{Bin: s.monitorBin}
+	info, err := client.Process(pid)
+	if err != nil {
+		return stepExecutionResult{}, fmt.Errorf("monitor step: %w", err)
+	}
+	var tree string
+	if m.Tree {
+		if t, err := client.TreeText(pid); err == nil {
+			tree = t
+		}
+	}
+	var prof *procmon.Profile
+	if p := strings.TrimSpace(m.Profile); p != "" {
+		if pr, err := client.Profile(pid, p); err == nil {
+			prof = &pr
+		}
+	}
+	name := strings.TrimSpace(m.SaveAs)
+	if name == "" {
+		name = "monitor"
+	}
+	relMD := "monitors/" + artifacts.SafeName(name) + ".md"
+	relJSON := "monitors/" + artifacts.SafeName(name) + ".json"
+	absMD := s.writer.Resolve(relMD)
+	if err := s.writer.WriteArtifactBytes(relMD, []byte(procmon.RenderSnapshotMarkdown(info, tree, prof))); err != nil {
+		return stepExecutionResult{}, err
+	}
+	payload := map[string]any{"snapshot": info}
+	if tree != "" {
+		payload["tree"] = tree
+	}
+	if prof != nil {
+		payload["profile"] = prof
+	}
+	if data, err := json.MarshalIndent(payload, "", "  "); err == nil {
+		_ = s.writer.WriteArtifactBytes(relJSON, append(data, '\n'))
+	}
+	s.mu.Lock()
+	s.namedArtifacts[name] = artifacts.NamedArtifact{Kind: "monitor", Path: absMD, RelativePath: relMD}
+	s.mu.Unlock()
+	_ = s.writer.AppendEvent(event("artifact.monitor", name, relMD))
+	return stepExecutionResult{}, nil
+}
+
+// checkMetrics asserts process-telemetry perf budgets against the run's
+// sampled summary. Each set field is an upper bound (<=). Without telemetry
+// (no --monitor, no samples) the outcome fails with a clear, actionable
+// message rather than silently passing.
+func (s *runState) checkMetrics(c spec.MetricsCondition) (bool, string) {
+	return procmon.AssertMetrics(s.procmonSummary(), c.PeakCpuPercent, c.MeanCpuPercent, c.PeakRss, c.MeanRss)
 }
 
 // checkFile polls the filesystem for a file matching the verifier's glob.
@@ -1483,6 +1581,200 @@ func (s *runState) cleanup() {
 	})
 }
 
+// writeTargetPID cooperates with a parent `monitor run <spec>`: when monitor
+// launches glyphrun it exports MONITOR=1 (and optionally MONITOR_RUN_DIR).
+// Glyphrun writes the spawned target's PID into its run dir (and the parent's
+// MONITOR_RUN_DIR when set) so monitor can `monitor process/tree/profile
+// <pid>` the exact process the spec exercises — without --monitor opt-in.
+// Best-effort: no PID (Windows ConPTY) or no MONITOR env → silent no-op.
+func (s *runState) writeTargetPID() {
+	if os.Getenv("MONITOR") == "" || s.session == nil {
+		return
+	}
+	pid := s.session.PID()
+	if pid == 0 {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(s.writer.RunDir, "target.pid"), []byte(strconv.Itoa(pid)+"\n"), 0o644)
+	_ = s.writer.AppendEvent(event("procmon.target_pid", strconv.Itoa(pid), "cooperating with parent monitor"))
+	if dir := os.Getenv("MONITOR_RUN_DIR"); dir != "" {
+		_ = os.MkdirAll(dir, 0o755)
+		_ = os.WriteFile(filepath.Join(dir, "glyphrun-target.pid"), []byte(strconv.Itoa(pid)+"\n"), 0o644)
+	}
+}
+
+// procmonRun is the per-run process-telemetry state: a supervised sampling
+// goroutine appending to `samples` (guarded by its own mutex) until
+// stopProcmonCapture cancels it. `done` is closed when the goroutine exits so
+// stopProcmonCapture can stop the reader before reducing the samples.
+// hasTelemetry/hasProfile/summary are set by stopProcmonCapture (after the
+// goroutine has exited) and read by applyProcmonArtifacts + procmonSummary.
+type procmonRun struct {
+	client       *procmon.Client
+	pid          int
+	name         string
+	started      time.Time
+	interval     time.Duration
+	profile      string
+	cancel       context.CancelFunc
+	done         chan struct{}
+	mu           sync.Mutex
+	samples      []procmon.Sample
+	hasTelemetry bool
+	hasProfile   bool
+	summary      procmon.Summary
+}
+
+// startProcmon launches the sampling goroutine for the spawned target. It is
+// a no-op when procmon is disabled or the backend cannot expose a PID (Windows
+// ConPTY). The single goroutine is the only new concurrency this feature
+// adds; it touches only procmonRun.samples under procmonRun.mu and is
+// cancelled by finalizeProcmon before the target is cleaned up.
+func (s *runState) startProcmon(ctx context.Context, cfg *ProcmonConfig) {
+	if cfg == nil || s.session == nil {
+		return
+	}
+	pid := s.session.PID()
+	if pid == 0 {
+		return
+	}
+	interval := cfg.Interval
+	if interval < 50*time.Millisecond {
+		interval = 250 * time.Millisecond
+	}
+	pctx, cancel := context.WithCancel(ctx)
+	pr := &procmonRun{
+		client:   &procmon.Client{Bin: cfg.Bin},
+		pid:      pid,
+		started:  time.Now().UTC(),
+		interval: interval,
+		profile:  strings.TrimSpace(cfg.Profile),
+		cancel:   cancel,
+		done:     make(chan struct{}),
+	}
+	s.procmon = pr
+	go func() {
+		defer close(pr.done)
+		ticker := time.NewTicker(pr.interval)
+		defer ticker.Stop()
+		var failures int
+		for {
+			select {
+			case <-pctx.Done():
+				return
+			case <-ticker.C:
+				info, err := pr.client.Process(pr.pid)
+				if err != nil {
+					failures++
+					// monitor missing or target gone: stop after a short
+					// run of failures so we don't shell out forever.
+					if failures >= 3 {
+						return
+					}
+					continue
+				}
+				failures = 0
+				pr.mu.Lock()
+				if pr.name == "" {
+					pr.name = info.Name
+				}
+				pr.samples = append(pr.samples, procmon.Sample{
+					At:      time.Now().UTC(),
+					CPU:     info.CPUPercent,
+					RSS:     info.Memory,
+					Threads: info.Threads,
+				})
+				pr.mu.Unlock()
+			}
+		}
+	}()
+}
+
+// finalizeProcmon stops the sampler, captures the process tree (and an
+// optional profile) while the target may still be alive, reduces the samples
+// to a Summary, and writes `diagnostics/process.md` + `process.json`
+// artifacts. It must run BEFORE cleanup() tears the target down. Best-effort:
+// a missing monitor or a dead target yields a zero-sample summary with a note,
+// never a run failure.
+func (s *runState) stopProcmonCapture() {
+	pr := s.procmon
+	if pr == nil {
+		return
+	}
+	pr.cancel()
+	select {
+	case <-pr.done:
+	case <-time.After(2 * time.Second):
+	}
+	pr.mu.Lock()
+	samples := append([]procmon.Sample(nil), pr.samples...)
+	name := pr.name
+	pr.mu.Unlock()
+
+	summary := procmon.Summarize(pr.pid, name, pr.started, samples)
+	summary.Samples = samples // keep the timeline in the JSON artifact
+
+	// Capture the process tree while the target may still be alive (cleanup
+	// runs after this). A dead/exited target returns an empty tree — fine.
+	var tree string
+	if t, err := pr.client.TreeText(pr.pid); err == nil {
+		tree = t
+		if strings.TrimSpace(tree) != "" {
+			_ = s.writer.WriteArtifactBytes("diagnostics/process.tree.txt", []byte(tree))
+			summary.Note = "process tree captured"
+		}
+	}
+	_ = s.writer.WriteDiagnostic("process", procmon.RenderProcessMarkdown(summary, tree))
+	if data, err := json.MarshalIndent(summary, "", "  "); err == nil {
+		_ = s.writer.WriteArtifactBytes("diagnostics/process.json", append(data, '\n'))
+	}
+	pr.hasTelemetry = true
+
+	// Optional end-of-run profile (heap/cpu/goroutine/sample), stored as raw
+	// monitor JSON. Captured here while the target may still be alive.
+	if pr.profile != "" {
+		if prof, err := pr.client.Profile(pr.pid, pr.profile); err == nil {
+			if data, err := json.MarshalIndent(prof, "", "  "); err == nil {
+				_ = s.writer.WriteArtifactBytes("diagnostics/process.profile.json", append(data, '\n'))
+				pr.hasProfile = true
+			}
+		}
+	}
+	pr.summary = summary
+	_ = s.writer.AppendEvent(event("procmon.finalized", name, fmt.Sprintf("%d samples, peak cpu %.1f%%, peak rss %d", summary.SampleCount, summary.PeakCPU, summary.PeakRSS)))
+}
+
+// applyProcmonArtifacts surfaces the captured process-telemetry files on the
+// run result so `glyph context` / the markdown report list them. Called after
+// the result literal is built; the files themselves were written by
+// stopProcmonCapture (before cleanup).
+func (s *runState) applyProcmonArtifacts(result *artifacts.RunResult) {
+	pr := s.procmon
+	if pr == nil || !pr.hasTelemetry {
+		return
+	}
+	result.Artifacts["processTelemetry"] = "diagnostics/process.md"
+	result.Artifacts["processTelemetryJSON"] = "diagnostics/process.json"
+	if pr.hasProfile {
+		result.Artifacts["processProfile"] = "diagnostics/process.profile.json"
+	}
+}
+
+// procmonSummary returns the sampled summary for the metrics verifier, or a
+// zero Summary when process telemetry was not enabled. The verifier uses this
+// to assert perf budgets (peakRss/peakCpu) without re-sampling.
+func (s *runState) procmonSummary() procmon.Summary {
+	pr := s.procmon
+	if pr == nil {
+		return procmon.Summary{}
+	}
+	pr.mu.Lock()
+	samples := append([]procmon.Sample(nil), pr.samples...)
+	name := pr.name
+	pr.mu.Unlock()
+	return procmon.Summarize(pr.pid, name, pr.started, samples)
+}
+
 func (s *runState) terminalError() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1512,6 +1804,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	if outcomes == nil {
 		outcomes = []artifacts.OutcomeResult{}
 	}
+	s.stopProcmonCapture() // capture tree/profile while target may be alive, before cleanup
 	s.cleanup()
 	finalSnapshot := s.normalizeSnapshot(s.emulator.Screen().Snapshot())
 	ended := time.Now().UTC()
@@ -1543,6 +1836,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		ExitCode:      exitCode,
 		Artifacts:     map[string]string{"events": "events.ndjson", "environmentDiagnostic": "diagnostics/environment.md"},
 	}
+	s.applyProcmonArtifacts(&result)
 	// Use the policy the runner resolved at start (project config +
 	// spec override). It's in s.capturePolicy so the finish() function
 	// doesn't have to re-resolve.

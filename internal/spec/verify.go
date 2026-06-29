@@ -135,6 +135,12 @@ func validateStep(step Step) error {
 			return err
 		}
 	}
+	if step.Monitor != nil {
+		count++
+		if err := validateMonitorStep(*step.Monitor); err != nil {
+			return err
+		}
+	}
 	if len(step.Batch) > 0 {
 		count++
 		if err := validateBatch(step.Batch); err != nil {
@@ -344,8 +350,45 @@ func validateVerify(v Verify) error {
 			return fmt.Errorf("link verifier must contain url or text")
 		}
 	}
+	if v.Metrics != nil {
+		count++
+		if err := validateMetricsCondition(*v.Metrics); err != nil {
+			return err
+		}
+	}
 	if count != 1 {
 		return fmt.Errorf("verify must contain exactly one verifier")
+	}
+	return nil
+}
+
+func validateMonitorStep(m MonitorStep) error {
+	if m.Tree == false && strings.TrimSpace(m.Profile) == "" {
+		return fmt.Errorf("monitor step must request tree, profile, or both (a snapshot is always captured)")
+	}
+	switch p := strings.TrimSpace(m.Profile); p {
+	case "", "heap", "cpu", "goroutine", "sample":
+	default:
+		return fmt.Errorf("monitor.profile %q is not one of heap|cpu|goroutine|sample", p)
+	}
+	return nil
+}
+
+func validateMetricsCondition(c MetricsCondition) error {
+	if c.PeakCpuPercent == nil && c.PeakRss == nil && c.MeanCpuPercent == nil && c.MeanRss == nil {
+		return fmt.Errorf("metrics verifier must set at least one budget (peakCpuPercent/peakRss/meanCpuPercent/meanRss)")
+	}
+	if c.PeakCpuPercent != nil && *c.PeakCpuPercent < 0 {
+		return fmt.Errorf("peakCpuPercent must be >= 0")
+	}
+	if c.MeanCpuPercent != nil && *c.MeanCpuPercent < 0 {
+		return fmt.Errorf("meanCpuPercent must be >= 0")
+	}
+	if c.PeakRss != nil && *c.PeakRss < 0 {
+		return fmt.Errorf("peakRss must be >= 0")
+	}
+	if c.MeanRss != nil && *c.MeanRss < 0 {
+		return fmt.Errorf("meanRss must be >= 0")
 	}
 	return nil
 }

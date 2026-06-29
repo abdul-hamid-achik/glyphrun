@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
@@ -24,6 +25,9 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 	var repeat int
 	var watch bool
 	var watchPaths []string
+	var monitorBin string
+	var monitorInterval time.Duration
+	var monitorProfile string
 	cmd := &cobra.Command{
 		Use:   "run <spec...>",
 		Short: "Run terminal behavior specs",
@@ -117,7 +121,11 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 			if watch || len(watchPaths) > 0 {
 				return runWatch(cmd, opts, format, args, watchPaths, parallel, updateSnapshots, progress)
 			}
-			results, exitCode, err := runSpecs(context.Background(), args, parallel, opts, updateSnapshots, listener)
+			var procmon *runner.ProcmonConfig
+			if monitorBin != "" || monitorProfile != "" {
+				procmon = &runner.ProcmonConfig{Bin: monitorBin, Interval: monitorInterval, Profile: monitorProfile}
+			}
+			results, exitCode, err := runSpecs(context.Background(), args, parallel, opts, updateSnapshots, listener, procmon)
 			if err != nil {
 				return classifyRunError(err)
 			}
@@ -158,6 +166,9 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&updateSnapshots, "update-snapshots", false, "update committed snapshots")
 	cmd.Flags().StringVar(&progress, "progress", "auto", "live progress: auto, always, never")
 	cmd.Flags().StringVar(&junitPath, "junit", "", "write a JUnit XML report to this path (use .xml extension)")
+	cmd.Flags().StringVar(&monitorBin, "monitor", "", "opt-in: sample the spawned target's CPU/RSS via the monitor binary at this path and write a diagnostics/process.{md,json} artifact (empty = off)")
+	cmd.Flags().DurationVar(&monitorInterval, "monitor-interval", 250*time.Millisecond, "process-telemetry sample interval (use with --monitor)")
+	cmd.Flags().StringVar(&monitorProfile, "monitor-profile", "", "capture an end-of-run process profile via monitor: heap|cpu|goroutine|sample (use with --monitor)")
 	cmd.Flags().BoolVar(&rerunFailed, "rerun-failed", false, "re-run only the specs that failed in the previous invocation (from .last-failed.txt)")
 	cmd.Flags().IntVar(&repeat, "repeat", 1, "run each spec N times and report flakiness/stability instead of a single result")
 	cmd.Flags().BoolVar(&watch, "watch", false, "re-run on spec/source changes (interactive; markdown output only)")
@@ -165,7 +176,7 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 	return cmd
 }
 
-func runSpecs(ctx context.Context, specPaths []string, parallel int, opts *globalOptions, updateSnapshots bool, listener runner.ProgressListener) ([]artifacts.RunResult, int, error) {
+func runSpecs(ctx context.Context, specPaths []string, parallel int, opts *globalOptions, updateSnapshots bool, listener runner.ProgressListener, procmon *runner.ProcmonConfig) ([]artifacts.RunResult, int, error) {
 	if parallel < 1 {
 		parallel = 1
 	}
@@ -188,6 +199,7 @@ func runSpecs(ctx context.Context, specPaths []string, parallel int, opts *globa
 					ArtifactRoot:    opts.artifactRoot,
 					UpdateSnapshots: updateSnapshots,
 					Listener:        listener,
+					Procmon:         procmon,
 				})
 				results[idx] = result
 				errs[idx] = err

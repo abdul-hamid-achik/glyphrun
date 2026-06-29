@@ -20,6 +20,7 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph run <spec...>",
 					"glyph run <spec...> --repeat N",
 					"glyph run <spec...> --watch",
+					"glyph run <spec...> --monitor <path>",
 					"glyph spec verify <spec>",
 					"glyph spec scaffold",
 					"glyph spec scaffold --kind action",
@@ -44,8 +45,8 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph clean",
 					"glyph version",
 				},
-				"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "when", "download", "transform", "batch"},
-				"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link"},
+				"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "when", "download", "transform", "monitor", "batch"},
+				"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"},
 				"formats":   []string{"json", "yaml", "md"},
 				"progress":  []string{"auto", "always", "never"},
 				"artifacts": []string{
