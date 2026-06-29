@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/abdul-hamid-achik/glyphrun/internal/affected"
 )
 
 // specBody is a compact helper for building a valid spec fixture with the
@@ -33,84 +35,6 @@ outcomes:
       command:
         run: "true"
 `
-}
-
-// TestSelectAffectedSpecs is the pure-logic test for the intersection: it
-// exercises direct-change match, blast-radius match, both, fqn match,
-// no-match (unmatched), no-coversSymbol (noCover), and parse-error skip.
-// It never invokes codemap.
-func TestSelectAffectedSpecs(t *testing.T) {
-	rows := []listRow{
-		{Name: "run_spec", Path: "run.yml", CoversSymbol: "Run"},
-		{Name: "other_spec", Path: "other.yml", CoversSymbol: "Other"},
-		{Name: "both_spec", Path: "both.yml", CoversSymbol: "main.Handle"},
-		{Name: "miss_spec", Path: "miss.yml", CoversSymbol: "Missing"},
-		{Name: "nocover_spec", Path: "nocover.yml"},
-		{Name: "broken_spec", Path: "broken.yml", ParseError: "bad yaml"},
-	}
-	review := codemapReview{
-		ChangedSymbols: []reviewSymbol{
-			{Symbol: "Run", FQN: "app.Run"},
-			{Symbol: "Handle", FQN: "main.Handle"},
-		},
-		BlastRadius: []reviewSymbol{
-			{Symbol: "Other", FQN: "app.Other"},
-			{Symbol: "Handle", FQN: "main.Handle"},
-		},
-	}
-	report := selectAffectedSpecs(rows, review)
-
-	if report.Total != 5 {
-		t.Errorf("Total = %d, want 5 (broken_spec skipped, not counted)", report.Total)
-	}
-	if report.Matched != 3 {
-		t.Fatalf("Matched = %d, want 3: %+v", report.Matched, report.Specs)
-	}
-	if report.Unmatched != 1 {
-		t.Errorf("Unmatched = %d, want 1 (miss_spec)", report.Unmatched)
-	}
-	if report.NoCover != 1 {
-		t.Errorf("NoCover = %d, want 1 (nocover_spec)", report.NoCover)
-	}
-	byPath := map[string]string{}
-	for _, s := range report.Specs {
-		byPath[s.Path] = s.MatchedBy
-	}
-	if byPath["run.yml"] != "changed" {
-		t.Errorf("run.yml matchedBy = %q, want changed", byPath["run.yml"])
-	}
-	if byPath["other.yml"] != "blast" {
-		t.Errorf("other.yml matchedBy = %q, want blast", byPath["other.yml"])
-	}
-	if byPath["both.yml"] != "both" {
-		t.Errorf("both.yml matchedBy = %q, want both (main.Handle in changed + blast)", byPath["both.yml"])
-	}
-	// Sorted by path.
-	gotOrder := make([]string, 0, len(report.Specs))
-	for _, s := range report.Specs {
-		gotOrder = append(gotOrder, s.Path)
-	}
-	if strings.Join(gotOrder, ",") != "both.yml,other.yml,run.yml" {
-		t.Errorf("order = %v, want both.yml,other.yml,run.yml", gotOrder)
-	}
-}
-
-// TestSelectAffectedSpecs_EmptyReview confirms a clean tree (no changed
-// symbols, no blast radius) selects nothing and counts every coversSymbol
-// spec as unmatched rather than crashing.
-func TestSelectAffectedSpecs_EmptyReview(t *testing.T) {
-	rows := []listRow{
-		{Name: "a", Path: "a.yml", CoversSymbol: "A"},
-		{Name: "b", Path: "b.yml"},
-	}
-	report := selectAffectedSpecs(rows, codemapReview{})
-	if report.Matched != 0 || report.Unmatched != 1 || report.NoCover != 1 || report.Total != 2 {
-		t.Fatalf("got matched=%d unmatched=%d noCover=%d total=%d, want 0/1/1/2",
-			report.Matched, report.Unmatched, report.NoCover, report.Total)
-	}
-	if len(report.Specs) != 0 {
-		t.Errorf("specs = %+v, want empty", report.Specs)
-	}
 }
 
 // fakeCodemap writes a shell script that emits the given JSON to stdout and
@@ -193,7 +117,7 @@ func TestAffectedSpecsCommand_JSONOutput(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
-	var report affectedSpecsReport
+	var report affected.Report
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatalf("unmarshal: %v\n%s", err, stdout.String())
 	}

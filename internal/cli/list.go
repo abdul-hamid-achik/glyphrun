@@ -3,15 +3,15 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"github.com/abdul-hamid-achik/glyphrun/internal/affected"
+	"github.com/abdul-hamid-achik/glyphrun/internal/config"
+	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
+	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	"github.com/abdul-hamid-achik/glyphrun/internal/config"
-	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
-	"github.com/spf13/cobra"
 )
 
 func newListCommand(opts *globalOptions) *cobra.Command {
@@ -98,7 +98,7 @@ type listRow struct {
 // ending in `.draft.yml`, are skipped, matching `glyph run`'s
 // recursive spec discovery.
 func listSpecs(paths []string, opts *globalOptions, filters listFilters) ([]listRow, error) {
-	files, err := collectSpecFiles(paths)
+	files, err := affected.CollectSpecFiles(paths)
 	if err != nil {
 		return nil, err
 	}
@@ -154,71 +154,6 @@ func listSpecs(paths []string, opts *globalOptions, filters listFilters) ([]list
 		rows = append(rows, row)
 	}
 	return rows, nil
-}
-
-// collectSpecFiles expands the given paths (files or directories) into
-// a deduplicated, sorted list of spec files. Skips action libraries
-// and draft files. The rules match what `cairn run` and `glyph run`
-// use for directory inputs.
-func collectSpecFiles(paths []string) ([]string, error) {
-	seen := map[string]bool{}
-	var out []string
-	for _, p := range paths {
-		abs, err := filepath.Abs(p)
-		if err != nil {
-			return nil, err
-		}
-		info, err := os.Stat(abs)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-		if !info.IsDir() {
-			if isSpecFile(abs) {
-				if !seen[abs] {
-					seen[abs] = true
-					out = append(out, abs)
-				}
-			}
-			continue
-		}
-		err = filepath.Walk(abs, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				base := filepath.Base(path)
-				if base == "actions" || base == "node_modules" || base == ".git" {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if !isSpecFile(path) {
-				return nil
-			}
-			base := filepath.Base(path)
-			if strings.HasPrefix(base, "_") || strings.HasSuffix(base, ".draft.yml") || strings.HasSuffix(base, ".draft.yaml") {
-				return nil
-			}
-			if !seen[path] {
-				seen[path] = true
-				out = append(out, path)
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	sort.Strings(out)
-	return out, nil
-}
-
-func isSpecFile(path string) bool {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".yml", ".yaml", ".json":
-		return true
-	}
-	return false
 }
 
 // priorityRank translates the metadata priority string into a numeric
