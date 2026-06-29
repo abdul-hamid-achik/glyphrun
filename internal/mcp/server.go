@@ -4,13 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"io"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
-
+	"github.com/abdul-hamid-achik/glyphrun/internal/affected"
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	glyphdocs "github.com/abdul-hamid-achik/glyphrun/internal/docs"
@@ -19,6 +13,12 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/runner"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type ServerOptions struct {
@@ -162,6 +162,16 @@ func tools() []map[string]any {
 			"type":       "object",
 			"required":   []string{"path"},
 			"properties": map[string]any{"path": map[string]any{"type": "string"}, "run": map[string]any{"type": "string"}, "write": map[string]any{"type": "boolean"}},
+		}),
+		tool("glyph_affected_specs", "Select the specs a git change can hit: shells out to `codemap review --json`, intersects each spec's coversSymbol against the changed symbols + blast radius, and returns the minimal spec set (run those via glyph_run). One of since/staged selects the diff scope; neither means the working tree.", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"paths":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "spec files/dirs to scan (default: [\".\"])"},
+				"since":   map[string]any{"type": "string", "description": "review changes since this git ref"},
+				"staged":  map[string]any{"type": "boolean", "description": "review only staged changes"},
+				"codemap": map[string]any{"type": "string", "description": "path to the codemap binary (default: codemap on $PATH)"},
+				"depth":   map[string]any{"type": "integer", "minimum": 0, "description": "max blast-radius hops (default 3)"},
+			},
 		}),
 	}
 }
@@ -313,6 +323,36 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 			return toolError(err)
 		}
 		return toolText(result)
+	case "glyph_affected_specs":
+		since := stringArg(params.Arguments, "since", "")
+		staged := boolArg(params.Arguments, "staged", false)
+		if since != "" && staged {
+			return nil, &responseError{Code: -32602, Message: "affected-specs: pass at most one of since/staged"}
+		}
+		mode := "working"
+		if staged {
+			mode = "staged"
+		} else if since != "" {
+			mode = "since"
+		}
+		paths := stringSliceArg(params.Arguments, "paths")
+		if len(paths) == 0 {
+			paths = []string{"."}
+		}
+		rows, err := affected.LoadSpecs(paths, opts.ConfigPath, opts.Environment)
+		if err != nil {
+			return toolError(err)
+		}
+		depth := intArg(params.Arguments, "depth", 3)
+		review, err := affected.RunReview(stringArg(params.Arguments, "codemap", "codemap"), mode, since, depth)
+		if err != nil {
+			return toolError(err)
+		}
+		report := affected.Select(rows, review)
+		report.SchemaVersion = 1
+		report.Mode = mode
+		report.Since = since
+		return toolText(report)
 	default:
 		return nil, &responseError{Code: -32602, Message: "unknown tool: " + params.Name}
 	}
@@ -511,6 +551,37 @@ func boolArg(args map[string]any, key string, fallback bool) bool {
 		return value
 	}
 	return fallback
+}
+
+func intArg(args map[string]any, key string, fallback int) int {
+	if args == nil {
+		return fallback
+	}
+	// JSON numbers unmarshal into float64; accept int and float64.
+	switch v := args[key].(type) {
+	case float64:
+		return int(v)
+	case int:
+		return v
+	}
+	return fallback
+}
+
+func stringSliceArg(args map[string]any, key string) []string {
+	if args == nil {
+		return nil
+	}
+	arr, ok := args[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(arr))
+	for _, v := range arr {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func readMessage(reader *bufio.Reader) ([]byte, error) {
