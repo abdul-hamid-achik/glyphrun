@@ -404,8 +404,8 @@ agents' authoring accelerator: it returns a compact list of available
 locators on the current page so an agent can write the next step without
 guessing at selectors. Glyphrun's equivalent would dump the current
 emulator screen as a structured list of (row, col, char, style) "tui
-elements" or a region map, and call it `glyph snapshot inventory
-<spec-or-name>`.
+elements" or a region map, and call it it `glyph snapshot inventory
+&lt;spec-or-name&gt;`.
 
 **What to add.**
 

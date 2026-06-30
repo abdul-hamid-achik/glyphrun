@@ -9,3 +9,4 @@ spec.md
 
 # GoReleaser build output
 dist/
+.vercel
