@@ -17,7 +17,7 @@ export default defineConfig({
   sitemap: { hostname: 'https://glyphrun.dev' },
   themeConfig: {
     siteTitle: 'Glyphrun',
-    logo: '/logo.svg',
+    logo: { src: '/logo.svg', dark: '/logo-dark.svg' },
     nav: [
       { text: 'Guide', link: '/overview', activeMatch: '/overview' },
       { text: 'Authoring', link: '/authoring', activeMatch: '/authoring' },
