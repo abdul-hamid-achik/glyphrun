@@ -43,6 +43,7 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph affected-specs --since <ref>",
 					"glyph export bats <spec>",
 					"glyph clean",
+					"glyph clean --no-archive",
 					"glyph version",
 				},
 				"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "when", "download", "transform", "monitor", "batch"},

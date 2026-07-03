@@ -21,7 +21,7 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/overview', activeMatch: '/overview' },
       { text: 'Authoring', link: '/authoring', activeMatch: '/authoring' },
-      { text: 'Reference', link: '/steps', activeMatch: '/(steps|verifiers|artifacts|configuration|distribution|github|mcp|snippets|troubleshooting|cairntrace-comparison|topics)' },
+      { text: 'Reference', link: '/commands', activeMatch: '/(commands|contract-hash|steps|verifiers|file-script-verifiers|count-verifier|artifacts|artifacts-pipeline|process-telemetry|configuration|redaction-block|distribution|github|mcp|snippets|troubleshooting|cairntrace-comparison|topics)' },
       { text: 'Agents', link: '/agents', activeMatch: '/agents' },
     ],
 
@@ -38,14 +38,21 @@ export default defineConfig({
         {
           text: 'Reference',
           items: [
+            { text: 'Commands', link: '/commands' },
+            { text: 'Contract Hash', link: '/contract-hash' },
             { text: 'Steps', link: '/steps' },
             { text: 'Verifiers', link: '/verifiers' },
+            { text: 'File & Script Verifiers', link: '/file-script-verifiers' },
+            { text: 'Count Verifier', link: '/count-verifier' },
             { text: 'Artifacts', link: '/artifacts' },
+            { text: 'Artifact Pipeline', link: '/artifacts-pipeline' },
+            { text: 'Process Telemetry', link: '/process-telemetry' },
             { text: 'Configuration', link: '/configuration' },
+            { text: 'Redaction', link: '/redaction-block' },
+            { text: 'Snippets', link: '/snippets' },
             { text: 'Distribution', link: '/distribution' },
             { text: 'GitHub', link: '/github' },
             { text: 'MCP', link: '/mcp' },
-            { text: 'Snippets', link: '/snippets' },
             { text: 'Troubleshooting', link: '/troubleshooting' },
             { text: 'Cairntrace Comparison', link: '/cairntrace-comparison' },
             { text: 'Topics', link: '/topics' },

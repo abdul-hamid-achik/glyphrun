@@ -2,11 +2,11 @@ package cli
 
 import (
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/affected"
+	"github.com/abdul-hamid-achik/glyphrun/internal/log"
 	"github.com/spf13/cobra"
 )
 
@@ -100,15 +100,14 @@ when the binary is not on $PATH.`,
 				return exitError{code: 2, err: err}
 			}
 			if !opts.quiet && format == formatMD {
-				fmt.Fprintf(cmd.ErrOrStderr(), "affected-specs: %d matched, %d unmatched, %d without coversSymbol",
-					report.Matched, report.Unmatched, report.NoCover)
+				kvs := []any{"matched", report.Matched, "unmatched", report.Unmatched, "noCover", report.NoCover}
 				if report.Note != "" {
-					fmt.Fprintf(cmd.ErrOrStderr(), " [%s]", report.Note)
+					kvs = append(kvs, "note", report.Note)
 				}
 				if report.Resolution != "" {
-					fmt.Fprintf(cmd.ErrOrStderr(), " resolution=%q", report.Resolution)
+					kvs = append(kvs, "resolution", report.Resolution)
 				}
-				fmt.Fprintln(cmd.ErrOrStderr())
+				log.Info("affected-specs", kvs...)
 			}
 			cmd.Print(output)
 			return nil

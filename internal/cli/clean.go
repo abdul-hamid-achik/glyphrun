@@ -11,8 +11,9 @@ import (
 
 func newCleanCommand(opts *globalOptions) *cobra.Command {
 	var (
-		keep int
-		all  bool
+		keep      int
+		all       bool
+		noArchive bool
 	)
 	cmd := &cobra.Command{
 		Use:   "clean",
@@ -70,7 +71,20 @@ artifact the wipe targeted.`,
 				if effectiveKeep < 0 {
 					return exitError{code: 2, err: fmt.Errorf("--keep must be >= 0 (got %d)", effectiveKeep)}
 				}
-				report, err = artifacts.PruneRuns(artifactRoot, effectiveKeep)
+				// Build the archive config from config, unless --no-archive
+				// opts out for this invocation.
+				archive := artifacts.ArchiveConfig{}
+				if !noArchive {
+					archive = artifacts.ArchiveConfig{
+						Enabled: rt.Config.Retention.Archive.Enabled,
+						Command: rt.Config.Retention.Archive.Command,
+						Args:    rt.Config.Retention.Archive.Args,
+					}
+					if d, perr := artifacts.ParseArchiveTimeout(rt.Config.Retention.Archive.Timeout); perr == nil {
+						archive.Timeout = d
+					}
+				}
+				report, err = artifacts.PruneRuns(artifactRoot, effectiveKeep, archive)
 			}
 			if err != nil {
 				return exitError{code: 2, err: fmt.Errorf("clean: %w", err)}
@@ -85,6 +99,7 @@ artifact the wipe targeted.`,
 	}
 	cmd.Flags().IntVar(&keep, "keep", 0, "keep the N newest runs (overrides config retention.keepRuns for this invocation; --keep 0 disables pruning — use --all to wipe every run)")
 	cmd.Flags().BoolVar(&all, "all", false, "remove every run directory under the artifact root")
+	cmd.Flags().BoolVar(&noArchive, "no-archive", false, "delete pruned run dirs locally without first archiving them (skips retention.archive for this invocation)")
 	return cmd
 }
 
@@ -93,6 +108,13 @@ func renderCleanMarkdown(artifactRoot string, report artifacts.CleanReport, all 
 	if all {
 		action = "wiped"
 	}
-	return fmt.Sprintf("# Glyphrun Clean\n\n- artifact root: `%s`\n- mode: %s\n- pruned: %d\n- kept: %d\n",
+	out := fmt.Sprintf("# Glyphrun Clean\n\n- artifact root: `%s`\n- mode: %s\n- pruned: %d\n- kept: %d\n",
 		artifactRoot, action, report.Pruned, report.Kept)
+	if report.Archived > 0 {
+		out += fmt.Sprintf("- archived: %d\n", report.Archived)
+	}
+	for _, m := range report.ArchiveErrors {
+		out += fmt.Sprintf("- archive error: %s\n", m)
+	}
+	return out
 }

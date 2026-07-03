@@ -104,6 +104,45 @@ func applyExplicitConfigFields(cfg *Config, data []byte) error {
 			cfg.Redaction.Enabled = v
 		}
 	}
+	// Retention: actively distinguish an absent keepRuns from an
+	// explicit one. Defaults() sets KeepRuns to DefaultKeepRuns; a
+	// user who writes retention.keepRuns (including the opt-out 0)
+	// must win over that default. We only override when the key is
+	// literally present in the raw YAML.
+	if retention, ok := raw["retention"].(map[string]any); ok {
+		if v, ok := retention["keepRuns"]; ok {
+			switch n := v.(type) {
+			case int:
+				cfg.Retention.KeepRuns = n
+			case int64:
+				cfg.Retention.KeepRuns = int(n)
+			case float64:
+				cfg.Retention.KeepRuns = int(n)
+			}
+		}
+		if archive, ok := retention["archive"].(map[string]any); ok {
+			if v, ok := archive["enabled"].(bool); ok {
+				cfg.Retention.Archive.Enabled = v
+			}
+			if v, ok := archive["command"].(string); ok {
+				cfg.Retention.Archive.Command = v
+			}
+			if v, ok := archive["timeout"].(string); ok {
+				cfg.Retention.Archive.Timeout = v
+			}
+			if args, ok := archive["args"].([]any); ok {
+				parsed := make([]string, 0, len(args))
+				for _, a := range args {
+					if s, ok := a.(string); ok {
+						parsed = append(parsed, s)
+					}
+				}
+				if len(parsed) > 0 {
+					cfg.Retention.Archive.Args = parsed
+				}
+			}
+		}
+	}
 	if terminal, ok := raw["terminal"].(map[string]any); ok {
 		if normalize, ok := terminal["normalize"].(map[string]any); ok {
 			if v, ok := normalize["trimRight"].(bool); ok {
@@ -231,6 +270,22 @@ func mergeConfig(base Config, overlay Config) Config {
 	}
 	if len(overlay.Redaction.Patterns) > 0 || len(overlay.Redaction.EnvAllowlist) > 0 {
 		base.Redaction = overlay.Redaction
+	}
+	// Retention.KeepRuns is NOT merged here: the zero value from an
+	// omitted block would clobber the DefaultKeepRuns default. The
+	// explicit value (including the opt-out 0) is applied from the raw
+	// YAML in applyExplicitConfigFields, which can distinguish absent
+	// from explicit-zero. We only merge the archive sub-block's
+	// non-bool fields here; Enabled is handled in
+	// applyExplicitConfigFields for the same zero-ambiguity reason.
+	if overlay.Retention.Archive.Command != "" {
+		base.Retention.Archive.Command = overlay.Retention.Archive.Command
+	}
+	if len(overlay.Retention.Archive.Args) > 0 {
+		base.Retention.Archive.Args = overlay.Retention.Archive.Args
+	}
+	if overlay.Retention.Archive.Timeout != "" {
+		base.Retention.Archive.Timeout = overlay.Retention.Archive.Timeout
 	}
 	return base
 }

@@ -1,6 +1,6 @@
 # Steps
 
-The v1 step vocabulary is `press`, `type`, `paste`, `send`, `mouse`, `wait`, `resize`, `snapshot`, `use`, `when`, the artifact-pipeline steps `download`, `transform`, and `batch`, and the process-telemetry `monitor` step (see `glyph docs process-telemetry --format md`).
+The v1 step vocabulary is `press`, `type`, `paste`, `send`, `mouse`, `wait`, `resize`, `snapshot`, `use`, `when`, the artifact-pipeline steps `download`, `transform`, and `batch`, and the process-telemetry `monitor` step (see [Process Telemetry](/process-telemetry) and `glyph docs process-telemetry --format md`).
 
 `mouse: { x, y, button?, action? }` sends a mouse event at the 0-based cell `(x, y)`. `button` is one of `left` (default), `middle`, `right`, `wheelUp`, `wheelDown`; `action` is `click` (default), `press`, `release`, or `move`. The runner encodes the event as SGR (1006) when the target enabled that mode, otherwise as the legacy X10 encoding.
 
@@ -40,4 +40,4 @@ Use `paste` for multi-character clipboard-style input. Glyphrun sends bracketed 
 
 Use `use` with `imports` to reuse action files. Actions are best for repeated mechanics; keep behavior assertions in `outcomes`.
 
-Use the artifact-pipeline steps to work with files a target produces: `download` captures a file the target wrote, `transform` runs an external script that produces a new artifact, and `batch` concatenates several `press`/`type`/`paste`/`send` sub-steps into a single PTY write (preserving transient TUI state, with an optional trailing `wait` as the only sync point). `download` and `transform` register named artifacts addressable by later steps via `${artifacts.<name>.path}`. See `glyph docs artifacts-pipeline --format md` for end-to-end examples.
+Use the artifact-pipeline steps to work with files a target produces: `download` captures a file the target wrote, `transform` runs an external script that produces a new artifact, and `batch` concatenates several `press`/`type`/`paste`/`send` sub-steps into a single PTY write (preserving transient TUI state, with an optional trailing `wait` as the only sync point). `download` and `transform` register named artifacts addressable by later steps via `${artifacts.<name>.path}`. See the [Artifact Pipeline](/artifacts-pipeline) page for end-to-end examples.

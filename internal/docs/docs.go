@@ -339,15 +339,32 @@ Exit codes:
 `,
 	"retention": `# Retention and ` + "`glyph clean`" + `
 
-Run directories accumulate fast: a 200-spec suite that runs on every PR fills ` + "`.glyphrun/runs/`" + ` with tens of thousands of files. Configure ` + "`artifacts.retention.keepRuns`" + ` to drop everything but the most recent N directories:
+Run directories accumulate fast: a 200-spec suite that runs on every PR fills ` + "`.glyphrun/runs/`" + ` with tens of thousands of files. The runner keeps the most recent N run directories per artifact root and prunes the rest after every successful run.
+
+The default is **3**. A config file that omits ` + "`retention.keepRuns`" + ` keeps the default; an explicit ` + "`retention.keepRuns: 0`" + ` disables auto-prune ("keep everything"):
 
 ` + "```yaml" + `
-artifacts:
-  retention:
-    keepRuns: 20
+retention:
+  keepRuns: 20   # default is 3; 0 disables auto-prune
 ` + "```" + `
 
 After each run, the runner prunes the oldest run directories, keeping the N most recent. The prune is best-effort — failures are logged as ` + "`retention.pruned`" + ` events in ` + "`events.ndjson`" + ` and never block the run result. The current run is always kept; the cap applies to historical runs only.
+
+## Archiving pruned runs (fcheap / file.cheap)
+
+Instead of deleting pruned runs, you can route them to an external storage tool (e.g. ` + "`fcheap`" + ` / ` + "`file.cheap`" + `). The runner invokes your command with the run directory appended as the final positional argument:
+
+` + "```yaml" + `
+retention:
+  keepRuns: 3
+  archive:
+    enabled: true
+    command: fcheap          # your storage binary
+    args: ["store"]          # invoked as: fcheap store <runDir>
+    timeout: 5m              # duration string; default 5m
+` + "```" + `
+
+On archive success (exit 0) the local run directory is deleted — move semantics. On a non-zero exit, a timeout, or a missing binary, the local directory is **preserved** and the failure is surfaced as a ` + "`retention.archive.error`" + ` event (and a warning on stderr). Archival never fails the run. Skip archival for a single ` + "`glyph clean`" + ` with ` + "`--no-archive`" + `.
 
 For an explicit sweep, use ` + "`glyph clean`" + `:
 
@@ -358,11 +375,14 @@ $ glyph clean --keep 10
 # wipe everything under the artifact root
 $ glyph clean --all
 
+# delete pruned runs locally without archiving
+$ glyph clean --no-archive
+
 # wipe a custom root
 $ glyph clean --all --artifact-root /tmp/glyph
 ` + "```" + `
 
-` + "`glyph clean`" + ` always prints what it pruned so a CI log captures the operation. Combine with ` + "`--format json`" + ` to feed the count into a release-notes generator.
+` + "`glyph clean`" + ` always prints what it pruned (and archived) so a CI log captures the operation. Combine with ` + "`--format json`" + ` to feed the count into a release-notes generator.
 `,
 	"rerun-failed": `# Rerunning Failed Specs
 

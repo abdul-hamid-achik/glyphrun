@@ -201,3 +201,109 @@ environments:
 		t.Fatalf("expected nil Secrets, got %+v", rt.Secrets)
 	}
 }
+
+// TestLoadRuntimeRetentionDefaultIsThree confirms that a config file
+// with no retention block leaves the Defaults() KeepRuns (3) in
+// place. The loader deliberately does NOT merge KeepRuns in
+// mergeConfig so an omitted block cannot clobber the default.
+func TestLoadRuntimeRetentionDefaultIsThree(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	yaml := `version: 1
+artifactRoot: .glyphrun/runs
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := LoadRuntime(dir, cfgPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Config.Retention.KeepRuns != 3 {
+		t.Fatalf("KeepRuns = %d, want default 3", rt.Config.Retention.KeepRuns)
+	}
+}
+
+// TestLoadRuntimeRetentionExplicitZeroOptsOut covers the opt-out: an
+// explicit retention.keepRuns: 0 must win over the default 3 and
+// disables auto-prune. applyExplicitConfigFields distinguishes absent
+// from explicit-zero via the raw YAML.
+func TestLoadRuntimeRetentionExplicitZeroOptsOut(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	yaml := `version: 1
+retention:
+  keepRuns: 0
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := LoadRuntime(dir, cfgPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Config.Retention.KeepRuns != 0 {
+		t.Fatalf("KeepRuns = %d, want 0 (opt-out)", rt.Config.Retention.KeepRuns)
+	}
+}
+
+// TestLoadRuntimeRetentionExplicitKeep covers a non-default keep
+// count: retention.keepRuns: 7 must override the default 3.
+func TestLoadRuntimeRetentionExplicitKeep(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	yaml := `version: 1
+retention:
+  keepRuns: 7
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := LoadRuntime(dir, cfgPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt.Config.Retention.KeepRuns != 7 {
+		t.Fatalf("KeepRuns = %d, want 7", rt.Config.Retention.KeepRuns)
+	}
+}
+
+// TestLoadRuntimeArchiveBlock covers the retention.archive sub-block:
+// enabled, command, args, and timeout are read from the raw YAML.
+// Timeout is stored as a string (parsed to duration later by
+// artifacts.ParseArchiveTimeout in the runner), so we assert the
+// string form.
+func TestLoadRuntimeArchiveBlock(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	yaml := `version: 1
+retention:
+  keepRuns: 3
+  archive:
+    enabled: true
+    command: fcheap
+    args:
+      - store
+    timeout: 90s
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := LoadRuntime(dir, cfgPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := rt.Config.Retention.Archive
+	if !a.Enabled {
+		t.Errorf("Archive.Enabled = false, want true")
+	}
+	if a.Command != "fcheap" {
+		t.Errorf("Archive.Command = %q, want %q", a.Command, "fcheap")
+	}
+	if len(a.Args) != 1 || a.Args[0] != "store" {
+		t.Errorf("Archive.Args = %v, want [store]", a.Args)
+	}
+	if a.Timeout != "90s" {
+		t.Errorf("Archive.Timeout = %q, want %q", a.Timeout, "90s")
+	}
+}

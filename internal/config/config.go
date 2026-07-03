@@ -7,6 +7,11 @@ const (
 	DefaultArtifactRoot = ".glyphrun/runs"
 	DefaultSnapshotRoot = ".glyphrun/snapshots"
 	DefaultSchemaRoot   = "schemas"
+
+	// DefaultKeepRuns is the number of newest run directories retained
+	// when the config file omits retention.keepRuns. An explicit 0 in the
+	// config disables auto-prune.
+	DefaultKeepRuns = 3
 )
 
 type Config struct {
@@ -104,14 +109,44 @@ type Redaction struct {
 }
 
 // Retention governs disk usage of the artifact root. The runner
-// auto-prunes after every successful run when KeepRuns is set;
-// `glyph clean` does the same on demand and supports `--all` to
-// wipe the artifact root.
+// auto-prunes after every successful run, keeping the KeepRuns newest
+// directories and pruning the rest. Pruned runs can optionally be
+// archived to an external store (e.g. fcheap / file.cheap) via Archive
+// before deletion; `glyph clean` does the same on demand and supports
+// `--all` to wipe the artifact root.
 type Retention struct {
 	// KeepRuns is the number of newest run directories to keep per
 	// artifact root. Older runs are pruned after each successful
-	// run. 0 (the default) means "no auto-prune".
+	// run. The default is 3 (see Defaults). A config file that omits
+	// retention.keepRuns keeps the default; an explicit
+	// retention.keepRuns: 0 disables auto-prune ("keep everything").
+	// The loader enforces this by reading the raw YAML so an absent
+	// key is distinguishable from an explicit zero — see
+	// applyExplicitConfigFields.
 	KeepRuns int `yaml:"keepRuns,omitempty" json:"keepRuns,omitempty"`
+
+	// Archive, when Enabled and Command is set, routes pruned run
+	// directories to an external archival command instead of deleting
+	// them outright. The command is invoked as:
+	//
+	//   <Command> <Args...> <runDir>
+	//
+	// The run directory path is appended as the final positional arg.
+	// On exit 0 the local directory is removed (move semantics); on a
+	// non-zero exit or timeout the local directory is preserved and the
+	// failure is surfaced as a retention.archive.error event. Archival
+	// never fails the run.
+	Archive ArchiveConfig `yaml:"archive,omitempty" json:"archive,omitempty"`
+}
+
+// ArchiveConfig configures external archival of pruned run directories.
+// It is a sub-block of retention. Timeout is a duration string (e.g.
+// "5m", "30s"); empty means the default (5m).
+type ArchiveConfig struct {
+	Enabled bool     `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Command string   `yaml:"command,omitempty" json:"command,omitempty"`
+	Args    []string `yaml:"args,omitempty" json:"args,omitempty"`
+	Timeout string   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
 }
 
 type RedactionPattern struct {
@@ -183,6 +218,9 @@ func Defaults() Config {
 				{Name: "bearer-token", Regex: `(?i)bearer\s+[a-z0-9._~+/-]+`, Replace: "bearer <redacted>"},
 				{Name: "private-key", Regex: `-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----`, Replace: "<redacted private key>"},
 			},
+		},
+		Retention: Retention{
+			KeepRuns: DefaultKeepRuns,
 		},
 	}
 }

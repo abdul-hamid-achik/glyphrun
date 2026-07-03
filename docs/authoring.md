@@ -25,7 +25,7 @@ outcomes:
         contains: "ready"
 ```
 
-Use `glyph spec verify <spec> --format json` before running a spec. Use `glyph spec verify <spec> --stamp` only when the behavior contract intentionally changed.
+Use `glyph spec verify <spec> --format json` before running a spec. Use `glyph spec verify <spec> --stamp` only when the behavior contract intentionally changed — see [Contract Hash](/contract-hash).
 
 Good specs assert user-visible behavior. Avoid coupling outcomes to implementation details, timing artifacts, or raw ANSI bytes.
 

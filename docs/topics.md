@@ -1,22 +1,27 @@
 # Docs Topics
 
-Built-in docs are available through `glyph docs <topic>`.
+Every built-in topic below is available in-binary with `glyph docs <topic> --format md` (or `--format json`). The site mirrors them as dedicated pages — use the links to read on the web, or run the command from a terminal for the version shipped with your binary.
 
 ```bash
-glyph docs overview --format md
-glyph docs quickstart --format md
-glyph docs authoring --format md
-glyph docs snippets --format md
-glyph docs steps --format md
-glyph docs verifiers --format md
-glyph docs artifacts --format md
-glyph docs agents --format md
-glyph docs mcp --format md
-glyph docs configuration --format md
-glyph docs troubleshooting --format md
-glyph docs github --format md
-glyph docs distribution --format md
-glyph docs topics --format md
+glyph docs topics --format md          # list every available topic in your binary
+glyph docs <topic> --format md
 ```
 
-Use `glyph agent --format md` for the shortest agent bootstrap guide.
+## Getting started
+
+- [overview](/overview) · [quickstart](/quickstart) · [authoring](/authoring) · [snippets](/snippets) · install (see [Distribution](/distribution))
+
+## Steps & verifiers
+
+- [steps](/steps) · [verifiers](/verifiers) · [file-script-verifiers](/file-script-verifiers) · [count-verifier](/count-verifier) · [process-telemetry](/process-telemetry) · [artifacts-pipeline](/artifacts-pipeline)
+
+## Specs & config
+
+- [contract-hash](/contract-hash) · [configuration](/configuration) · [redaction-block](/redaction-block) · capture-policy (see [Configuration](/configuration#capture-policy)) · retention (see [Configuration](/configuration#retention)) · [artifacts](/artifacts)
+
+## Commands & integration
+
+- [commands](/commands) — metadata-list, import-export, and rerun-failed are covered here
+- [github](/github) · [distribution](/distribution) · [mcp](/mcp) · [agents](/agents) · [troubleshooting](/troubleshooting)
+
+Use `glyph agent --format md` for the shortest agent bootstrap guide. Use `glyph explain --format json` for the authoritative list of commands, steps, verifiers, formats, and artifacts the running binary supports.

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/abdul-hamid-achik/glyphrun/internal/affected"
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
@@ -173,6 +174,14 @@ func tools() []map[string]any {
 				"depth":   map[string]any{"type": "integer", "minimum": 0, "description": "max blast-radius hops (default 3)"},
 			},
 		}),
+		tool("glyph_clean", "Prune old run directories from the artifact root. Without flags, applies the project retention.keepRuns (default 3) and, when retention.archive is configured, archives pruned dirs to the external command (e.g. fcheap) before deleting them. Set all=true to wipe every run dir; noArchive=true to delete locally without archiving.", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"keep":      map[string]any{"type": "integer", "minimum": 0, "description": "keep the N newest runs (overrides retention.keepRuns for this call; 0 disables pruning)"},
+				"all":       map[string]any{"type": "boolean", "description": "remove every run directory under the artifact root"},
+				"noArchive": map[string]any{"type": "boolean", "description": "delete pruned run dirs locally without archiving them first"},
+			},
+		}),
 	}
 }
 
@@ -186,9 +195,9 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		return toolText(map[string]any{
 			"project":   "glyphrun",
 			"binary":    "glyph",
-			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "mcp"},
 			"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "download", "transform", "monitor", "batch", "when"},
 			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"},
+			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "clean", "clean --no-archive", "mcp"},
 			"namedArtifacts": map[string]any{
 				"placeholders": []string{"${artifacts.<name>.path}", "${artifacts.<name>.relativePath}"},
 				"stepKinds":    []string{"download", "transform"},
@@ -352,6 +361,45 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		report.SchemaVersion = 1
 		report.Mode = mode
 		report.Since = since
+		return toolText(report)
+	case "glyph_clean":
+		root, err := artifactRoot(opts)
+		if err != nil {
+			return toolError(err)
+		}
+		rt, err := config.LoadRuntime(".", opts.ConfigPath, opts.Environment)
+		if err != nil {
+			return toolError(err)
+		}
+		if boolArg(params.Arguments, "all", false) {
+			report, err := artifacts.CleanAll(root)
+			if err != nil {
+				return toolError(err)
+			}
+			return toolText(report)
+		}
+		effectiveKeep := intArg(params.Arguments, "keep", 0)
+		if _, ok := params.Arguments["keep"]; !ok {
+			effectiveKeep = rt.Config.Retention.KeepRuns
+		}
+		if effectiveKeep < 0 {
+			return toolError(fmt.Errorf("keep must be >= 0 (got %d)", effectiveKeep))
+		}
+		archive := artifacts.ArchiveConfig{}
+		if !boolArg(params.Arguments, "noArchive", false) {
+			archive = artifacts.ArchiveConfig{
+				Enabled: rt.Config.Retention.Archive.Enabled,
+				Command: rt.Config.Retention.Archive.Command,
+				Args:    rt.Config.Retention.Archive.Args,
+			}
+			if d, perr := artifacts.ParseArchiveTimeout(rt.Config.Retention.Archive.Timeout); perr == nil {
+				archive.Timeout = d
+			}
+		}
+		report, err := artifacts.PruneRuns(root, effectiveKeep, archive)
+		if err != nil {
+			return toolError(err)
+		}
 		return toolText(report)
 	default:
 		return nil, &responseError{Code: -32602, Message: "unknown tool: " + params.Name}

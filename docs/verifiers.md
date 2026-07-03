@@ -1,6 +1,6 @@
 # Verifiers
 
-The v1 verifier vocabulary is `screen`, `region`, `cell`, `cursor`, `process`, `snapshot`, trusted `command`, `file`, `script`, `count`, `link`, and the process-telemetry `metrics` verifier (see `glyph docs process-telemetry --format md`).
+The v1 verifier vocabulary is `screen`, `region`, `cell`, `cursor`, `process`, `snapshot`, trusted `command`, `file`, `script`, `count`, `link`, and the process-telemetry `metrics` verifier (see [Process Telemetry](/process-telemetry) and `glyph docs process-telemetry --format md`).
 
 Examples:
 
@@ -67,4 +67,4 @@ The `file`, `script`, and `count` verifiers extend assertions beyond the screen:
 - `count` asserts how many cells on the screen, or within a region, match a character or pattern.
 - `link` asserts that an OSC 8 hyperlink is present: `link: { url, text }` matches a substring of the link URI and, optionally, the linked text.
 
-See `glyph docs file-script-verifiers --format md` and `glyph docs count-verifier --format md` for end-to-end examples.
+See [File & Script Verifiers](/file-script-verifiers) and [Count Verifier](/count-verifier) for end-to-end examples.

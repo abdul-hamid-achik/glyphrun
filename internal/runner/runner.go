@@ -19,6 +19,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	"github.com/abdul-hamid-achik/glyphrun/internal/input"
+	"github.com/abdul-hamid-achik/glyphrun/internal/log"
 	"github.com/abdul-hamid-achik/glyphrun/internal/procmon"
 	"github.com/abdul-hamid-achik/glyphrun/internal/ptyrunner"
 	"github.com/abdul-hamid-achik/glyphrun/internal/render"
@@ -1800,6 +1801,22 @@ func (s *runState) terminalPolicyFailure() string {
 	return ""
 }
 
+// archiveConfigFromConfig translates the config-layer archive block
+// into the artifacts-layer ArchiveConfig. The artifacts package must
+// not import internal/config, so the runner owns the boundary. A
+// timeout string that fails to parse is dropped (default applies).
+func archiveConfigFromConfig(c config.ArchiveConfig) artifacts.ArchiveConfig {
+	out := artifacts.ArchiveConfig{
+		Enabled: c.Enabled,
+		Command: c.Command,
+		Args:    c.Args,
+	}
+	if d, err := artifacts.ParseArchiveTimeout(c.Timeout); err == nil {
+		out.Timeout = d
+	}
+	return out
+}
+
 func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcomes []artifacts.OutcomeResult, diagnostic string, exitCodeOverride ...int) artifacts.RunResult {
 	if outcomes == nil {
 		outcomes = []artifacts.OutcomeResult{}
@@ -1912,6 +1929,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		marker := fmt.Sprintf("\n[glyphrun: raw PTY log truncated at %d bytes; later output was dropped]\n", max)
 		rawPTY = append(rawPTY, []byte(marker)...)
 		_ = s.writer.AppendEvent(event("pty.truncated", "", fmt.Sprintf("raw PTY log truncated at %d bytes", max)))
+		log.Warn("raw PTY log truncated", "max", max)
 	}
 	if shouldCapture(policy.RawLog, status) {
 		_ = s.writer.WriteRawPTY(rawPTY)
@@ -1943,10 +1961,23 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		artifactRoot = filepath.Dir(s.writer.RunDir)
 	}
 	if keepRuns := s.runtime.Config.Retention.KeepRuns; keepRuns > 0 && artifactRoot != "" {
-		if report, pruneErr := artifacts.PruneRuns(artifactRoot, keepRuns); pruneErr != nil {
+		archive := archiveConfigFromConfig(s.runtime.Config.Retention.Archive)
+		if report, pruneErr := artifacts.PruneRuns(artifactRoot, keepRuns, archive); pruneErr != nil {
 			_ = s.writer.AppendEvent(event("retention.error", "", pruneErr.Error()))
-		} else if report.Pruned > 0 {
-			_ = s.writer.AppendEvent(event("retention.pruned", "", fmt.Sprintf("pruned %d, kept %d", report.Pruned, report.Kept)))
+			log.Warn("retention prune failed", "err", pruneErr)
+		} else {
+			if report.Pruned > 0 {
+				_ = s.writer.AppendEvent(event("retention.pruned", "", fmt.Sprintf("pruned %d, kept %d", report.Pruned, report.Kept)))
+				log.Debug("retention pruned", "pruned", report.Pruned, "kept", report.Kept)
+			}
+			if report.Archived > 0 {
+				_ = s.writer.AppendEvent(event("retention.archived", "", fmt.Sprintf("archived %d run dir(s) to %s", report.Archived, archive.Command)))
+				log.Info("retention archived", "archived", report.Archived, "command", archive.Command)
+			}
+			for _, m := range report.ArchiveErrors {
+				_ = s.writer.AppendEvent(event("retention.archive.error", "", m))
+				log.Warn("retention archive error", "message", m)
+			}
 		}
 	}
 	// Last-failed tracking: write this spec's name to .last-failed.txt

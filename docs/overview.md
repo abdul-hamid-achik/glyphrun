@@ -15,4 +15,5 @@ This determinism is what makes specs sharable. A spec an agent writes on one mac
 ## Where to go next
 
 - [Quickstart](/quickstart) — install `glyph` and run your first spec.
+- [CLI Reference](/commands) — every command and flag.
 - The full authoring guide, step vocabulary, and verifier reference are under way and will land in subsequent releases.

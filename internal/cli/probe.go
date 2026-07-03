@@ -9,6 +9,7 @@ import (
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/flaky"
+	"github.com/abdul-hamid-achik/glyphrun/internal/log"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +32,7 @@ func runFlakinessProbe(cmd *cobra.Command, opts *globalOptions, format outputFor
 			anyFailed = true
 		}
 		if !opts.quiet {
-			fmt.Fprintf(cmd.ErrOrStderr(), "probe: iteration %d/%d (exit %d)\n", iter+1, repeat, exitCode)
+			log.Info("probe iteration", "iter", iter+1, "of", repeat, "exit", exitCode)
 		}
 		for i, result := range results {
 			perSpec[i] = append(perSpec[i], result)

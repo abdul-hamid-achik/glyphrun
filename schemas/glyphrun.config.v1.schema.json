@@ -136,8 +136,20 @@
     },
     "retention": {
       "type": "object",
+      "description": "Run-directory retention. keepRuns defaults to 3 when omitted; 0 disables auto-prune. archive routes pruned dirs to an external command (e.g. fcheap) instead of deleting them.",
       "properties": {
-        "keepRuns": { "type": "integer", "minimum": 1 }
+        "keepRuns": { "type": "integer", "minimum": 0, "description": "Number of newest run dirs to keep. Default 3; 0 disables auto-prune." },
+        "archive": {
+          "type": "object",
+          "description": "External archival of pruned run directories. The command is invoked as <command> <args...> <runDir>; exit 0 removes the local dir (move semantics), non-zero/timeout keeps it.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "command": { "type": "string", "minLength": 1 },
+            "args": { "type": "array", "items": { "type": "string" } },
+            "timeout": { "type": "string", "description": "Duration string e.g. 5m, 30s. Default 5m." }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

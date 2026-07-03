@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/abdul-hamid-achik/glyphrun/internal/log"
 	"github.com/abdul-hamid-achik/glyphrun/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -29,23 +29,38 @@ func (e exitError) Error() string {
 	}
 	return e.err.Error()
 }
-
 func Execute() int {
 	opts := &globalOptions{}
 	root := newRootCommand(opts)
 	if err := root.Execute(); err != nil {
 		if ee, ok := err.(exitError); ok {
 			if ee.err != nil && !opts.quiet {
-				fmt.Fprintln(root.ErrOrStderr(), ee.err)
+				log.Error("glyph failed", "err", ee.err)
 			}
 			return ee.code
 		}
 		if !opts.quiet {
-			fmt.Fprintln(root.ErrOrStderr(), err)
+			log.Error("glyph failed", "err", err)
 		}
 		return 2
 	}
 	return 0
+}
+
+// configureLogger installs the diagnostic logger from the parsed
+// global flags. It is wired as the root PersistentPreRunE so it runs
+// after cobra has populated opts (quiet/verbose/no-color/format) but
+// before any subcommand's RunE. All diagnostics go to stderr; stdout
+// stays reserved for the command result. JSON/YAML output formats
+// switch the logger to JSON lines so stderr stays machine-parseable.
+func configureLogger(opts *globalOptions) {
+	log.Configure(log.Options{
+		Writer:  os.Stderr,
+		Quiet:   opts.quiet,
+		Verbose: opts.verbose,
+		NoColor: opts.noColor,
+		JSON:    opts.format == "json" || opts.format == "yaml",
+	})
 }
 
 func newRootCommand(opts *globalOptions) *cobra.Command {
@@ -55,6 +70,13 @@ func newRootCommand(opts *globalOptions) *cobra.Command {
 		Version:       version.Full(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// PersistentPreRunE runs after flag parsing, so opts.quiet/
+		// verbose/no-color/format are populated. Subcommands inherit
+		// this unless they define their own PersistentPreRunE (none do).
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			configureLogger(opts)
+			return nil
+		},
 	}
 	// Cobra's Print/Printf default to stderr (OutOrStderr). Glyphrun's
 	// contract is that command output — including --format json/yaml — goes to

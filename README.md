@@ -307,19 +307,26 @@ Retention, last-failed tracking, and explicit cleanup are first-class commands:
 
 ```yaml
 # glyphrun.config.yml
-artifacts:
-  retention:
-    keepRuns: 20
+retention:
+  keepRuns: 20   # default is 3; 0 disables auto-prune
+  # archive pruned runs to an external store (e.g. fcheap / file.cheap)
+  # instead of deleting them. On exit 0 the local dir is removed (move);
+  # on failure it is preserved. Archival never fails the run.
+  archive:
+    enabled: true
+    command: fcheap
+    args: ["store"]   # invoked as: fcheap store <runDir>
 ```
 
 ```bash
-glyph clean --keep 10      # keep the 10 most recent runs, prune the rest
-glyph clean --all          # wipe everything under the artifact root
+glyph clean --keep 10          # keep the 10 most recent runs, prune the rest
+glyph clean --all               # wipe everything under the artifact root
+glyph clean --no-archive        # delete locally without archiving first
 
-glyph run <spec> --rerun-failed    # replay only the specs in .last-failed.txt
+glyph run <spec> --rerun-failed  # replay only the specs in .last-failed.txt
 ```
 
-Auto-prune runs after every successful run (best-effort; logged as `retention.pruned` in `events.ndjson`). The current run is always kept; the cap applies to historical runs only.
+The default is **3**: a config that omits `retention.keepRuns` keeps the 3 newest run dirs; an explicit `0` disables auto-prune. Auto-prune runs after every successful run (best-effort; logged as `retention.pruned` / `retention.archived` in `events.ndjson`). The current run is always kept; the cap applies to historical runs only.
 
 ## Repairing Drifted Steps
 
@@ -457,8 +464,8 @@ artifacts:
   rawLog: false
   finalScreen: true
   agentContext: true
-  retention:
-    keepRuns: 20
+retention:
+  keepRuns: 20   # default is 3; 0 disables auto-prune
 redaction:
   values: ["$HOME/.config/private-token"]
 ```
@@ -485,11 +492,11 @@ cmd/glyph/              CLI entrypoint
 internal/cli/           Cobra command handlers
 internal/spec/          Spec model, parsing, validation, contract hash
 internal/config/        Config loading and schema validation
+internal/log/           Structured diagnostic logging (charmbracelet/log)
 internal/ptyrunner/     PTY process backend
 internal/terminal/      Virtual terminal emulator
 internal/runner/        Step execution and outcome evaluation
-internal/artifacts/     Artifact writer, markdown, redaction, retention, last-failed
-internal/render/        Deterministic SVG rendering of a screen snapshot
+internal/artifacts/     Artifact writer, markdown, redaction, retention, archival, last-failed
 internal/repair/        Failed-run analysis and step-repair proposals
 internal/flaky/         Stability/divergence summary for repeated runs
 internal/scaffold/      Draft spec inference from a recorded session

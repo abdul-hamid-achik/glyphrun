@@ -30,7 +30,7 @@ Package boundaries are part of the contract — do not blur them.
 | `internal/ptyrunner` | Process backend behind a platform `backend` interface: Unix PTY (`creack/pty`) and Windows ConPTY. No terminal semantics. |
 | `internal/terminal` | Virtual emulator + adapters (`gote`, `fake`). No PTY or spec knowledge. |
 | `internal/runner` | Step execution and outcome evaluation. The orchestrator. |
-| `internal/artifacts` | Writer, markdown, redaction, diffs. No runner state. |
+| `internal/artifacts` | Writer, markdown, redaction, diffs, retention prune, external archival. No runner state. |
 | `internal/render` | Deterministic SVG rendering of a screen snapshot. Pure. |
 | `internal/repair` | Failed-run analysis → step-repair proposals. No cobra. |
 | `internal/flaky` | Stability/divergence summary for repeated runs. Pure. |
@@ -41,6 +41,7 @@ Package boundaries are part of the contract — do not blur them.
 | `internal/config` | Config loading, defaults, schema validation. |
 | `internal/input` | Key name → escape sequence mapping. Pure function. |
 | `internal/docs` | Built-in documentation text. |
+| `internal/log` | Thin wrapper over charmbracelet/log. Configured once in `cli.Execute`. Shared diagnostic sink (stderr). No runner/artifact/config state. |
 
 The "no per-agent code paths" rule applies: any surface that touches a coding agent must go through the regular CLI / MCP / artifact surface, not a sidecar.
 
@@ -52,8 +53,8 @@ The "no per-agent code paths" rule applies: any surface that touches a coding ag
 - Prefer value receivers; use pointer receivers when the type owns mutable state (e.g. `*runState`).
 - Comment exported types and non-obvious unexported functions. Comments are part of the docs.
 - Keep `internal/cli` thin. New commands wire flags into `globalOptions` and call into runner/artifacts; do not put logic in handlers.
+- Diagnostics (non-result output) go through `internal/log` (`log.Info`/`Warn`/`Error`/`Debug`), never raw `fmt.Fprintf` to stderr. The run-progress UI in `internal/cli/progress.go` is the exception — it is the human status table, not log lines. `--format json|yaml` switches the logger to JSON lines so stderr stays machine-parseable; the command result always goes to stdout.
 - Schema changes go in `schemas/*.json` and the corresponding model in `internal/spec/model.go` together.
-- Avoid premature interface extraction. The `terminal.Emulator` interface exists because there are two adapters; do not add interfaces for single implementations.
 
 ### Common Tasks
 

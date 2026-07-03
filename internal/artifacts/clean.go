@@ -8,26 +8,39 @@ import (
 	"strings"
 )
 
-// CleanReport captures the result of a `glyph clean` invocation.
-// Pruned is the count of run directories removed, Kept is the count
-// that were preserved (either because they're newer than the keep
-// window or because --all wasn't set).
+// CleanReport captures the result of a `glyph clean` or retention
+// prune. Pruned is the count of run directories removed locally; Kept
+// is the count preserved (newer than the keep window). Archived tracks
+// pruned dirs that were successfully sent to the external archive
+// command before deletion; ArchiveErrors holds per-path failures (the
+// local dir is preserved on those, so they are neither in Paths nor
+// counted as Pruned).
 type CleanReport struct {
-	Pruned int      `json:"pruned" yaml:"pruned"`
-	Kept   int      `json:"kept" yaml:"kept"`
-	Paths  []string `json:"paths,omitempty" yaml:"paths,omitempty"`
+	Pruned        int      `json:"pruned" yaml:"pruned"`
+	Kept          int      `json:"kept" yaml:"kept"`
+	Paths         []string `json:"paths,omitempty" yaml:"paths,omitempty"`
+	Archived      int      `json:"archived,omitempty" yaml:"archived,omitempty"`
+	ArchiveErrors []string `json:"archiveErrors,omitempty" yaml:"archiveErrors,omitempty"`
 }
 
 // PruneRuns removes all but the N newest run directories under
 // artifactRoot. The runner calls this on every successful run when
-// the project config has `retention.keepRuns` set. A prune failure
-// is surfaced but never fails the run (it would be a bad surprise
-// for a contributor who got a passing run plus a disk-clean error).
+// the project config has `retention.keepRuns` set (default 3; 0
+// disables). A prune failure is surfaced but never fails the run
+// (it would be a bad surprise for a contributor who got a passing
+// run plus a disk-clean error).
+//
+// When archive.archiveEnabled() is true, each pruned directory is
+// first sent to the external archival command (ArchiveRun). On
+// success (exit 0) the local directory is deleted — move semantics.
+// On archive failure (non-zero exit, timeout, missing binary) the
+// local directory is preserved and the path is recorded in
+// ArchiveErrors; the prune is not retried and never fails the run.
 //
 // Returns a CleanReport even when the prune was a no-op; the caller
 // can decide whether to surface the report (e.g. emit a
 // "retention.kept" event in agent_context.md).
-func PruneRuns(artifactRoot string, keepRuns int) (CleanReport, error) {
+func PruneRuns(artifactRoot string, keepRuns int, archive ArchiveConfig) (CleanReport, error) {
 	if keepRuns <= 0 {
 		return CleanReport{}, nil
 	}
@@ -67,6 +80,17 @@ func PruneRuns(artifactRoot string, keepRuns int) (CleanReport, error) {
 	var prunedPaths []string
 	for _, r := range runs[keepRuns:] {
 		path := filepath.Join(artifactRoot, r.name)
+		if archive.archiveEnabled() {
+			res, archiveErr := ArchiveRun(archive, path)
+			if archiveErr != nil || !res.OK {
+				// Preserve the local dir on any archive failure. The
+				// run result is unaffected; surface the path so the
+				// operator can retry archival manually.
+				report.ArchiveErrors = append(report.ArchiveErrors, res.Message)
+				continue
+			}
+			report.Archived++
+		}
 		if err := os.RemoveAll(path); err != nil {
 			return report, fmt.Errorf("prune %s: %w", path, err)
 		}
