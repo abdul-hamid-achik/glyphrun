@@ -27,7 +27,24 @@ Never edit `contractHash` by hand — always use `--stamp`. See [CLI Reference](
 | `1` | outcome failure |
 | `2` | runtime error |
 | `3` | target timeout |
-| `5` | unsupported terminal (alternate-screen required, not entered) |
+| `4` | spec parse / schema error |
 | `6` | contract-hash mismatch |
+| `7` | unsupported terminal (alternate-screen required, not entered) |
+
+## Error classification (`errorKind` + `diagnostic`)
+
+Every errored run — and any failed run with a runner-level cause — carries an `errorKind` and `diagnostic` in the `run.json` / `--format json` envelope so agents can pick an actionable next step instead of treating the error as ambiguous:
+
+| `errorKind` | Meaning | Next step |
+| --- | --- | --- |
+| `target_start` | the target command could not start | fix `cmd`/`cwd` or ensure the binary exists |
+| `timeout` | the target or a step exceeded its timeout | raise `timeoutMs` |
+| `contract_hash_mismatch` | the stamped hash doesn't match the computed one | re-stamp with `glyph spec verify --stamp` |
+| `unsupported_terminal` | the terminal behavior isn't supported by the active profile | switch `terminal.profile` |
+| `step_failure` | a step errored (non-timeout, non-terminal) | inspect `diagnostics/failure.md` |
+| `precondition` | a `preconditions` command or secret resolution failed | fix the precondition or secret config |
+| `spec_parse` | the spec failed schema validation or parsing | fix the YAML/schema error |
+
+On exit 4 (parse) and exit 6 (contract-hash mismatch), the structured JSON envelope is printed to **stdout** — not only stderr — so `glyph run` / `glyph spec verify` consumers decoding stdout never see an empty payload. For `contract_hash_mismatch` the envelope also includes `contractHash` (computed) and `expectedHash` (stamped).
 
 The contract/repair split is core to how Glyphrun thinks about specs: `intent` + `outcomes` are the durable behavior contract; `steps` are repairable hints. See [Authoring](/authoring) and [`glyph repair`](/commands#glyph-repair-spec-run-latest).

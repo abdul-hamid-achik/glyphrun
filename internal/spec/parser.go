@@ -61,7 +61,7 @@ func ParseFile(path string, opts ParseOptions) (ParseResult, error) {
 	}
 	valid := specValue.ContractHash != "" && specValue.ContractHash == hash
 	if specValue.ContractHash != "" && !valid && !opts.AllowHashMismatch {
-		return ParseResult{}, ContractHashMismatchError{Expected: specValue.ContractHash, Actual: hash}
+		return ParseResult{}, ContractHashMismatchError{Expected: specValue.ContractHash, Actual: hash, SpecName: specValue.Name}
 	}
 
 	return ParseResult{

@@ -10,6 +10,21 @@ const (
 	StatusErrored RunStatus = "errored"
 )
 
+// ErrorKind classifies the cause of an errored or runner-level-failed run so
+// agents can choose an actionable next step (re-stamp, raise timeout, switch
+// profile, fix precondition) instead of treating every error as ambiguous.
+type ErrorKind string
+
+const (
+	ErrorKindTargetStart          ErrorKind = "target_start"
+	ErrorKindTimeout              ErrorKind = "timeout"
+	ErrorKindContractHashMismatch ErrorKind = "contract_hash_mismatch"
+	ErrorKindUnsupportedTerminal  ErrorKind = "unsupported_terminal"
+	ErrorKindStepFailure          ErrorKind = "step_failure"
+	ErrorKindPrecondition         ErrorKind = "precondition"
+	ErrorKindSpecParse            ErrorKind = "spec_parse"
+)
+
 type OutcomeStatus string
 
 const (
@@ -23,9 +38,12 @@ type RunResult struct {
 	SpecName       string                   `json:"specName" yaml:"specName"`
 	Intent         string                   `json:"intent,omitempty" yaml:"intent,omitempty"`
 	ContractHash   string                   `json:"contractHash,omitempty" yaml:"contractHash,omitempty"`
+	ExpectedHash   string                   `json:"expectedHash,omitempty" yaml:"expectedHash,omitempty"`
 	Metadata       *spec.Metadata           `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 	CoversSymbol   string                   `json:"coversSymbol,omitempty" yaml:"coversSymbol,omitempty"`
 	Status         RunStatus                `json:"status" yaml:"status"`
+	ErrorKind      ErrorKind                `json:"errorKind,omitempty" yaml:"errorKind,omitempty"`
+	Diagnostic     string                   `json:"diagnostic,omitempty" yaml:"diagnostic,omitempty"`
 	StartedAt      string                   `json:"startedAt" yaml:"startedAt"`
 	EndedAt        string                   `json:"endedAt" yaml:"endedAt"`
 	DurationMS     int64                    `json:"durationMs" yaml:"durationMs"`

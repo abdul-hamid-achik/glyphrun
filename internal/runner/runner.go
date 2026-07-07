@@ -26,6 +26,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal/adapters/gote"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -39,6 +40,7 @@ const (
 	exitFailed              = 1
 	exitErrored             = 2
 	exitTimedOut            = 3
+	exitSpecParse           = 4
 	exitContractHash        = 6
 	exitUnsupportedTerminal = 7
 )
@@ -116,11 +118,11 @@ type ProgressListener interface {
 func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	runtime, err := config.LoadRuntime(opts.SpecPath, opts.ConfigPath, opts.Environment)
 	if err != nil {
-		return artifacts.RunResult{}, err
+		return parseErrorResult(opts.SpecPath, err), err
 	}
 	parse, err := spec.ParseFile(opts.SpecPath, runtime.SpecParseOptions())
 	if err != nil {
-		return artifacts.RunResult{}, err
+		return parseErrorResult(opts.SpecPath, err), err
 	}
 	runtime.SpecPath = parse.Path
 	resolved := parse.Resolved
@@ -142,7 +144,7 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	if runtime.Secrets != nil {
 		secretEnv, values, err := resolveSecrets(ctx, runtime.Secrets, envSlice(runtime.Env))
 		if err != nil {
-			return earlyError(runDir, started, resolved.Name, fmt.Sprintf("secret resolution failed: %v", err), exitErrored), nil
+			return earlyError(runDir, started, resolved.Name, fmt.Sprintf("secret resolution failed: %v", err), artifacts.ErrorKindPrecondition, exitErrored), nil
 		}
 		for k, v := range secretEnv {
 			runtime.Env[k] = v
@@ -163,11 +165,11 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		opts.Listener.OnRunStart(resolved, runID, runDir)
 	}
 	if err := state.runPreconditions(ctx); err != nil {
-		return state.finish(started, artifacts.StatusErrored, nil, fmt.Sprintf("precondition failed: %v", err), exitCodeForError(err)), nil
+		return state.finish(started, artifacts.StatusErrored, nil, fmt.Sprintf("precondition failed: %v", err), artifacts.ErrorKindPrecondition, exitCodeForError(err)), nil
 	}
 
 	if err := state.startTarget(); err != nil {
-		return state.finish(started, artifacts.StatusErrored, nil, fmt.Sprintf("target failed to start: %v", err)), nil
+		return state.finish(started, artifacts.StatusErrored, nil, fmt.Sprintf("target failed to start: %v", err), artifacts.ErrorKindTargetStart), nil
 	}
 	state.startProcmon(ctx, opts.Procmon)
 	if opts.Procmon != nil && opts.Procmon.Bin != "" {
@@ -203,10 +205,14 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 				if errors.Is(err, context.DeadlineExceeded) && resolved.Target.TimeoutMS > 0 {
 					message = fmt.Sprintf("step %d failed: %s", idx+1, targetTimeoutMessage(resolved.Target.TimeoutMS))
 				}
-				return state.finish(started, artifacts.StatusErrored, nil, message, code), nil
+				kind := artifacts.ErrorKindTimeout
+				if code == exitUnsupportedTerminal {
+					kind = artifacts.ErrorKindUnsupportedTerminal
+				}
+				return state.finish(started, artifacts.StatusErrored, nil, message, kind, code), nil
 			}
 			result := state.evaluateOutcomes(ctx)
-			return state.finish(started, artifacts.StatusFailed, result, fmt.Sprintf("step %d failed: %v", idx+1, err)), nil
+			return state.finish(started, artifacts.StatusFailed, result, fmt.Sprintf("step %d failed: %v", idx+1, err), artifacts.ErrorKindStepFailure), nil
 		}
 		if result.Skipped {
 			_ = writer.AppendEvent(event("step.skipped", name, result.Message))
@@ -228,16 +234,16 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	// artifact for every outcome — noise that misrepresents a global
 	// timeout as per-outcome failures.
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-		return state.finish(started, artifacts.StatusErrored, nil, targetTimeoutMessage(resolved.Target.TimeoutMS), exitTimedOut), nil
+		return state.finish(started, artifacts.StatusErrored, nil, targetTimeoutMessage(resolved.Target.TimeoutMS), artifacts.ErrorKindTimeout, exitTimedOut), nil
 	}
 	outcomes := state.evaluateOutcomes(runCtx)
 	if err := state.terminalError(); err != nil {
-		return state.finish(started, artifacts.StatusErrored, outcomes, err.Error(), exitCodeForError(err)), nil
+		return state.finish(started, artifacts.StatusErrored, outcomes, err.Error(), artifacts.ErrorKindUnsupportedTerminal, exitCodeForError(err)), nil
 	}
 	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
 		// Deadline fired during outcome evaluation; keep the partial
 		// outcome results but report the run as a timeout.
-		return state.finish(started, artifacts.StatusErrored, outcomes, targetTimeoutMessage(resolved.Target.TimeoutMS), exitTimedOut), nil
+		return state.finish(started, artifacts.StatusErrored, outcomes, targetTimeoutMessage(resolved.Target.TimeoutMS), artifacts.ErrorKindTimeout, exitTimedOut), nil
 	}
 	status := artifacts.StatusPassed
 	for _, outcome := range outcomes {
@@ -254,7 +260,65 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 			diagnostic = policyFailure
 		}
 	}
-	return state.finish(started, status, outcomes, diagnostic), nil
+	return state.finish(started, status, outcomes, diagnostic, ""), nil
+}
+
+// parseErrorResult builds a RunResult for a failure that occurred before the
+// run could start — spec parse error, schema validation failure, or contract
+// hash mismatch. The result carries errorKind + diagnostic so the CLI can emit
+// a structured JSON envelope on stdout (exit 4/6) instead of only a stderr log
+// line, letting agents pick an actionable next step.
+func parseErrorResult(specPath string, err error) artifacts.RunResult {
+	started := time.Now().UTC()
+	name := specNameFromPath(specPath)
+	kind := artifacts.ErrorKindSpecParse
+	contractHash := ""
+	expectedHash := ""
+	exitCode := exitSpecParse
+	var mismatch spec.ContractHashMismatchError
+	if errors.As(err, &mismatch) {
+		kind = artifacts.ErrorKindContractHashMismatch
+		contractHash = mismatch.Actual
+		expectedHash = mismatch.Expected
+		exitCode = exitContractHash
+		if mismatch.SpecName != "" {
+			name = mismatch.SpecName
+		}
+	}
+	ended := time.Now().UTC()
+	return artifacts.RunResult{
+		SchemaVersion: 1,
+		RunID:         makeRunID(started, name),
+		SpecName:      name,
+		Status:        artifacts.StatusErrored,
+		ErrorKind:     kind,
+		Diagnostic:    err.Error(),
+		ContractHash:  contractHash,
+		ExpectedHash:  expectedHash,
+		StartedAt:     started.Format(time.RFC3339Nano),
+		EndedAt:       ended.Format(time.RFC3339Nano),
+		DurationMS:    ended.Sub(started).Milliseconds(),
+		ExitCode:      exitCode,
+		Outcomes:      []artifacts.OutcomeResult{},
+		Artifacts:     map[string]string{},
+	}
+}
+
+// specNameFromPath extracts the spec name from a YAML spec file's `name:`
+// field. If the file cannot be read or the field is absent, it falls back to
+// the file basename without extension so the error envelope always carries a
+// non-empty specName.
+func specNameFromPath(specPath string) string {
+	if data, err := os.ReadFile(specPath); err == nil {
+		var probe struct {
+			Name string `yaml:"name"`
+		}
+		if yaml.Unmarshal(data, &probe) == nil && strings.TrimSpace(probe.Name) != "" {
+			return strings.TrimSpace(probe.Name)
+		}
+	}
+	base := filepath.Base(specPath)
+	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
 type runState struct {
@@ -1817,7 +1881,7 @@ func archiveConfigFromConfig(c config.ArchiveConfig) artifacts.ArchiveConfig {
 	return out
 }
 
-func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcomes []artifacts.OutcomeResult, diagnostic string, exitCodeOverride ...int) artifacts.RunResult {
+func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcomes []artifacts.OutcomeResult, diagnostic string, errorKind artifacts.ErrorKind, exitCodeOverride ...int) artifacts.RunResult {
 	if outcomes == nil {
 		outcomes = []artifacts.OutcomeResult{}
 	}
@@ -1840,9 +1904,12 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		RunID:         makeRunID(started, s.spec.Name),
 		SpecName:      s.spec.Name,
 		Intent:        strings.TrimSpace(s.spec.Intent),
+		ContractHash:  s.spec.ContractHash,
 		Metadata:      s.spec.Metadata,
 		CoversSymbol:  s.spec.CoversSymbol,
 		Status:        status,
+		ErrorKind:     errorKind,
+		Diagnostic:    diagnostic,
 		StartedAt:     started.Format(time.RFC3339Nano),
 		EndedAt:       ended.Format(time.RFC3339Nano),
 		DurationMS:    ended.Sub(started).Milliseconds(),

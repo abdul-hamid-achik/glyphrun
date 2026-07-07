@@ -147,20 +147,23 @@ func envSlice(env map[string]string) []string {
 
 // earlyError builds a RunResult for a failure that occurred before the run
 // state (writer, PTY) was initialised — e.g. secret resolution failed. The
-// result carries the error diagnostic in the artifacts map and the
-// appropriate exit code so the CLI surface can report it consistently.
-func earlyError(runDir string, started time.Time, specName, diagnostic string, exitCode int) artifacts.RunResult {
+// result carries the error diagnostic and errorKind so the CLI surface can
+// report it consistently as a structured envelope on stdout.
+func earlyError(runDir string, started time.Time, specName, diagnostic string, errorKind artifacts.ErrorKind, exitCode int) artifacts.RunResult {
 	ended := time.Now().UTC()
 	return artifacts.RunResult{
 		SchemaVersion: 1,
 		RunID:         makeRunID(started, specName),
 		SpecName:      specName,
 		Status:        artifacts.StatusErrored,
+		ErrorKind:     errorKind,
+		Diagnostic:    diagnostic,
 		StartedAt:     started.Format(time.RFC3339Nano),
 		EndedAt:       ended.Format(time.RFC3339Nano),
 		DurationMS:    ended.Sub(started).Milliseconds(),
 		RunDir:        runDir,
 		ExitCode:      exitCode,
+		Outcomes:      []artifacts.OutcomeResult{},
 		Artifacts:     map[string]string{"failureDiagnostic": diagnostic},
 	}
 }

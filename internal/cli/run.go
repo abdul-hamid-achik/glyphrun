@@ -126,9 +126,10 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 				procmon = &runner.ProcmonConfig{Bin: monitorBin, Interval: monitorInterval, Profile: monitorProfile}
 			}
 			results, exitCode, err := runSpecs(context.Background(), args, parallel, opts, updateSnapshots, listener, procmon)
-			if err != nil {
-				return classifyRunError(err)
-			}
+			// Always emit results to stdout — even when runSpecs returns an
+			// error. Error results (parse failure, contract-hash mismatch)
+			// now carry errorKind + diagnostic so agents get a structured
+			// JSON envelope on exit 4/6 instead of an empty stdout.
 			var output string
 			var outputErr error
 			if len(results) == 1 {
@@ -156,6 +157,9 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 				}
 			}
 			cmd.Print(output)
+			if err != nil {
+				return classifyRunError(err)
+			}
 			if exitCode != 0 {
 				return exitError{code: exitCode}
 			}

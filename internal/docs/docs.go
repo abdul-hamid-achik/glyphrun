@@ -176,6 +176,8 @@ For CI distribution, prefer the build command above wrapped in ` + "`goreleaser`
 
 Use ` + "`glyph context latest --format md`" + ` after a failure. Inspect ` + "`screens/final.txt`" + `, ` + "`raw/pty.raw.log`" + `, ` + "`frames/frames.ndjson`" + `, and ` + "`diagnostics/failure.md`" + `.
 
+Errored and runner-level-failed runs carry ` + "`errorKind`" + ` + ` + "`diagnostic`" + ` in the JSON envelope (` + "`glyph run <spec> --format json`" + `). Check ` + "`errorKind`" + ` first — it maps to an actionable next step (` + "`contract_hash_mismatch`" + ` → re-stamp, ` + "`timeout`" + ` → raise ` + "`timeoutMs`" + `, ` + "`target_start`" + ` → fix ` + "`cmd`" + `, ` + "`unsupported_terminal`" + ` → switch profile).
+
 Use ` + "`glyph run <spec> --format md --progress always`" + ` for live step/outcome progress during long TUI runs. Progress is written to stderr.
 `,
 	"file-script-verifiers": `# File and Script Verifiers
@@ -333,9 +335,21 @@ Exit codes:
 - ` + "`1`" + ` — outcome failure
 - ` + "`2`" + ` — runtime error
 - ` + "`3`" + ` — target timeout
-- ` + "`5`" + ` — unsupported terminal (alternate-screen required, not entered)
+- ` + "`4`" + ` — spec parse / schema error
 - ` + "`6`" + ` — contract-hash mismatch
-- ` + "`7`" + ` — unused (reserved for future)
+- ` + "`7`" + ` — unsupported terminal (alternate-screen required, not entered)
+
+Error classification — every errored run (and failed runs with a runner-level cause) carries ` + "`errorKind`" + ` + ` + "`diagnostic`" + ` in the JSON envelope:
+
+- ` + "`target_start`" + ` — target command could not start; fix ` + "`cmd`" + `/` + "`cwd`" + `
+- ` + "`timeout`" + ` — target or step exceeded timeout; raise ` + "`timeoutMs`" + `
+- ` + "`contract_hash_mismatch`" + ` — stamped hash drift; re-stamp with ` + "`glyph spec verify --stamp`" + `
+- ` + "`unsupported_terminal`" + ` — switch ` + "`terminal.profile`" + `
+- ` + "`step_failure`" + ` — a step errored; inspect ` + "`diagnostics/failure.md`" + `
+- ` + "`precondition`" + ` — precondition command or secret resolution failed
+- ` + "`spec_parse`" + ` — spec failed schema validation or parsing
+
+On exit 4/6 the structured JSON envelope is printed to stdout (not only stderr) so consumers decoding stdout never see an empty payload. For ` + "`contract_hash_mismatch`" + ` the envelope also includes ` + "`contractHash`" + ` (computed) and ` + "`expectedHash`" + ` (stamped).
 `,
 	"retention": `# Retention and ` + "`glyph clean`" + `
 

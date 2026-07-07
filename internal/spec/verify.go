@@ -500,6 +500,7 @@ func (s Style) hasAssertions() bool {
 type ContractHashMismatchError struct {
 	Expected string
 	Actual   string
+	SpecName string
 }
 
 func (e ContractHashMismatchError) Error() string {

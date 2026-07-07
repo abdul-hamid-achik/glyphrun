@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
@@ -30,12 +31,14 @@ func newSpecVerifyCommand(opts *globalOptions) *cobra.Command {
 			}
 			rt, err := config.LoadRuntime(args[0], opts.configPath, opts.environment)
 			if err != nil {
+				emitSpecErrorEnvelope(cmd, opts, format, args[0], err)
 				return exitError{code: 4, err: err}
 			}
 			parseOpts := rt.SpecParseOptions()
 			parseOpts.AllowHashMismatch = stamp
 			parsed, err := spec.ParseFile(args[0], parseOpts)
 			if err != nil {
+				emitSpecErrorEnvelope(cmd, opts, format, args[0], err)
 				var mismatch spec.ContractHashMismatchError
 				if errors.As(err, &mismatch) {
 					return exitError{code: 6, err: err}
@@ -159,4 +162,54 @@ func starterActionTemplate() string {
 		"      process:\n" +
 		"        exitCode: 0\n" +
 		"      timeoutMs: 3000\n"
+}
+
+// emitSpecErrorEnvelope writes a structured error envelope to stdout for the
+// spec verify command's exit 4 (parse) and exit 6 (contract-hash mismatch)
+// paths. Without this, stdout is empty and agents can only see a stderr log
+// line — losing the actionable detail (re-stamp, fix schema) that the
+// errorKind + diagnostic carry.
+func emitSpecErrorEnvelope(cmd *cobra.Command, opts *globalOptions, format outputFormat, specPath string, err error) {
+	name := strings.TrimSuffix(filepath.Base(specPath), filepath.Ext(specPath))
+	kind := "spec_parse"
+	diagnostic := err.Error()
+	contractHash := ""
+	expectedHash := ""
+	var mismatch spec.ContractHashMismatchError
+	if errors.As(err, &mismatch) {
+		kind = "contract_hash_mismatch"
+		contractHash = mismatch.Actual
+		expectedHash = mismatch.Expected
+		if mismatch.SpecName != "" {
+			name = mismatch.SpecName
+		}
+	}
+	value := map[string]any{
+		"schemaVersion": 1,
+		"status":        "errored",
+		"errorKind":     kind,
+		"specName":      name,
+		"diagnostic":    diagnostic,
+	}
+	if contractHash != "" {
+		value["contractHash"] = contractHash
+	}
+	if expectedHash != "" {
+		value["expectedHash"] = expectedHash
+	}
+	output, emitErr := emitForCLI(cmd, opts, format, value, func() string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "# Spec Error: %s\n\n", name)
+		fmt.Fprintf(&b, "- errorKind: `%s`\n", kind)
+		fmt.Fprintf(&b, "- spec: `%s`\n", name)
+		fmt.Fprintf(&b, "- diagnostic: %s\n", diagnostic)
+		if contractHash != "" {
+			fmt.Fprintf(&b, "- contractHash: `%s`\n", contractHash)
+			fmt.Fprintf(&b, "- expectedHash: `%s`\n", expectedHash)
+		}
+		return b.String()
+	})
+	if emitErr == nil {
+		cmd.Print(output)
+	}
 }

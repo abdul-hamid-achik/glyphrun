@@ -2,6 +2,8 @@
 
 After a failure, run `glyph context latest --format md` and inspect `diagnostics/failure.md`, `screens/final.txt`, `frames/frames.ndjson`, and `raw/pty.raw.log`.
 
+Errored and runner-level-failed runs carry `errorKind` + `diagnostic` in the JSON envelope (`glyph run <spec> --format json`). Check `errorKind` first — it maps to an actionable next step (`contract_hash_mismatch` → re-stamp, `timeout` → raise `timeoutMs`, `target_start` → fix `cmd`, `unsupported_terminal` → switch profile).
+
 Useful sequence:
 
 ```bash

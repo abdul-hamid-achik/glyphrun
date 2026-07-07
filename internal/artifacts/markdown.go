@@ -14,6 +14,12 @@ func RenderRunMarkdown(result RunResult) string {
 	fmt.Fprintf(&b, "# Glyphrun Run: %s\n\n", result.Status)
 	b.WriteString("## Summary\n\n")
 	fmt.Fprintf(&b, "- status: %s\n", result.Status)
+	if result.ErrorKind != "" {
+		fmt.Fprintf(&b, "- errorKind: `%s`\n", result.ErrorKind)
+	}
+	if result.Diagnostic != "" {
+		fmt.Fprintf(&b, "- diagnostic: %s\n", result.Diagnostic)
+	}
 	fmt.Fprintf(&b, "- spec: `%s`\n", result.SpecName)
 	if strings.TrimSpace(result.Intent) != "" {
 		fmt.Fprintf(&b, "- intent: %s\n", strings.TrimSpace(result.Intent))
@@ -118,6 +124,12 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string, recen
 	}
 	fmt.Fprintf(&b, "- run: `%s`\n", result.RunID)
 	fmt.Fprintf(&b, "- status: %s\n", result.Status)
+	if result.ErrorKind != "" {
+		fmt.Fprintf(&b, "- errorKind: `%s`\n", result.ErrorKind)
+	}
+	if result.Diagnostic != "" {
+		fmt.Fprintf(&b, "- diagnostic: %s\n", result.Diagnostic)
+	}
 	fmt.Fprintf(&b, "- target: `%s`\n", shellJoin(result.Target.Cmd))
 	fmt.Fprintf(&b, "- command run: `glyph run <spec> --format json`\n")
 	if result.Target.Cwd != "" {
