@@ -92,6 +92,21 @@ outcomes:
 	if !strings.Contains(string(runJSON), `"namedArtifacts"`) {
 		t.Fatalf("run.json missing namedArtifacts: %s", string(runJSON))
 	}
+	if !strings.Contains(string(runJSON), `"manifest"`) {
+		t.Fatalf("run.json missing additive manifest: %s", string(runJSON))
+	}
+	if result.Artifacts["manifest"] != "manifest.json" {
+		t.Fatalf("manifest path = %q", result.Artifacts["manifest"])
+	}
+	found := false
+	for _, entry := range result.Manifest {
+		if entry.RelativePath == captured.RelativePath {
+			found = entry.Bytes == int64(len("hello from download\n")) && len(entry.SHA256) == 64
+		}
+	}
+	if !found {
+		t.Fatalf("download missing from manifest: %#v", result.Manifest)
+	}
 }
 
 // TestRunSpec_DownloadWaitsForFile proves `waitFor: true` polls the

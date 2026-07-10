@@ -10,6 +10,7 @@
 package affected
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,12 +44,98 @@ type ReviewSymbol struct {
 }
 
 // Review is the subset of `codemap review --json` glyphrun consumes. Only the
-// symbol arrays + resolution are read; changed_files, covering_tests,
-// untested, hotspots, and stale/staleness are ignored.
+// schema version, symbol arrays, and resolution are read; changed_files,
+// covering_tests, untested, hotspots, and stale/staleness are ignored.
 type Review struct {
+	SchemaVersion  int            `json:"schema_version"`
 	ChangedSymbols []ReviewSymbol `json:"changed_symbols"`
 	BlastRadius    []ReviewSymbol `json:"blast_radius"`
 	Resolution     string         `json:"resolution,omitempty"`
+}
+
+type reviewV1Envelope struct {
+	SchemaVersion  *int                   `json:"schema_version"`
+	Project        *string                `json:"project"`
+	Mode           *string                `json:"mode"`
+	Depth          *int                   `json:"depth"`
+	IsRepo         *bool                  `json:"is_repo"`
+	Indexed        *bool                  `json:"indexed"`
+	ChangedFiles   *[]reviewV1ChangedFile `json:"changed_files"`
+	ChangedSymbols *[]reviewV1Symbol      `json:"changed_symbols"`
+	BlastRadius    *[]reviewV1Impact      `json:"blast_radius"`
+	CoveringTests  *[]reviewV1Impact      `json:"covering_tests"`
+	Untested       *[]reviewV1Symbol      `json:"untested_symbols"`
+	Stale          *bool                  `json:"stale"`
+}
+
+type reviewV1ChangedFile struct {
+	Path    string `json:"path"`
+	Status  string `json:"status"`
+	Symbols *int   `json:"symbols"`
+}
+
+type reviewV1Symbol struct {
+	Symbol    string `json:"symbol"`
+	Kind      string `json:"kind"`
+	File      string `json:"file"`
+	StartLine *int   `json:"start_line"`
+	EndLine   *int   `json:"end_line"`
+}
+
+type reviewV1Impact struct {
+	Symbol    string `json:"symbol"`
+	Kind      string `json:"kind"`
+	File      string `json:"file"`
+	StartLine *int   `json:"start_line"`
+	Depth     *int   `json:"depth"`
+}
+
+func validateReviewV1(out []byte) error {
+	var envelope reviewV1Envelope
+	if err := json.Unmarshal(out, &envelope); err != nil {
+		return err
+	}
+	if envelope.SchemaVersion == nil || *envelope.SchemaVersion != 1 {
+		version := 0
+		if envelope.SchemaVersion != nil {
+			version = *envelope.SchemaVersion
+		}
+		return fmt.Errorf("unsupported codemap review schema_version %d (supported: 1)", version)
+	}
+	if envelope.Project == nil || envelope.Mode == nil || envelope.Depth == nil ||
+		envelope.IsRepo == nil || envelope.Indexed == nil || envelope.ChangedFiles == nil ||
+		envelope.ChangedSymbols == nil || envelope.BlastRadius == nil ||
+		envelope.CoveringTests == nil || envelope.Untested == nil || envelope.Stale == nil {
+		return fmt.Errorf("codemap review schema_version 1 is missing required fields")
+	}
+	if (*envelope.Mode != "working" && *envelope.Mode != "staged" && *envelope.Mode != "since") || *envelope.Depth < 1 {
+		return fmt.Errorf("codemap review schema_version 1 has invalid mode or depth")
+	}
+	for _, file := range *envelope.ChangedFiles {
+		if strings.TrimSpace(file.Path) == "" || !validReviewFileStatus(file.Status) || file.Symbols == nil || *file.Symbols < 0 {
+			return fmt.Errorf("codemap review schema_version 1 has malformed changed_files")
+		}
+	}
+	for _, symbol := range append(append([]reviewV1Symbol(nil), (*envelope.ChangedSymbols)...), (*envelope.Untested)...) {
+		if !validReviewSymbol(symbol.Symbol, symbol.Kind, symbol.File, symbol.StartLine) || symbol.EndLine == nil || *symbol.EndLine < 1 {
+			return fmt.Errorf("codemap review schema_version 1 has malformed symbol entries")
+		}
+	}
+	for _, node := range append(append([]reviewV1Impact(nil), (*envelope.BlastRadius)...), (*envelope.CoveringTests)...) {
+		if !validReviewSymbol(node.Symbol, node.Kind, node.File, node.StartLine) || node.Depth == nil || *node.Depth < 0 {
+			return fmt.Errorf("codemap review schema_version 1 has malformed impact entries")
+		}
+	}
+	return nil
+}
+
+func validReviewSymbol(symbol, kind, file string, startLine *int) bool {
+	return strings.TrimSpace(symbol) != "" && strings.TrimSpace(kind) != "" &&
+		strings.TrimSpace(file) != "" && startLine != nil && *startLine >= 1
+}
+
+func validReviewFileStatus(status string) bool {
+	return status == "A" || status == "M" || status == "D" || status == "?"
 }
 
 // Entry is one selected spec in the structured report.
@@ -90,6 +177,18 @@ func RunReview(bin, mode, since string, depth int) (Review, error) {
 			return Review{}, fmt.Errorf("codemap review failed: %s: %s", err, strings.TrimSpace(string(ee.Stderr)))
 		}
 		return Review{}, fmt.Errorf("codemap review: %w (is codemap installed and on $PATH, or pass --codemap <path>?)", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(out, &fields); err != nil {
+		return Review{}, fmt.Errorf("parse codemap review output: %w", err)
+	}
+	if version, present := fields["schema_version"]; present {
+		if bytes.Equal(bytes.TrimSpace(version), []byte("null")) {
+			return Review{}, fmt.Errorf("unsupported codemap review schema_version null (supported: 1)")
+		}
+		if err := validateReviewV1(out); err != nil {
+			return Review{}, err
+		}
 	}
 	var raw Review
 	if err := json.Unmarshal(out, &raw); err != nil {

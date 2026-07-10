@@ -52,6 +52,7 @@ type RunResult struct {
 	Outcomes       []OutcomeResult          `json:"outcomes" yaml:"outcomes"`
 	Artifacts      map[string]string        `json:"artifacts" yaml:"artifacts"`
 	NamedArtifacts map[string]NamedArtifact `json:"namedArtifacts,omitempty" yaml:"namedArtifacts,omitempty"`
+	Manifest       []ArtifactManifestEntry  `json:"manifest,omitempty" yaml:"manifest,omitempty"`
 	RunDir         string                   `json:"runDir" yaml:"runDir"`
 	ExitCode       int                      `json:"exitCode" yaml:"exitCode"`
 	NextActions    []NextAction             `json:"nextActions,omitempty" yaml:"nextActions,omitempty"`

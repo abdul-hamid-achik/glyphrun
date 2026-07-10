@@ -641,12 +641,16 @@ func (s *runState) executeDownload(ctx context.Context, d spec.DownloadStep) (st
 	}
 	relDir := "artifacts/" + assign
 	relPath := relDir + "/" + saveAs
-	absPath := s.writer.Resolve(relPath)
-	src, err := os.ReadFile(resolved)
+	absPath, err := s.writer.ResolvePath(relPath)
 	if err != nil {
 		return stepExecutionResult{}, err
 	}
-	if err := s.writer.WriteArtifactBytes(relPath, src); err != nil {
+	src, err := os.Open(resolved)
+	if err != nil {
+		return stepExecutionResult{}, err
+	}
+	defer src.Close()
+	if err := s.writer.CopyArtifact(relPath, src); err != nil {
 		return stepExecutionResult{}, err
 	}
 	s.mu.Lock()
@@ -671,8 +675,14 @@ func (s *runState) executeTransform(ctx context.Context, t spec.TransformStep) (
 	}
 	relDir := "transforms/" + assign
 	relPath := relDir + "/" + filepath.Base(t.SaveAs)
-	absPath := s.writer.Resolve(relPath)
-	absDir := s.writer.Resolve(relDir)
+	absPath, err := s.writer.ResolvePath(relPath)
+	if err != nil {
+		return stepExecutionResult{}, err
+	}
+	absDir, err := s.writer.ResolvePath(relDir)
+	if err != nil {
+		return stepExecutionResult{}, err
+	}
 
 	input, err := s.resolveRuntimePlaceholders(t.Input)
 	if err != nil {
@@ -710,6 +720,9 @@ func (s *runState) executeTransform(ctx context.Context, t spec.TransformStep) (
 	}
 	if info.IsDir() {
 		return stepExecutionResult{}, fmt.Errorf("transform wrote a directory at %s", absPath)
+	}
+	if err := s.writer.RegisterArtifact(relPath); err != nil {
+		return stepExecutionResult{}, err
 	}
 
 	s.mu.Lock()
@@ -1669,7 +1682,7 @@ func (s *runState) writeTargetPID() {
 	if pid == 0 {
 		return
 	}
-	_ = os.WriteFile(filepath.Join(s.writer.RunDir, "target.pid"), []byte(strconv.Itoa(pid)+"\n"), 0o644)
+	_ = s.writer.WriteText("target.pid", strconv.Itoa(pid)+"\n")
 	_ = s.writer.AppendEvent(event("procmon.target_pid", strconv.Itoa(pid), "cooperating with parent monitor"))
 	if dir := os.Getenv("MONITOR_RUN_DIR"); dir != "" {
 		_ = os.MkdirAll(dir, 0o755)
@@ -2028,7 +2041,6 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		_ = s.writer.WriteAgentContext(s.spec, result, finalSnapshot.Text, s.writer.RecentEvents(12))
 	}
 	_ = s.writer.WriteOutcomesIndex(result)
-	_ = s.writer.WriteRun(result)
 	// Retention: auto-prune older runs when configured. Best-effort —
 	// a prune failure is logged as an event so the agent context
 	// surfaces it, but never fails the run. (See cairn's retention
@@ -2093,6 +2105,8 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	if err := s.writer.WriteReplay(replay); err == nil {
 		result.Artifacts["replay"] = "replay.json"
 	}
+	_ = s.writer.FinalizeManifest(&result)
+	_ = s.writer.WriteRun(result)
 	if s.listener != nil {
 		s.listener.OnRunEnd(result)
 	}

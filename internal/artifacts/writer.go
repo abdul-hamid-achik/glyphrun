@@ -3,6 +3,7 @@ package artifacts
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,128 +12,130 @@ import (
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
-	"gopkg.in/yaml.v3"
 )
 
 type Writer struct {
-	RunDir   string
-	redactor Redactor
+	RunDir  string
+	manager *ArtifactManager
+	initErr error
 }
 
 func NewWriter(runDir string, redactor Redactor) *Writer {
-	return &Writer{RunDir: runDir, redactor: redactor}
+	manager, err := NewArtifactManager(runDir, redactor)
+	if err != nil {
+		return &Writer{RunDir: runDir, initErr: err}
+	}
+	return &Writer{RunDir: manager.Root(), manager: manager}
 }
 
 func (w *Writer) EnsureDirs() error {
+	if w.initErr != nil {
+		return w.initErr
+	}
+	if err := w.manager.EnsureRoot(); err != nil {
+		return err
+	}
 	for _, dir := range []string{
-		w.RunDir,
-		filepath.Join(w.RunDir, "screens"),
-		filepath.Join(w.RunDir, "raw"),
-		filepath.Join(w.RunDir, "frames"),
-		filepath.Join(w.RunDir, "snapshots"),
-		filepath.Join(w.RunDir, "outcomes"),
-		filepath.Join(w.RunDir, "diagnostics"),
-		filepath.Join(w.RunDir, "artifacts"),
-		filepath.Join(w.RunDir, "transforms"),
+		"screens",
+		"raw",
+		"frames",
+		"snapshots",
+		"outcomes",
+		"diagnostics",
+		"artifacts",
+		"transforms",
 	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := w.manager.EnsureDir(dir); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// Resolve preserves the existing convenience API for trusted constant paths.
+// New variable-path call sites must use ResolvePath so confinement errors are
+// surfaced instead of discarded.
 func (w *Writer) Resolve(rel string) string {
-	return filepath.Join(w.RunDir, rel)
+	path, _ := w.ResolvePath(rel)
+	return path
+}
+
+func (w *Writer) ResolvePath(rel string) (string, error) {
+	if w.initErr != nil {
+		return "", w.initErr
+	}
+	return w.manager.Resolve(rel)
 }
 
 func (w *Writer) WriteRun(result RunResult) error {
-	if err := writeJSON(w.Resolve("run.json"), result, w.redactor); err != nil {
+	if err := w.manager.WriteJSON("run.json", result); err != nil {
 		return err
 	}
-	if err := writeYAML(w.Resolve("run.yaml"), result, w.redactor); err != nil {
+	if err := w.manager.WriteYAML("run.yaml", result); err != nil {
 		return err
 	}
-	return os.WriteFile(w.Resolve("run.md"), []byte(w.redactor.Text(RenderRunMarkdown(result))), 0o644)
+	return w.manager.WriteText("run.md", RenderRunMarkdown(result))
 }
 
 // WriteReplay writes the exact-replay manifest (SPEC §7.3) as replay.json,
 // redacted like every other artifact so no env value leaks (only key names
 // are ever present in the manifest, but the redactor is still applied).
 func (w *Writer) WriteReplay(m ReplayManifest) error {
-	return writeJSON(w.Resolve("replay.json"), m, w.redactor)
+	return w.manager.WriteJSON("replay.json", m)
 }
 
 func (w *Writer) WriteResolvedSpec(s spec.Spec) error {
-	return writeYAML(w.Resolve("spec.resolved.yml"), s, w.redactor)
+	return w.manager.WriteYAML("spec.resolved.yml", s)
 }
 
 func (w *Writer) AppendEvent(event Event) error {
-	data, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	f, err := os.OpenFile(w.Resolve("events.ndjson"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.Write(w.redactor.Bytes(data))
-	return err
+	return w.manager.AppendJSONLine("events.ndjson", event)
 }
 
 func (w *Writer) WriteFinalScreen(snapshot terminal.ScreenSnapshot) error {
-	if err := os.WriteFile(w.Resolve("screens/final.txt"), []byte(w.redactor.Text(snapshot.Text)+"\n"), 0o644); err != nil {
+	if err := w.manager.WriteText("screens/final.txt", snapshot.Text+"\n"); err != nil {
 		return err
 	}
-	return writeJSON(w.Resolve("screens/final.json"), snapshot, w.redactor)
+	return w.manager.WriteJSON("screens/final.json", snapshot)
 }
 
 // WriteScreenSVG writes a rendered SVG screenshot to relPath under the run
 // dir. The SVG text is redacted like every other artifact so configured
 // secret values don't leak into a picture of the screen.
 func (w *Writer) WriteScreenSVG(relPath string, svg string) error {
-	abs := w.Resolve(relPath)
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(abs, []byte(w.redactor.Text(svg)), 0o644)
+	return w.manager.WriteText(relPath, svg)
 }
 
 func (w *Writer) WriteRawPTY(raw []byte) error {
-	return os.WriteFile(w.Resolve("raw/pty.raw.log"), w.redactor.Bytes(raw), 0o644)
+	return w.manager.WriteRedactedBytes("raw/pty.raw.log", "text", raw)
 }
 
 func (w *Writer) WriteInputLog(raw []byte) error {
-	return os.WriteFile(w.Resolve("raw/input.raw.log"), w.redactor.Bytes(raw), 0o644)
+	return w.manager.WriteRedactedBytes("raw/input.raw.log", "text", raw)
 }
 
 func (w *Writer) WriteFrames(frames []terminal.Frame) error {
-	f, err := os.OpenFile(w.Resolve("frames/frames.ndjson"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	for _, frame := range frames {
-		data, err := json.Marshal(frame)
-		if err != nil {
-			return err
+	return w.manager.WriteRedactedStream("frames/frames.ndjson", "ndjson", func(emit func([]byte) error) error {
+		for _, frame := range frames {
+			data, err := json.Marshal(frame)
+			if err != nil {
+				return err
+			}
+			data = append(data, '\n')
+			if err := emit(data); err != nil {
+				return err
+			}
 		}
-		data = append(data, '\n')
-		if _, err := f.Write(w.redactor.Bytes(data)); err != nil {
-			return err
-		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func (w *Writer) WriteSnapshot(name string, snapshot terminal.ScreenSnapshot) error {
 	safe := SafeName(name)
-	if err := os.WriteFile(w.Resolve("snapshots/"+safe+".txt"), []byte(w.redactor.Text(snapshot.Text)+"\n"), 0o644); err != nil {
+	if err := w.manager.WriteText("snapshots/"+safe+".txt", snapshot.Text+"\n"); err != nil {
 		return err
 	}
-	return writeJSON(w.Resolve("snapshots/"+safe+".json"), snapshot, w.redactor)
+	return w.manager.WriteJSON("snapshots/"+safe+".json", snapshot)
 }
 
 func (w *Writer) WriteOutcome(result OutcomeResult, raw any) error {
@@ -143,11 +146,11 @@ func (w *Writer) WriteOutcome(result OutcomeResult, raw any) error {
 	if result.Evidence != "" {
 		md += "- evidence: " + result.Evidence + "\n"
 	}
-	if err := os.WriteFile(w.Resolve("outcomes/"+safe+".md"), []byte(w.redactor.Text(md)), 0o644); err != nil {
+	if err := w.manager.WriteText("outcomes/"+safe+".md", md); err != nil {
 		return err
 	}
 	if raw != nil {
-		return writeJSON(w.Resolve("outcomes/"+safe+".raw.json"), raw, w.redactor)
+		return w.manager.WriteJSON("outcomes/"+safe+".raw.json", raw)
 	}
 	return nil
 }
@@ -162,7 +165,7 @@ func (w *Writer) WriteOutcomeRaw(outcomeID string, raw any) error {
 		return nil
 	}
 	safe := SafeName(outcomeID)
-	return writeJSON(w.Resolve("outcomes/"+safe+".raw.json"), raw, w.redactor)
+	return w.manager.WriteJSON("outcomes/"+safe+".raw.json", raw)
 }
 
 func (w *Writer) WriteOutcomesIndex(result RunResult) error {
@@ -171,10 +174,10 @@ func (w *Writer) WriteOutcomesIndex(result RunResult) error {
 		"status":   result.Status,
 		"outcomes": result.Outcomes,
 	}
-	if err := writeJSON(w.Resolve("outcomes/results.json"), summary, w.redactor); err != nil {
+	if err := w.manager.WriteJSON("outcomes/results.json", summary); err != nil {
 		return err
 	}
-	if err := writeYAML(w.Resolve("outcomes/results.yaml"), summary, w.redactor); err != nil {
+	if err := w.manager.WriteYAML("outcomes/results.yaml", summary); err != nil {
 		return err
 	}
 	var b strings.Builder
@@ -205,7 +208,7 @@ func (w *Writer) WriteOutcomesIndex(result RunResult) error {
 		}
 		b.WriteByte('\n')
 	}
-	return os.WriteFile(w.Resolve("outcomes/results.md"), []byte(w.redactor.Text(b.String())), 0o644)
+	return w.manager.WriteText("outcomes/results.md", b.String())
 }
 
 func (w *Writer) RecentEvents(limit int) []Event {
@@ -236,23 +239,45 @@ func (w *Writer) RecentEvents(limit int) []Event {
 
 func (w *Writer) WriteAgentContext(s spec.Spec, result RunResult, finalScreen string, recentEvents []Event) error {
 	content := RenderAgentContext(s, result, finalScreen, recentEvents)
-	return os.WriteFile(w.Resolve("agent_context.md"), []byte(w.redactor.Text(content)), 0o644)
+	return w.manager.WriteText("agent_context.md", content)
 }
 
 func (w *Writer) WriteDiagnostic(name string, content string) error {
-	return os.WriteFile(w.Resolve("diagnostics/"+SafeName(name)+".md"), []byte(w.redactor.Text(content)), 0o644)
+	return w.manager.WriteText("diagnostics/"+SafeName(name)+".md", content)
 }
 
-// WriteArtifactBytes writes a named artifact (download or transform output)
-// to the run dir under `relPath`, redacting through the configured patterns.
-// The caller resolves the relative path so the runner controls the on-disk
-// layout (artifacts/<assign>/<saveAs> vs transforms/<assign>/<saveAs>).
+// WriteArtifactBytes writes a bounded in-memory named artifact while
+// preserving the legacy redaction contract.
 func (w *Writer) WriteArtifactBytes(relPath string, data []byte) error {
-	abs := w.Resolve(relPath)
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		return err
+	return w.manager.WriteRedactedBytes(relPath, "binary", data)
+}
+
+// CopyArtifact streams a named artifact through bounded redaction I/O.
+func (w *Writer) CopyArtifact(relPath string, src io.Reader) error {
+	return w.manager.CopyRedacted(relPath, "binary", src)
+}
+
+// RegisterArtifact adds an externally produced transform output to the
+// deterministic manifest.
+func (w *Writer) RegisterArtifact(relPath string) error {
+	return w.manager.RegisterFile(relPath, "binary")
+}
+
+// WriteText writes a confined, redacted run-relative text artifact.
+func (w *Writer) WriteText(relPath string, content string) error {
+	return w.manager.WriteText(relPath, content)
+}
+
+// FinalizeManifest snapshots and writes manifest.json, and exposes the same
+// entries additively on the run result.
+func (w *Writer) FinalizeManifest(result *RunResult) error {
+	entries := w.manager.Manifest()
+	result.Manifest = entries
+	if result.Artifacts == nil {
+		result.Artifacts = make(map[string]string)
 	}
-	return os.WriteFile(abs, w.redactor.Bytes(data), 0o644)
+	result.Artifacts["manifest"] = "manifest.json"
+	return w.manager.WriteManifest("manifest.json", entries)
 }
 
 // LastFailedFile is the conventional filename the runner writes
@@ -318,23 +343,6 @@ func ReadLastFailed(artifactRoot string) ([]string, error) {
 		out = append(out, line)
 	}
 	return out, nil
-}
-
-func writeJSON(path string, value any, redactor Redactor) error {
-	data, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	return os.WriteFile(path, redactor.Bytes(data), 0o644)
-}
-
-func writeYAML(path string, value any, redactor Redactor) error {
-	data, err := yaml.Marshal(value)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, redactor.Bytes(data), 0o644)
 }
 
 func SafeName(name string) string {

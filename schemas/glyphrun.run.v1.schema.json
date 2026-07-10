@@ -103,6 +103,12 @@
         "$ref": "#/$defs/namedArtifact"
       }
     },
+    "manifest": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifactManifestEntry"
+      }
+    },
     "runDir": {
       "type": "string",
       "minLength": 1
@@ -231,6 +237,34 @@
         "relativePath": {
           "type": "string",
           "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifactManifestEntry": {
+      "type": "object",
+      "required": [
+        "relativePath",
+        "kind",
+        "bytes",
+        "sha256"
+      ],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
         }
       },
       "additionalProperties": false

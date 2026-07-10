@@ -185,8 +185,9 @@ func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd 
 	_ = writer.WriteFinalScreen(finalSnapshot)
 	_ = writer.WriteScreenSVG("screens/final.svg", render.SnapshotSVG(finalSnapshot, render.DefaultOptions()))
 	_ = writer.WriteDiagnostic("record", "## Recorded Command\n\n`"+strings.Join(argv, " ")+"`\n")
-	_ = writer.WriteRun(result)
 	_ = writer.AppendEvent(artifacts.Event{TS: ended.Format(time.RFC3339Nano), Type: "record.finished", Name: strings.Join(argv, " "), Info: strconv.Itoa(exit.ExitCode)})
+	_ = writer.FinalizeManifest(&result)
+	_ = writer.WriteRun(result)
 
 	var scaffoldResult *scaffold.Result
 	if scaffoldPath != "" {

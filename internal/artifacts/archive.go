@@ -12,6 +12,9 @@ import (
 // DefaultArchiveTimeout is used when ArchiveConfig.Timeout is empty.
 const DefaultArchiveTimeout = 5 * time.Minute
 
+// MaxArchiveOutputBytes bounds diagnostic capture from external archive tools.
+const MaxArchiveOutputBytes = 64 * 1024
+
 // ArchiveConfig is the artifacts-package view of the config
 // retention.archive block. It mirrors config.ArchiveConfig without
 // importing internal/config (the artifacts package owns no runner or
@@ -40,6 +43,34 @@ type ArchiveResult struct {
 	Message string `json:"message,omitempty" yaml:"message,omitempty"`
 }
 
+type boundedArchiveOutput struct {
+	buf       bytes.Buffer
+	truncated bool
+}
+
+func (w *boundedArchiveOutput) Write(p []byte) (int, error) {
+	remaining := MaxArchiveOutputBytes - w.buf.Len()
+	if remaining > 0 {
+		n := len(p)
+		if n > remaining {
+			n = remaining
+		}
+		_, _ = w.buf.Write(p[:n])
+	}
+	if len(p) > remaining {
+		w.truncated = true
+	}
+	return len(p), nil
+}
+
+func (w *boundedArchiveOutput) String() string {
+	out := w.buf.String()
+	if w.truncated {
+		out += "\n[glyphrun: archive command output truncated]"
+	}
+	return out
+}
+
 // ArchiveRun invokes the configured archival command for a single run
 // directory. The command is run as:
 //
@@ -61,7 +92,7 @@ func ArchiveRun(cfg ArchiveConfig, runDir string) (ArchiveResult, error) {
 	args := append(append([]string{}, cfg.Args...), runDir)
 	cmd := exec.Command(cfg.Command, args...)
 	cmd.Dir = filepath.Dir(runDir)
-	var out bytes.Buffer
+	var out boundedArchiveOutput
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 
