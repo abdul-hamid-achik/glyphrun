@@ -47,4 +47,10 @@ Every errored run — and any failed run with a runner-level cause — carries a
 
 On exit 4 (parse) and exit 6 (contract-hash mismatch), the structured JSON envelope is printed to **stdout** — not only stderr — so `glyph run` / `glyph spec verify` consumers decoding stdout never see an empty payload. For `contract_hash_mismatch` the envelope also includes `contractHash` (computed) and `expectedHash` (stamped).
 
+Every errored run also carries an additive `nextActions` array — one actionable next step
+per `errorKind` (e.g. `contract_hash_mismatch` → `glyph run <spec> --update-snapshots`).
+Each action has a `command`, a `reason`, and `safeToAutoRun` (always `false` — no repair is
+safe to run without the operator, since re-stamping changes files). Non-errored runs omit
+`nextActions` entirely.
+
 The contract/repair split is core to how Glyphrun thinks about specs: `intent` + `outcomes` are the durable behavior contract; `steps` are repairable hints. See [Authoring](/authoring) and [`glyph repair`](/commands#glyph-repair-spec-run-latest).

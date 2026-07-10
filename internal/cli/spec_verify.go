@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/spf13/cobra"
@@ -197,15 +198,24 @@ func emitSpecErrorEnvelope(cmd *cobra.Command, opts *globalOptions, format outpu
 	if expectedHash != "" {
 		value["expectedHash"] = expectedHash
 	}
+	if na := artifacts.NextActionsFor(artifacts.ErrorKind(kind), name, contractHash, expectedHash); len(na) > 0 {
+		value["nextActions"] = na
+	}
 	output, emitErr := emitForCLI(cmd, opts, format, value, func() string {
 		var b strings.Builder
 		fmt.Fprintf(&b, "# Spec Error: %s\n\n", name)
 		fmt.Fprintf(&b, "- errorKind: `%s`\n", kind)
 		fmt.Fprintf(&b, "- spec: `%s`\n", name)
-		fmt.Fprintf(&b, "- diagnostic: %s\n", diagnostic)
 		if contractHash != "" {
 			fmt.Fprintf(&b, "- contractHash: `%s`\n", contractHash)
 			fmt.Fprintf(&b, "- expectedHash: `%s`\n", expectedHash)
+		}
+		for _, na := range artifacts.NextActionsFor(artifacts.ErrorKind(kind), name, contractHash, expectedHash) {
+			if na.Command != "" {
+				fmt.Fprintf(&b, "- next action: `%s` — %s\n", na.Command, na.Reason)
+			} else {
+				fmt.Fprintf(&b, "- next action: %s\n", na.Reason)
+			}
 		}
 		return b.String()
 	})

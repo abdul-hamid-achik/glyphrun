@@ -48,7 +48,8 @@
       "additionalProperties": { "$ref": "#/$defs/namedArtifact" }
     },
     "runDir": { "type": "string", "minLength": 1 },
-    "exitCode": { "type": "integer" }
+    "exitCode": { "type": "integer" },
+    "nextActions": { "type": "array", "items": { "$ref": "#/$defs/nextAction" } }
   },
   "additionalProperties": false,
   "$defs": {
@@ -114,6 +115,18 @@
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
         }
+      },
+      "additionalProperties": false
+    },
+    "nextAction": {
+      "type": "object",
+      "required": ["reason", "safeToAutoRun"],
+      "properties": {
+        "tool": { "type": "string" },
+        "command": { "type": "string" },
+        "arguments": { "type": "object" },
+        "reason": { "type": "string", "minLength": 1 },
+        "safeToAutoRun": { "type": "boolean" }
       },
       "additionalProperties": false
     }

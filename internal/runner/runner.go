@@ -301,6 +301,7 @@ func parseErrorResult(specPath string, err error) artifacts.RunResult {
 		ExitCode:      exitCode,
 		Outcomes:      []artifacts.OutcomeResult{},
 		Artifacts:     map[string]string{},
+		NextActions:   artifacts.NextActionsFor(kind, name, contractHash, expectedHash),
 	}
 }
 
@@ -1920,6 +1921,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		ExitCode:      exitCode,
 		Artifacts:     map[string]string{"events": "events.ndjson", "environmentDiagnostic": "diagnostics/environment.md"},
 	}
+	result.NextActions = artifacts.NextActionsFor(errorKind, s.spec.Name, s.spec.ContractHash, "")
 	s.applyProcmonArtifacts(&result)
 	// Use the policy the runner resolved at start (project config +
 	// spec override). It's in s.capturePolicy so the finish() function

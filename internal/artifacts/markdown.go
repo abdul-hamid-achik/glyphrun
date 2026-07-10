@@ -20,6 +20,16 @@ func RenderRunMarkdown(result RunResult) string {
 	if result.Diagnostic != "" {
 		fmt.Fprintf(&b, "- diagnostic: %s\n", result.Diagnostic)
 	}
+	if len(result.NextActions) > 0 {
+		b.WriteString("\n## Next actions\n\n")
+		for _, na := range result.NextActions {
+			if na.Command != "" {
+				fmt.Fprintf(&b, "- `%s` — %s\n", na.Command, na.Reason)
+			} else {
+				fmt.Fprintf(&b, "- %s\n", na.Reason)
+			}
+		}
+	}
 	fmt.Fprintf(&b, "- spec: `%s`\n", result.SpecName)
 	if strings.TrimSpace(result.Intent) != "" {
 		fmt.Fprintf(&b, "- intent: %s\n", strings.TrimSpace(result.Intent))

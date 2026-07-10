@@ -54,6 +54,7 @@ type RunResult struct {
 	NamedArtifacts map[string]NamedArtifact `json:"namedArtifacts,omitempty" yaml:"namedArtifacts,omitempty"`
 	RunDir         string                   `json:"runDir" yaml:"runDir"`
 	ExitCode       int                      `json:"exitCode" yaml:"exitCode"`
+	NextActions    []NextAction             `json:"nextActions,omitempty" yaml:"nextActions,omitempty"`
 }
 
 // NamedArtifact describes a file produced by a download or transform step.

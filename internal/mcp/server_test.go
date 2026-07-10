@@ -396,3 +396,66 @@ func TestServeCleanNoArchive(t *testing.T) {
 		t.Errorf("fcheap invoked under noArchive; log:\n%s", data)
 	}
 }
+
+// TestServeRunErroredSurfacesNextActions is a contract test against the real
+// glyph_run handler: an errored run (target_start) must surface nextActions
+// with a concrete rerun command in the MCP tool's text content, so an agent
+// gets an actionable next step instead of an ambiguous error (SPEC §7.1).
+func TestServeRunErroredSurfacesNextActions(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "bad_target.yml")
+	if err := os.WriteFile(specPath, []byte(`version: 1
+name: bad_target
+intent: target does not exist.
+target:
+  cmd: ["/nonexistent/binary"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 1000
+outcomes:
+  - id: ok
+    description: placeholder
+    verify:
+      command:
+        run: "true"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	argsJSON, _ := json.Marshal(map[string]any{"path": specPath})
+	req := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"glyph_run","arguments":` + string(argsJSON) + `}}`
+	input := strings.NewReader(req + "\n")
+	var output bytes.Buffer
+	if err := Serve(context.Background(), input, &output, ServerOptions{ArtifactRoot: filepath.Join(dir, "runs")}); err != nil {
+		t.Fatal(err)
+	}
+	payload := responsePayload(t, output.String())
+	var resp response
+	if err := json.Unmarshal(payload, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected error: %#v", resp.Error)
+	}
+	resultMap, _ := resp.Result.(map[string]any)
+	content, _ := resultMap["content"].([]any)
+	if len(content) == 0 {
+		t.Fatalf("result has no content: %#v", resp.Result)
+	}
+	first, _ := content[0].(map[string]any)
+	text, _ := first["text"].(string)
+	if !strings.Contains(text, `"errorKind": "target_start"`) {
+		t.Errorf("glyph_run text missing errorKind=target_start: %s", text)
+	}
+	if !strings.Contains(text, `"nextActions"`) {
+		t.Errorf("glyph_run text missing nextActions on an errored run: %s", text)
+	}
+	if !strings.Contains(text, `"glyph run`) {
+		t.Errorf("nextActions should carry a concrete rerun command: %s", text)
+	}
+}

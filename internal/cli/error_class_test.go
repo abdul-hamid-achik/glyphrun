@@ -57,6 +57,12 @@ outcomes:
 	if !bytes.Contains(stdout.Bytes(), []byte(`"diagnostic":`)) {
 		t.Errorf("stdout missing diagnostic field: %s", stdout.String())
 	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"nextActions"`)) {
+		t.Errorf("stdout missing nextActions for an errored run: %s", stdout.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"glyph run`)) {
+		t.Errorf("nextActions should carry a concrete rerun command: %s", stdout.String())
+	}
 }
 
 // TestRunFailedStepFailureErrorKind guards that a failed run caused by a
@@ -154,6 +160,9 @@ outcomes:
 	if bytes.Contains(stdout.Bytes(), []byte(`"errorKind"`)) {
 		t.Errorf("stdout should NOT contain errorKind for outcome failure: %s", stdout.String())
 	}
+	if bytes.Contains(stdout.Bytes(), []byte(`"nextActions"`)) {
+		t.Errorf("stdout should NOT contain nextActions for a non-errored run: %s", stdout.String())
+	}
 }
 
 // TestRunContractHashMismatchEmitsEnvelope guards that a contract-hash
@@ -202,6 +211,9 @@ outcomes:
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte(`"errorKind": "contract_hash_mismatch"`)) {
 		t.Errorf("stdout missing errorKind=contract_hash_mismatch: %s", stdout.String())
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`--update-snapshots`)) {
+		t.Errorf("nextActions for a hash mismatch should suggest re-stamping: %s", stdout.String())
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte(`"contractHash":`)) {
 		t.Errorf("stdout missing contractHash: %s", stdout.String())

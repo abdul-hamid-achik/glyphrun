@@ -165,5 +165,6 @@ func earlyError(runDir string, started time.Time, specName, diagnostic string, e
 		ExitCode:      exitCode,
 		Outcomes:      []artifacts.OutcomeResult{},
 		Artifacts:     map[string]string{"failureDiagnostic": diagnostic},
+		NextActions:   artifacts.NextActionsFor(errorKind, specName, "", ""),
 	}
 }
