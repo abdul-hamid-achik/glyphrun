@@ -20,7 +20,7 @@ import (
 
 const (
 	artifactCopyBufferSize = 64 * 1024
-	redactionWindowSize     = 256 * 1024
+	redactionWindowSize    = 256 * 1024
 )
 
 // ArtifactManifestEntry describes one file in a run artifact pack.
@@ -36,12 +36,12 @@ type ArtifactManifestEntry struct {
 // redaction to structured/text writes, serializes append-only writes, and
 // records checksums for the deterministic manifest.
 type ArtifactManager struct {
-	root      string
-	redactor  Redactor
-	appendMu  sync.Mutex
+	root       string
+	redactor   Redactor
+	appendMu   sync.Mutex
 	manifestMu sync.RWMutex
-	manifest map[string]ArtifactManifestEntry
-	appends   map[string]*appendDigest
+	manifest   map[string]ArtifactManifestEntry
+	appends    map[string]*appendDigest
 }
 
 type appendDigest struct {
@@ -59,10 +59,10 @@ func NewArtifactManager(runDir string, redactor Redactor) (*ArtifactManager, err
 		return nil, fmt.Errorf("resolve artifact run directory: %w", err)
 	}
 	return &ArtifactManager{
-		root:      filepath.Clean(root),
-		redactor:  redactor,
+		root:     filepath.Clean(root),
+		redactor: redactor,
 		manifest: make(map[string]ArtifactManifestEntry),
-		appends:   make(map[string]*appendDigest),
+		appends:  make(map[string]*appendDigest),
 	}, nil
 }
 
