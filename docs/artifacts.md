@@ -14,6 +14,7 @@ High-signal files:
 - `frames/frames.ndjson`: terminal frame timeline
 - `raw/pty.raw.log`: redacted raw PTY byte stream
 - `outcomes/results.md`: outcome-only summary
+- `replay.json`: exact-replay manifest — the normalized target argv, terminal profile/viewport, resolved capture policy, redacted env KEY NAMES (never values), glyph version, and one exact `glyph run <spec>` command to reproduce the run
 
 `agent_context.md` includes the target command, terminal profile, exit code, failed outcomes, recent events, final screen, and suggested inspection commands. Agents should read it first after a failed run.
 

@@ -56,6 +56,13 @@ func (w *Writer) WriteRun(result RunResult) error {
 	return os.WriteFile(w.Resolve("run.md"), []byte(w.redactor.Text(RenderRunMarkdown(result))), 0o644)
 }
 
+// WriteReplay writes the exact-replay manifest (SPEC §7.3) as replay.json,
+// redacted like every other artifact so no env value leaks (only key names
+// are ever present in the manifest, but the redactor is still applied).
+func (w *Writer) WriteReplay(m ReplayManifest) error {
+	return writeJSON(w.Resolve("replay.json"), m, w.redactor)
+}
+
 func (w *Writer) WriteResolvedSpec(s spec.Spec) error {
 	return writeYAML(w.Resolve("spec.resolved.yml"), s, w.redactor)
 }

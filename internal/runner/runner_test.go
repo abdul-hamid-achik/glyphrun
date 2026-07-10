@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -689,6 +690,90 @@ outcomes:
 	}
 	if !strings.Contains(string(events), `"pty.truncated"`) {
 		t.Fatalf("events missing pty.truncated event:\n%s", string(events))
+	}
+}
+
+func TestRunSpecWritesReplayManifest(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "replay.yml")
+	// A target with a declared env var + a non-default terminal so the manifest
+	// has something meaningful to record. The env VALUE must never appear in
+	// replay.json — only the key name.
+	if err := os.WriteFile(specPath, []byte(`version: 1
+name: replay_demo
+intent: a run writes an exact-replay manifest.
+target:
+  cmd: ["/bin/sh", "-lc", "printf 'ready\n'; sleep 0.1"]
+  env:
+    REPLAY_TOKEN: s3cret-value
+terminal:
+  cols: 100
+  rows: 30
+  profile: xterm-256color
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 2000
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: ready_visible
+    description: ready is visible
+    verify:
+      screen:
+        contains: "ready"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunSpec(context.Background(), Options{
+		SpecPath:     specPath,
+		ArtifactRoot: filepath.Join(dir, "runs"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != artifacts.StatusPassed {
+		t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+	}
+	if result.Artifacts["replay"] != "replay.json" {
+		t.Fatalf("replay artifact key missing: %#v", result.Artifacts)
+	}
+	data, err := os.ReadFile(filepath.Join(result.RunDir, "replay.json"))
+	if err != nil {
+		t.Fatalf("replay.json not written: %v", err)
+	}
+	var m artifacts.ReplayManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("replay.json invalid: %v\n%s", err, string(data))
+	}
+	if m.SchemaVersion != 1 || m.SpecName != "replay_demo" {
+		t.Errorf("replay manifest header wrong: %+v", m)
+	}
+	if !strings.Contains(m.Replay, "glyph run") || !strings.Contains(m.Replay, specPath) {
+		t.Errorf("replay command should reproduce the run, got %q", m.Replay)
+	}
+	if m.Terminal.Cols != 100 || m.Terminal.Rows != 30 || m.Terminal.Profile != "xterm-256color" {
+		t.Errorf("replay terminal wrong: %+v", m.Terminal)
+	}
+	if len(m.Argv) == 0 || m.Argv[0] != "/bin/sh" {
+		t.Errorf("replay argv wrong: %+v", m.Argv)
+	}
+	// The env key NAME is recorded...
+	found := false
+	for _, k := range m.EnvKeys {
+		if k == "REPLAY_TOKEN" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("env key REPLAY_TOKEN missing from envKeys: %+v", m.EnvKeys)
+	}
+	// ...but the secret VALUE must never be present.
+	if strings.Contains(string(data), "s3cret-value") {
+		t.Errorf("replay.json leaked an env value: %s", string(data))
 	}
 }
 

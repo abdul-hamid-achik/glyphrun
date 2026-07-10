@@ -26,6 +26,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal/adapters/gote"
+	"github.com/abdul-hamid-achik/glyphrun/internal/version"
 	"gopkg.in/yaml.v3"
 )
 
@@ -2075,6 +2076,14 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 				_ = s.writer.AppendEvent(event("lastfailed.error", "", err.Error()))
 			}
 		}
+	}
+	// Exact-replay manifest (SPEC §7.3): replay.json captures everything an
+	// agent needs to reproduce the run without re-reading the resolved spec.
+	// Env values are never included — only key names — and the writer redacts.
+	replay := artifacts.BuildReplayManifest(s.spec, s.capturePolicy, s.runtime.Env, s.runtime.SpecPath, result.RunID, version.Version, version.Commit, version.BuildDate)
+	replay.GeneratedAt = ended.Format(time.RFC3339Nano)
+	if err := s.writer.WriteReplay(replay); err == nil {
+		result.Artifacts["replay"] = "replay.json"
 	}
 	if s.listener != nil {
 		s.listener.OnRunEnd(result)
