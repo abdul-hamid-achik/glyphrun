@@ -33,6 +33,7 @@ Package boundaries are part of the contract — do not blur them.
 | `internal/artifacts` | Writer, markdown, redaction, diffs, retention prune, external archival. No runner state. |
 | `internal/render` | Deterministic SVG rendering of a screen snapshot. Pure. |
 | `internal/repair` | Failed-run analysis → step-repair proposals. No cobra. |
+| `internal/affected` | `codemap review --json` subprocess contract + changed-symbol/blast-radius intersection for `affected-specs`. Accept legacy unversioned/v1 output; reject unknown schema versions rather than selecting nothing. |
 | `internal/flaky` | Stability/divergence summary for repeated runs. Pure. |
 | `internal/scaffold` | Draft spec inference from a recorded session. |
 | `internal/ghreport` | GitHub PR-comment Markdown rendering. |

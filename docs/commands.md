@@ -234,6 +234,11 @@ glyph affected-specs --staged --format md
 
 The diff→symbol work is delegated to `codemap`; Glyphrun owns only the spec↔symbol link (the `coversSymbol` field) and the intersection.
 
+Glyphrun accepts legacy unversioned codemap review output and the canonical
+`schema_version: 1` contract. The consumer fixture is an exact copy of codemap's producer golden.
+An unknown future schema version is an error, not an empty blast radius, so contract drift cannot
+silently skip all behavioral specs.
+
 ### `glyph import <format> <file>`
 
 Convert a foreign test format to a glyphrun spec. The dispatcher is flat — `glyph import <format> <file>` — so new importers slot in without a tree of nested subcommands.

@@ -200,6 +200,28 @@ func TestArchiveRun_DefaultTimeoutWhenZero(t *testing.T) {
 	}
 }
 
+func TestArchiveRun_BoundsCommandOutput(t *testing.T) {
+	runDir := t.TempDir()
+	script := writeScript(t, `yes x | head -c 131072`)
+	res, err := ArchiveRun(ArchiveConfig{
+		Enabled: true,
+		Command: script,
+		Timeout: 5 * time.Second,
+	}, runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK {
+		t.Fatalf("archive failed: %s", res.Message)
+	}
+	if len(res.Message) > MaxArchiveOutputBytes+128 {
+		t.Fatalf("archive diagnostic grew unbounded: %d bytes", len(res.Message))
+	}
+	if !strings.Contains(res.Message, "output truncated") {
+		t.Fatalf("archive diagnostic missing truncation marker")
+	}
+}
+
 // TestParseArchiveTimeout table-tests the duration parser: empty → 0
 // (no error), a valid duration parses, an invalid string errors.
 func TestParseArchiveTimeout(t *testing.T) {
