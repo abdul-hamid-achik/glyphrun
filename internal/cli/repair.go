@@ -12,7 +12,7 @@ import (
 )
 
 func newRepairCommand(opts *globalOptions) *cobra.Command {
-	var write bool
+	var write, verify bool
 	cmd := &cobra.Command{
 		Use:   "repair <spec> [run|latest]",
 		Short: "Propose step repairs for a failed run (never touches the contract)",
@@ -57,12 +57,51 @@ func newRepairCommand(opts *globalOptions) *cobra.Command {
 			}
 
 			proposals := repair.Analyze(runDir, parsed.Resolved.Steps)
+
+			// --verify (SPEC §7.2): apply to a temp copy, cold-start rerun, accept
+			// only if the rerun passes; on success write the accepted repair to the
+			// original spec, on failure leave it untouched (rollback). Returns the
+			// verified result (before/after run IDs, confidence, evidence, replay).
+			if verify {
+				vr, verr := repair.Verify(cmd.Context(), specPath, runDir, proposals, repair.VerifyOptions{
+					ConfigPath:   opts.configPath,
+					Environment:  opts.environment,
+					ArtifactRoot: root,
+				})
+				if verr != nil {
+					return exitError{code: 2, err: fmt.Errorf("verify repair: %w", verr)}
+				}
+				if vr.Verified {
+					for i := range proposals {
+						if proposals[i].Proposed == "" || proposals[i].Current == "" {
+							continue
+						}
+						if err := repair.Apply(specPath, proposals[i]); err != nil {
+							return exitError{code: 2, err: fmt.Errorf("apply verified repair to step %d: %w", proposals[i].StepIndex, err)}
+						}
+						proposals[i].Applied = true
+					}
+				}
+				vr.Spec = parsed.Resolved.Name
+				output, oerr := emitForCLI(cmd, opts, format, vr, func() string {
+					return renderVerifyMarkdown(vr)
+				})
+				if oerr != nil {
+					return exitError{code: 2, err: oerr}
+				}
+				cmd.Print(output)
+				if !vr.Verified {
+					return exitError{code: 1, err: fmt.Errorf("repair not verified: %s", vr.Reason)}
+				}
+				return nil
+			}
+
 			if write {
 				for i := range proposals {
 					if proposals[i].Proposed == "" || proposals[i].Current == "" {
 						continue
 					}
-					if err := repair.Apply(parsed.Path, proposals[i]); err != nil {
+					if err := repair.Apply(specPath, proposals[i]); err != nil {
 						return exitError{code: 2, err: fmt.Errorf("apply repair to step %d: %w", proposals[i].StepIndex, err)}
 					}
 					proposals[i].Applied = true
@@ -87,6 +126,7 @@ func newRepairCommand(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&write, "write", false, "apply the proposed step repairs to the spec in place")
+	cmd.Flags().BoolVar(&verify, "verify", false, "apply to a temp copy, cold-start rerun, and write to the spec only if the rerun passes (SPEC §7.2)")
 	return cmd
 }
 
@@ -121,4 +161,48 @@ func renderRepairMarkdown(specName, run string, proposals []repair.Proposal, app
 		b.WriteString("Re-run with `--write` to apply these step edits (the contract hash is unaffected).\n")
 	}
 	return b.String()
+}
+
+func renderVerifyMarkdown(vr repair.VerifyResult) string {
+	var b strings.Builder
+	b.WriteString("# Glyphrun Verified Repair\n\n")
+	fmt.Fprintf(&b, "- spec: `%s`\n", vr.Spec)
+	fmt.Fprintf(&b, "- before run: `%s`\n", vr.BeforeRun)
+	if vr.AfterRun != "" {
+		fmt.Fprintf(&b, "- after run: `%s`\n", vr.AfterRun)
+	}
+	fmt.Fprintf(&b, "- verified: %s\n", boolStr(vr.Verified))
+	fmt.Fprintf(&b, "- confidence: %s\n", vr.Confidence)
+	if vr.Reason != "" {
+		fmt.Fprintf(&b, "- reason: %s\n", vr.Reason)
+	}
+	if vr.Evidence != "" {
+		fmt.Fprintf(&b, "- evidence: `%s`\n", vr.Evidence)
+	}
+	if vr.Replay != "" {
+		fmt.Fprintf(&b, "- replay: `%s`\n", vr.Replay)
+	}
+	b.WriteByte('\n')
+	for _, p := range vr.Proposals {
+		fmt.Fprintf(&b, "## step %d (%s)\n\n", p.StepIndex, p.Kind)
+		if p.Current != "" {
+			fmt.Fprintf(&b, "- current: %q\n", p.Current)
+		}
+		if p.Proposed != "" {
+			fmt.Fprintf(&b, "- proposed: %q\n", p.Proposed)
+		}
+		fmt.Fprintf(&b, "- rationale: %s\n", p.Rationale)
+		if p.Applied {
+			b.WriteString("- applied: yes\n")
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }

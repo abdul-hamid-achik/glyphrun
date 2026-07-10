@@ -9,6 +9,9 @@ package repair
 
 import (
 	"bufio"
+	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,6 +22,7 @@ import (
 	"unicode"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
+	"github.com/abdul-hamid-achik/glyphrun/internal/runner"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"gopkg.in/yaml.v3"
 )
@@ -50,6 +54,106 @@ func Apply(specPath string, p Proposal) error {
 		return fmt.Errorf("proposal for step %d has nothing to apply", p.StepIndex)
 	}
 	return editStepWaitContains(specPath, p.StepIndex, p.Proposed)
+}
+
+// VerifyOptions configures a verified repair (SPEC §7.2).
+type VerifyOptions struct {
+	ConfigPath   string
+	Environment  string
+	ArtifactRoot string
+}
+
+// VerifyResult is the outcome of a verified transactional repair (SPEC §7.2).
+// The repair is applied to a TEMP copy of the spec, the temp is cold-start
+// rerun, and the repair is accepted only if the previously-failed step
+// advances and all contract outcomes pass; otherwise the original spec is
+// left untouched (rollback). The result carries the before/after run IDs,
+// retained evidence (the after run dir), and the exact replay action.
+type VerifyResult struct {
+	SchemaVersion int        `json:"schemaVersion" yaml:"schemaVersion"` // 1
+	Spec          string     `json:"spec" yaml:"spec"`
+	BeforeRun     string     `json:"beforeRun" yaml:"beforeRun"`                   // runId of the failed run
+	AfterRun      string     `json:"afterRun,omitempty" yaml:"afterRun,omitempty"` // runId of the verification rerun
+	Proposals     []Proposal `json:"proposals" yaml:"proposals"`
+	Verified      bool       `json:"verified" yaml:"verified"`
+	Confidence    string     `json:"confidence" yaml:"confidence"` // high | low
+	Reason        string     `json:"reason,omitempty" yaml:"reason,omitempty"`
+	Evidence      string     `json:"evidence,omitempty" yaml:"evidence,omitempty"` // after run dir (retained)
+	Replay        string     `json:"replay,omitempty" yaml:"replay,omitempty"`     // exact replay command
+}
+
+// Verify performs a transactional repair (SPEC §7.2): it applies the
+// applicable proposals to a temp copy of the spec (in the spec's own dir so
+// config/relative-file resolution is identical), cold-start reruns it, and
+// accepts the repair only if the rerun passes (the failed step advances AND
+// all contract outcomes pass). The original spec is never modified by Verify;
+// the caller writes the accepted repair separately. The temp copy is always
+// removed.
+func Verify(ctx context.Context, specPath string, runDir string, proposals []Proposal, opts VerifyOptions) (VerifyResult, error) {
+	before, _ := artifacts.LoadRunResult(runDir)
+	result := VerifyResult{
+		SchemaVersion: 1,
+		BeforeRun:     before.RunID,
+		Proposals:     proposals,
+		Replay:        "glyph run " + specPath + " --format json",
+	}
+	// Only proposals with a concrete proposed value can be verified.
+	applicable := make([]Proposal, 0, len(proposals))
+	for _, p := range proposals {
+		if p.Proposed != "" && p.Current != "" {
+			applicable = append(applicable, p)
+		}
+	}
+	if len(applicable) == 0 {
+		result.Reason = "no applicable step repairs to verify (proposals are diagnostic only)"
+		result.Confidence = "low"
+		return result, nil
+	}
+	// Copy the spec to a sibling temp file so config/spec-dir resolution is
+	// identical to the original run. Hidden name to avoid globs picking it up.
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		return result, fmt.Errorf("read spec for verify: %w", err)
+	}
+	randSuffix := make([]byte, 4)
+	_, _ = rand.Read(randSuffix)
+	tempPath := filepath.Join(filepath.Dir(specPath), "."+strings.TrimSuffix(filepath.Base(specPath), filepath.Ext(specPath))+".repair-"+hex.EncodeToString(randSuffix)+filepath.Ext(specPath))
+	if err := os.WriteFile(tempPath, data, 0o644); err != nil {
+		return result, fmt.Errorf("write temp spec for verify: %w", err)
+	}
+	defer os.Remove(tempPath)
+	for _, p := range applicable {
+		if err := Apply(tempPath, p); err != nil {
+			return result, fmt.Errorf("apply repair to temp spec step %d: %w", p.StepIndex, err)
+		}
+	}
+	// Cold-start rerun the repaired temp spec. RunSpec always starts a fresh
+	// target process, so this is a true cold start.
+	after, runErr := runner.RunSpec(ctx, runner.Options{
+		SpecPath:     tempPath,
+		ConfigPath:   opts.ConfigPath,
+		Environment:  opts.Environment,
+		ArtifactRoot: opts.ArtifactRoot,
+	})
+	if runErr != nil {
+		result.Confidence = "low"
+		result.Reason = fmt.Sprintf("verification rerun errored: %v", runErr)
+		return result, nil
+	}
+	result.AfterRun = after.RunID
+	result.Evidence = after.RunDir
+	if after.Status == artifacts.StatusPassed {
+		result.Verified = true
+		result.Confidence = "high"
+	} else {
+		result.Confidence = "low"
+		reason := fmt.Sprintf("verification rerun %s", after.Status)
+		if after.Diagnostic != "" {
+			reason += ": " + after.Diagnostic
+		}
+		result.Reason = reason
+	}
+	return result, nil
 }
 
 // LatestRunDirForSpec returns the newest run directory whose run.json names the

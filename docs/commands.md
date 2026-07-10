@@ -134,11 +134,13 @@ Analyze a failed run and propose fixes to a spec's `steps` — for example a `wa
 ```bash
 glyph repair specs/smoke.yml latest --format md      # print proposals
 glyph repair specs/smoke.yml --write --format md    # apply them
+glyph repair specs/smoke.yml --verify --format json  # verify: rerun, apply only if it passes
 ```
 
 | Flag | Description |
 | --- | --- |
 | `--write` | Apply the proposed step rewrites to the spec file. Without it, proposals are printed only. |
+| `--verify` | Apply to a temp copy, cold-start rerun, and write to the spec only if the rerun passes (SPEC §7.2 transactional repair). Returns `verified`, `confidence`, `beforeRun`/`afterRun` run IDs, retained `evidence` (the after run dir), and the exact `replay` command. On failure the original spec is untouched (rollback). |
 
 ### `glyph record -- <command...>`
 
