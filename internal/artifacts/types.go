@@ -55,6 +55,18 @@ type RunResult struct {
 	RunDir         string                   `json:"runDir" yaml:"runDir"`
 	ExitCode       int                      `json:"exitCode" yaml:"exitCode"`
 	NextActions    []NextAction             `json:"nextActions,omitempty" yaml:"nextActions,omitempty"`
+	Steps          []StepResult             `json:"steps,omitempty" yaml:"steps,omitempty"`
+}
+
+// StepResult is the per-step execution record (SPEC §7.3 structured StepResult[]).
+// Duration, kind, normalized error, and status let an agent see exactly which
+// step failed and how long each took without scanning events.ndjson.
+type StepResult struct {
+	Index      int    `json:"index" yaml:"index"`   // 1-based
+	Kind       string `json:"kind" yaml:"kind"`     // wait|type|press|click|hover|fill|...
+	Status     string `json:"status" yaml:"status"` // passed|failed|skipped
+	DurationMS int64  `json:"durationMs" yaml:"durationMs"`
+	Error      string `json:"error,omitempty" yaml:"error,omitempty"`
 }
 
 // NamedArtifact describes a file produced by a download or transform step.

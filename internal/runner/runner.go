@@ -198,6 +198,7 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		result, err := state.executeStep(runCtx, step)
 		if err != nil {
 			_ = writer.AppendEvent(event("step.failed", name, err.Error()))
+			state.stepResults = append(state.stepResults, artifacts.StepResult{Index: idx + 1, Kind: stepKind(step), Status: "failed", DurationMS: time.Since(stepStart).Milliseconds(), Error: err.Error()})
 			if state.listener != nil {
 				state.listener.OnStepFinish(idx, step, ProgressFailed, time.Since(stepStart), err.Error())
 			}
@@ -217,6 +218,7 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		}
 		if result.Skipped {
 			_ = writer.AppendEvent(event("step.skipped", name, result.Message))
+			state.stepResults = append(state.stepResults, artifacts.StepResult{Index: idx + 1, Kind: stepKind(step), Status: "skipped", DurationMS: time.Since(stepStart).Milliseconds()})
 			if state.listener != nil {
 				state.listener.OnStepFinish(idx, step, ProgressSkipped, time.Since(stepStart), result.Message)
 			}
@@ -225,6 +227,7 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		if state.listener != nil {
 			state.listener.OnStepFinish(idx, step, ProgressPassed, time.Since(stepStart), "")
 		}
+		state.stepResults = append(state.stepResults, artifacts.StepResult{Index: idx + 1, Kind: stepKind(step), Status: "passed", DurationMS: time.Since(stepStart).Milliseconds()})
 		_ = writer.AppendEvent(event("step.finished", name, ""))
 	}
 
@@ -349,6 +352,10 @@ type runState struct {
 	termErr        error
 	snapshots      map[string]terminal.ScreenSnapshot
 	namedArtifacts map[string]artifacts.NamedArtifact
+
+	// stepResults accumulates per-step execution records (SPEC §7.3) during the
+	// run loop so finish() can include them in RunResult.Steps.
+	stepResults []artifacts.StepResult
 
 	// rawPTYTruncated is set the first time a PTY output chunk is
 	// dropped because rawPTY has already hit MaxRawLogBytes. finish()
@@ -1923,6 +1930,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		Artifacts:     map[string]string{"events": "events.ndjson", "environmentDiagnostic": "diagnostics/environment.md"},
 	}
 	result.NextActions = artifacts.NextActionsFor(errorKind, s.spec.Name, s.spec.ContractHash, "")
+	result.Steps = s.stepResults
 	s.applyProcmonArtifacts(&result)
 	// Use the policy the runner resolved at start (project config +
 	// spec override). It's in s.capturePolicy so the finish() function
@@ -2467,6 +2475,39 @@ func describeStep(step spec.Step) string {
 		return ""
 	}
 	return string(data)
+}
+
+// stepKind returns the type name of a step (wait, type, press, etc.) by
+// checking which field is set. Used for the structured StepResult (SPEC §7.3).
+func stepKind(step spec.Step) string {
+	switch {
+	case step.Wait != nil:
+		return "wait"
+	case step.Press != "":
+		return "press"
+	case step.Type != "":
+		return "type"
+	case step.Mouse != nil:
+		return "mouse"
+	case step.Send != nil:
+		return "send"
+	case step.Resize != nil:
+		return "resize"
+	case step.Snapshot != "":
+		return "snapshot"
+	case step.Use != "":
+		return "use"
+	case step.Download != nil:
+		return "download"
+	case step.Transform != nil:
+		return "transform"
+	case step.Monitor != nil:
+		return "monitor"
+	case step.Batch != nil:
+		return "batch"
+	default:
+		return "unknown"
+	}
 }
 
 func makeRunID(t time.Time, name string) string {

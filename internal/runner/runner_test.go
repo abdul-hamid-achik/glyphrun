@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -782,4 +783,75 @@ func tailOf(s string, n int) string {
 		return s
 	}
 	return s[len(s)-n:]
+}
+
+func TestRunSpecStepResults(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "steps.yml")
+	if err := os.WriteFile(specPath, []byte(`version: 1
+name: step_results
+intent: a run produces structured per-step results
+target:
+  cmd: ["/bin/sh", "-lc", "printf 'ready\n'; sleep 0.1"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 2000
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000
+outcomes:
+  - id: ready_visible
+    description: ready is visible
+    verify:
+      screen:
+        contains: "ready"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunSpec(context.Background(), Options{
+		SpecPath:     specPath,
+		ArtifactRoot: filepath.Join(dir, "runs"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != artifacts.StatusPassed {
+		t.Fatalf("status = %s, outcomes = %#v", result.Status, result.Outcomes)
+	}
+	// The RunResult must carry structured StepResults (SPEC §7.3).
+	if len(result.Steps) != 2 {
+		t.Fatalf("expected 2 step results, got %d: %+v", len(result.Steps), result.Steps)
+	}
+	for i, sr := range result.Steps {
+		if sr.Index != i+1 {
+			t.Errorf("step %d: expected index %d, got %d", i, i+1, sr.Index)
+		}
+		if sr.Kind != "wait" {
+			t.Errorf("step %d: expected kind 'wait', got %q", i, sr.Kind)
+		}
+		if sr.Status != "passed" {
+			t.Errorf("step %d: expected status 'passed', got %q", i, sr.Status)
+		}
+		if sr.DurationMS < 0 {
+			t.Errorf("step %d: negative duration %d", i, sr.DurationMS)
+		}
+	}
+	// Verify the steps are in run.json too.
+	runJson, err := os.ReadFile(filepath.Join(result.RunDir, "run.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(runJson, []byte(`"steps"`)) {
+		t.Errorf("run.json missing steps field: %s", string(runJson))
+	}
+	if !bytes.Contains(runJson, []byte(`"kind": "wait"`)) {
+		t.Errorf("run.json missing step kind: %s", string(runJson))
+	}
 }

@@ -19,114 +19,308 @@
     "exitCode"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "runId": { "type": "string", "minLength": 1 },
-    "specName": { "type": "string", "minLength": 1 },
-    "intent": { "type": "string" },
-    "contractHash": { "type": "string" },
-    "expectedHash": { "type": "string" },
-    "metadata": { "$ref": "#/$defs/metadata" },
-    "coversSymbol": { "type": "string", "minLength": 1 },
-    "status": { "enum": ["passed", "failed", "errored"] },
-    "errorKind": { "enum": ["target_start", "timeout", "contract_hash_mismatch", "unsupported_terminal", "step_failure", "precondition", "spec_parse"] },
-    "diagnostic": { "type": "string" },
-    "startedAt": { "type": "string", "minLength": 1 },
-    "endedAt": { "type": "string", "minLength": 1 },
-    "durationMs": { "type": "integer", "minimum": 0 },
-    "target": { "$ref": "#/$defs/target" },
-    "terminal": { "$ref": "#/$defs/terminal" },
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "specName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "intent": {
+      "type": "string"
+    },
+    "contractHash": {
+      "type": "string"
+    },
+    "expectedHash": {
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "coversSymbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "passed",
+        "failed",
+        "errored"
+      ]
+    },
+    "errorKind": {
+      "enum": [
+        "target_start",
+        "timeout",
+        "contract_hash_mismatch",
+        "unsupported_terminal",
+        "step_failure",
+        "precondition",
+        "spec_parse"
+      ]
+    },
+    "diagnostic": {
+      "type": "string"
+    },
+    "startedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "endedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "terminal": {
+      "$ref": "#/$defs/terminal"
+    },
     "outcomes": {
       "type": "array",
-      "items": { "$ref": "#/$defs/outcome" }
+      "items": {
+        "$ref": "#/$defs/outcome"
+      }
     },
     "artifacts": {
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "namedArtifacts": {
       "type": "object",
-      "additionalProperties": { "$ref": "#/$defs/namedArtifact" }
+      "additionalProperties": {
+        "$ref": "#/$defs/namedArtifact"
+      }
     },
-    "runDir": { "type": "string", "minLength": 1 },
-    "exitCode": { "type": "integer" },
-    "nextActions": { "type": "array", "items": { "$ref": "#/$defs/nextAction" } }
+    "runDir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exitCode": {
+      "type": "integer"
+    },
+    "nextActions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nextAction"
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/stepResult"
+      }
+    }
   },
   "additionalProperties": false,
   "$defs": {
     "target": {
       "type": "object",
-      "required": ["cmd"],
+      "required": [
+        "cmd"
+      ],
       "properties": {
         "cmd": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "minItems": 1
         },
-        "cwd": { "type": "string" },
+        "cwd": {
+          "type": "string"
+        },
         "env": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         },
-        "timeoutMs": { "type": "integer", "minimum": 1 }
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 1
+        }
       },
       "additionalProperties": false
     },
     "terminal": {
       "type": "object",
-      "required": ["cols", "rows", "profile"],
+      "required": [
+        "cols",
+        "rows",
+        "profile"
+      ],
       "properties": {
-        "cols": { "type": "integer", "minimum": 1 },
-        "rows": { "type": "integer", "minimum": 1 },
-        "profile": { "type": "string", "minLength": 1 },
-        "color": { "type": "string" },
-        "alternateScreen": { "type": "string" }
+        "cols": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "profile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "color": {
+          "type": "string"
+        },
+        "alternateScreen": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
     "outcome": {
       "type": "object",
-      "required": ["id", "status"],
+      "required": [
+        "id",
+        "status"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "status": { "enum": ["passed", "failed"] },
-        "message": { "type": "string" },
-        "evidence": { "type": "string" },
-        "evidenceRaw": { "type": "string" }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "evidence": {
+          "type": "string"
+        },
+        "evidenceRaw": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     },
     "namedArtifact": {
       "type": "object",
-      "required": ["kind", "path", "relativePath"],
+      "required": [
+        "kind",
+        "path",
+        "relativePath"
+      ],
       "properties": {
-        "kind": { "type": "string", "minLength": 1 },
-        "path": { "type": "string", "minLength": 1 },
-        "relativePath": { "type": "string", "minLength": 1 }
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relativePath": {
+          "type": "string",
+          "minLength": 1
+        }
       },
       "additionalProperties": false
     },
     "metadata": {
       "type": "object",
       "properties": {
-        "feature": { "type": "string", "minLength": 1 },
-        "owner": { "type": "string", "minLength": 1 },
-        "priority": { "enum": ["low", "normal", "high", "critical"] },
+        "feature": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "priority": {
+          "enum": [
+            "low",
+            "normal",
+            "high",
+            "critical"
+          ]
+        },
         "tags": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       },
       "additionalProperties": false
     },
     "nextAction": {
       "type": "object",
-      "required": ["reason", "safeToAutoRun"],
+      "required": [
+        "reason",
+        "safeToAutoRun"
+      ],
       "properties": {
-        "tool": { "type": "string" },
-        "command": { "type": "string" },
-        "arguments": { "type": "object" },
-        "reason": { "type": "string", "minLength": 1 },
-        "safeToAutoRun": { "type": "boolean" }
+        "tool": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "safeToAutoRun": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stepResult": {
+      "type": "object",
+      "required": [
+        "index",
+        "kind",
+        "status",
+        "durationMs"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "passed",
+            "failed",
+            "skipped"
+          ]
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "type": "string"
+        }
       },
       "additionalProperties": false
     }
