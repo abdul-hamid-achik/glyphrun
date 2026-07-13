@@ -1,3 +1,10 @@
+---
+head:
+  - - meta
+    - name: robots
+      content: noindex, follow
+---
+
 # Cairntrace × Glyphrun — Comparison & Roadmap
 
 Date: 2026-06-13

@@ -1,3 +1,7 @@
+---
+description: Full glyph CLI reference — run, spec verify, record, repair, diff, snapshot, context, mcp, and more, with machine-readable JSON/YAML output and reserved exit codes 1–7.
+---
+
 # CLI Reference
 
 Every command accepts `--format json|yaml|md` and writes its primary output to stdout (machine-readable in `json`/`yaml`, human-readable in `md`). Progress and diagnostics go to stderr. JSON/YAML paths never prompt or read stdin — they are safe for agents and CI.

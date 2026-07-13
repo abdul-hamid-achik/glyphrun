@@ -1,3 +1,7 @@
+---
+description: The coding-agent loop for Glyphrun — run specs, read agent_context.md after failures, repair drifted steps without touching the behavior contract, all through the regular CLI or MCP server.
+---
+
 # Agents
 
 Agents should use stable Glyphrun surfaces only: `glyph agent`, `glyph explain`, `glyph docs`, `glyph spec verify`, `glyph run`, `glyph context`, `glyph diff`, or the equivalent MCP tools from `glyph mcp`.

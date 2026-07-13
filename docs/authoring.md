@@ -1,3 +1,7 @@
+---
+description: How to write Glyphrun behavior specs — keep intent and outcomes stable as the contract, treat steps as repairable navigation hints, and assert user-visible terminal behavior.
+---
+
 # Authoring
 
 Keep `intent` and `outcomes` stable. Treat `steps` as repairable hints that an agent can adjust when a UI flow changes without changing the behavior contract.

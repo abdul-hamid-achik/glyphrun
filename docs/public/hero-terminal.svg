@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 430" width="640" height="430" role="img" aria-label="glyph run output showing 2 of 2 outcomes passed">
+  <defs>
+    <linearGradient id="gr" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#78350F" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <style>
+    text { font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace; font-size: 15px; }
+    .dim   { fill: #8A6E4B; }
+    .cream { fill: #F5E9CE; }
+    .amber { fill: #FBBF24; }
+    .brite { fill: #FDE68A; font-weight: 700; }
+    .tiny  { font-size: 12px; fill: #8A6E4B; }
+    @media (prefers-reduced-motion: no-preference) {
+      .cursor { animation: gr-blink 1.1s steps(1) infinite; }
+      @keyframes gr-blink { 50% { opacity: 0; } }
+    }
+  </style>
+
+  <rect x="20" y="14" width="600" height="396" rx="14" fill="#150F0A" stroke="#3D2A16" stroke-width="1.5" filter="url(#shadow)"/>
+
+  <!-- title bar -->
+  <circle cx="46" cy="40" r="5" fill="url(#gr)" opacity="0.65"/>
+  <circle cx="64" cy="40" r="5" fill="url(#gr)" opacity="0.45"/>
+  <circle cx="82" cy="40" r="5" fill="url(#gr)" opacity="0.3"/>
+  <text x="320" y="45" text-anchor="middle" class="tiny">glyphrun — 80×24</text>
+  <line x1="21" y1="58" x2="619" y2="58" stroke="#3D2A16" stroke-width="1"/>
+
+  <!-- session -->
+  <text x="44" y="98"><tspan class="amber" font-weight="700">$</tspan><tspan class="cream" dx="10">glyph run specs/app.yml --format md</tspan></text>
+  <text x="44" y="132" class="dim">▸ pty 80×24 · xterm-256color · contract hash ok</text>
+
+  <text x="44" y="178"><tspan class="amber" font-weight="700">✓</tspan><tspan class="cream" dx="10">greeting_visible</tspan><tspan class="dim" dx="24">screen contains "hello"</tspan></text>
+  <text x="44" y="212"><tspan class="amber" font-weight="700">✓</tspan><tspan class="cream" dx="10">clean_exit</tspan><tspan class="dim" dx="87">process exit 0</tspan></text>
+
+  <text x="44" y="266" class="brite">PASS · 2/2 outcomes · exit 0</text>
+  <text x="44" y="300" class="dim">→ .glyphrun/runs/2026-07-12T18-04-11/agent_context.md</text>
+
+  <text x="44" y="356"><tspan class="amber" font-weight="700">$</tspan></text>
+  <rect x="64" y="342" width="10" height="18" fill="#FBBF24" class="cursor"/>
+</svg>
