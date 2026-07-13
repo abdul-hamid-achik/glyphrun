@@ -1,3 +1,7 @@
+---
+description: Install the glyph CLI and run your first terminal behavior spec in five minutes — glyph init scaffolds a passing smoke test driven through a real PTY.
+---
+
 # Quickstart
 
 Build and check the CLI:

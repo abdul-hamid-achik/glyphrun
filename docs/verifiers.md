@@ -1,3 +1,7 @@
+---
+description: The Glyphrun verifier vocabulary — screen, region, cell, cursor, process, snapshot, command, file, script, count, link, and metrics — typed, schema-validated terminal assertions.
+---
+
 # Verifiers
 
 The v1 verifier vocabulary is `screen`, `region`, `cell`, `cursor`, `process`, `snapshot`, trusted `command`, `file`, `script`, `count`, `link`, and the process-telemetry `metrics` verifier (see [Process Telemetry](/process-telemetry) and `glyph docs process-telemetry --format md`).

@@ -1,3 +1,7 @@
+---
+description: The Glyphrun step vocabulary — press, type, paste, send, mouse, wait, resize, snapshot, use, when, download, transform, batch, and monitor — for driving terminal apps in a PTY.
+---
+
 # Steps
 
 The v1 step vocabulary is `press`, `type`, `paste`, `send`, `mouse`, `wait`, `resize`, `snapshot`, `use`, `when`, the artifact-pipeline steps `download`, `transform`, and `batch`, and the process-telemetry `monitor` step (see [Process Telemetry](/process-telemetry) and `glyph docs process-telemetry --format md`).

@@ -1,3 +1,7 @@
+---
+description: glyph mcp starts a stdio MCP server that mirrors the CLI, so coding agents can run terminal behavior specs, verify contracts, and read failure context from any MCP client.
+---
+
 # MCP
 
 Run `glyph mcp` to start the stdio MCP server.

@@ -1,3 +1,7 @@
+---
+description: How Glyphrun tests TUIs and CLIs — the intent + outcomes contract, real-PTY execution, a deterministic virtual terminal emulator, and artifact packs for humans and coding agents.
+---
+
 # Overview
 
 Glyphrun is a local-first CLI for terminal and TUI behavior specs. It runs a target command in a PTY, drives it with declarative YAML or JSON steps, evaluates outcomes against a virtual terminal screen, and writes artifact packs for people and coding agents.

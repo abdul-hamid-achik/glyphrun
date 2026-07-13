@@ -1,23 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 120" width="480" height="120">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Glyphrun</title>
   <defs>
-    <linearGradient id="gr-grad" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="gr" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#D97706"/>
       <stop offset="100%" stop-color="#FBBF24"/>
     </linearGradient>
   </defs>
-  <title>glyphrun</title>
-  <!-- terminal block: title bar + body + > prompt + cursor -->
-  <g transform="translate(15,18)">
-    <rect x="0" y="0" width="84" height="84" rx="8" fill="#FEF3C7" stroke="url(#gr-grad)" stroke-width="2"/>
-    <circle cx="10" cy="10" r="2.5" fill="url(#gr-grad)" opacity="0.5"/>
-    <circle cx="18" cy="10" r="2.5" fill="url(#gr-grad)" opacity="0.5"/>
-    <circle cx="26" cy="10" r="2.5" fill="url(#gr-grad)" opacity="0.5"/>
-    <line x1="4" y1="18" x2="80" y2="18" stroke="url(#gr-grad)" stroke-width="0.5" opacity="0.3"/>
-    <path d="M 14 36 L 22 44 L 14 52" fill="none" stroke="url(#gr-grad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
-    <rect x="30" y="38" width="20" height="14" rx="2" fill="url(#gr-grad)"/>
-    <path d="M 14 60 L 22 68 L 14 76" fill="none" stroke="url(#gr-grad)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
-  </g>
-  <g font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-weight="800" font-size="56" letter-spacing="-3">
-    <text x="125" y="76" fill="#451A03">glyphrun</text>
-  </g>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14.5" fill="url(#gr)"/>
+  <path d="M 19 21 L 31.5 32 L 19 43" fill="none" stroke="#241305" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="37.5" y="24.5" width="10" height="15" rx="2" fill="#241305"/>
 </svg>
