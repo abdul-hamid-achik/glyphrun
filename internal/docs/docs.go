@@ -88,7 +88,7 @@ Do not edit ` + "`intent`" + ` or ` + "`outcomes`" + ` without surfacing the con
 `,
 	"mcp": `# MCP
 
-Run ` + "`glyph mcp`" + ` to start the stdio MCP server. The current server exposes tools for explain, docs, doctor, spec verification, spec scaffolding, runs, snapshot updates, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), and step repair (` + "`glyph_repair`" + `).
+Run ` + "`glyph mcp`" + ` to start the stdio MCP server. The current server exposes tools for explain, docs, doctor, spec verification, spec scaffolding, runs, snapshot updates, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), step repair (` + "`glyph_repair`" + `), affected-spec selection (` + "`glyph_affected_specs`" + `), and artifact pruning (` + "`glyph_clean`" + `).
 `,
 	"configuration": `# Configuration
 
@@ -152,12 +152,12 @@ Or build by hand:
 
 ` + "```" + `
 $ go build \
-    -ldflags "-X github.com/abdul-hamid-achik/glyphrun/internal/version.Version=v0.1.0 \
+    -ldflags "-X github.com/abdul-hamid-achik/glyphrun/internal/version.Version=$(git describe --tags --always) \
                -X github.com/abdul-hamid-achik/glyphrun/internal/version.Commit=$(git rev-parse --short HEAD) \
                -X github.com/abdul-hamid-achik/glyphrun/internal/version.BuildDate=$(date -u +%Y-%m-%d)" \
     -o /opt/homebrew/bin/glyph ./cmd/glyph
 $ glyph --version
-glyph version v0.1.0 (<sha> <date>)
+glyph version <version> (<sha> <date>)
 ` + "```" + `
 
 When the linker doesn't override the version vars (a bare ` + "`go install`" + ` or ` + "`go run`" + `), glyph prints ` + "`dev (unknown unknown)`" + ` — useful for testing without a release build.

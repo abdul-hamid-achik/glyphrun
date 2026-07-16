@@ -19,7 +19,7 @@ Glyphrun is designed around four stable surfaces:
 
 ## Status
 
-Glyphrun is feature-complete for the v0.1 surface: PTY execution, spec parsing and validation, contract hashes, snapshots, structured output, artifact packs, recording and replay, run diffs, an MCP stdio server, file and script verifiers, an artifact pipeline (`download` / `transform` / `batch`), per-spec redaction, retention and `glyph clean`, `count:` verifier, per-spec capture policy, BATS import and export, JUnit output, and a `glyph list` catalog. Exit codes 1–7 are reserved with distinct meanings (see [Exit Codes](#exit-codes)).
+Glyphrun is feature-complete for the v0.1 surface: PTY execution, spec parsing and validation, contract hashes, snapshots, structured output, artifact packs, recording and replay, run diffs, an MCP stdio server, file and script verifiers, an artifact pipeline (`download` / `transform` / `batch`), per-spec redaction, retention and `glyph clean`, `count:` verifier, per-spec capture policy, BATS import and export, JUnit output, and a `glyph list` catalog. Exit codes 1–4 and 6–7 have distinct meanings (see [Exit Codes](#exit-codes)).
 
 The virtual terminal handles the common xterm control set: cursor movement and
 absolute positioning, line/screen erase, SGR attributes and the full 16/256/
@@ -86,7 +86,7 @@ Without `task`:
 
 ```bash
 go build \
-  -ldflags "-X github.com/abdul-hamid-achik/glyphrun/internal/version.Version=v0.1.0 \
+  -ldflags "-X github.com/abdul-hamid-achik/glyphrun/internal/version.Version=$(git describe --tags --always) \
              -X github.com/abdul-hamid-achik/glyphrun/internal/version.Commit=$(git rev-parse --short HEAD) \
              -X github.com/abdul-hamid-achik/glyphrun/internal/version.BuildDate=$(date -u +%Y-%m-%d)" \
   -o /opt/homebrew/bin/glyph ./cmd/glyph
@@ -413,7 +413,7 @@ The agent contract is simple: treat `intent` and `outcomes` as the behavior cont
 
 ## MCP
 
-Run `glyph mcp` to start the stdio MCP server. The MCP tools mirror the CLI surface for docs, doctor checks, spec verification, spec scaffolding, runs, snapshot updates, diffs, agent context lookup, and the catalog (`glyph list`).
+Run `glyph mcp` to start the stdio MCP server. The MCP tools mirror the CLI surface for docs, doctor checks, spec verification, spec scaffolding, runs, snapshot updates, diffs, agent context lookup, affected-spec selection, and artifact pruning.
 
 ## GitHub Integration
 
@@ -481,9 +481,9 @@ Specs override what they need: `target.timeoutMs` wraps the whole PTY session an
 | 2 | Runtime error before outcomes could run |
 | 3 | `target.timeoutMs` expired |
 | 4 | Spec parse, validation, or config load error |
-| 5 | Required alternate-screen mode was not entered |
+| 5 | Unused (reserved) |
 | 6 | Contract hash mismatch (run refused before the PTY started) |
-| 7 | Reserved |
+| 7 | Unsupported terminal (alternate-screen required but not entered) |
 
 ## Project Layout
 

@@ -23,10 +23,11 @@ tasks:
     desc: Build and install glyph globally to /opt/homebrew/bin
     cmds:
       - cmd: |
+          VERSION=$(git describe --tags --always --dirty)
           COMMIT=$(git rev-parse --short HEAD)
           DATE=$(date -u +%Y-%m-%d)
           go build \
-            -ldflags "-X github.com/abdul-hamid-achik/glyphrun/internal/version.Version=v0.1.0-${COMMIT}-dev \
+            -ldflags "-X github.com/abdul-hamid-achik/glyphrun/internal/version.Version=${VERSION}-dev \
                        -X github.com/abdul-hamid-achik/glyphrun/internal/version.Commit=${COMMIT} \
                        -X github.com/abdul-hamid-achik/glyphrun/internal/version.BuildDate=${DATE}" \
             -o /opt/homebrew/bin/glyph {{.MAIN}}
