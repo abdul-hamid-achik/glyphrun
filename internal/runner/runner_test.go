@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 )
@@ -128,6 +130,253 @@ outcomes:
 	}
 	if !strings.Contains(string(raw), "dev") {
 		t.Fatalf("raw PTY log missing fast output: %q", string(raw))
+	}
+}
+
+// TestRunSpecTargetExitDuringScreenWait guards that an already-dead target
+// during wait.screen is classified as target_exited (not timeout), finishes
+// promptly, and still succeeds when the expected text arrives before exit.
+func TestRunSpecTargetExitDuringScreenWait(t *testing.T) {
+	type want struct {
+		status       artifacts.RunStatus
+		errorKind    artifacts.ErrorKind
+		exitCode     int // Glyphrun runner exit code
+		targetCode   int
+		lastPtySub   string
+		maxDuration  time.Duration // 0 = no bound
+		diagnosticIn string
+	}
+	cases := []struct {
+		name    string
+		shell   string
+		waitFor string
+		timeout int
+		redact  string
+		want    want
+	}{
+		{
+			name:    "nonzero early exit",
+			shell:   `printf 'listen tcp 127.0.0.1:0: bind: operation not permitted\n'; exit 3`,
+			waitFor: "ready",
+			timeout: 8000,
+			want: want{
+				status:       artifacts.StatusErrored,
+				errorKind:    artifacts.ErrorKindTargetExited,
+				exitCode:     2,
+				targetCode:   3,
+				lastPtySub:   "bind: operation not permitted",
+				maxDuration:  3 * time.Second,
+				diagnosticIn: "target exited with code 3",
+			},
+		},
+		{
+			name:    "output before exit succeeds",
+			shell:   `printf 'ready\n'; exit 0`,
+			waitFor: "ready",
+			timeout: 2000,
+			want: want{
+				status:   artifacts.StatusPassed,
+				exitCode: 0,
+			},
+		},
+		{
+			name:    "clean early exit still target_exited",
+			shell:   `printf 'unrelated output\n'; exit 0`,
+			waitFor: "ready",
+			timeout: 8000,
+			want: want{
+				status:       artifacts.StatusErrored,
+				errorKind:    artifacts.ErrorKindTargetExited,
+				exitCode:     2,
+				targetCode:   0,
+				lastPtySub:   "unrelated output",
+				maxDuration:  3 * time.Second,
+				diagnosticIn: "target exited with code 0",
+			},
+		},
+		{
+			name:    "real wait timeout",
+			shell:   `printf 'still here\n'; sleep 30`,
+			waitFor: "never_appears",
+			timeout: 400,
+			want: want{
+				status:       artifacts.StatusErrored,
+				errorKind:    artifacts.ErrorKindTimeout,
+				exitCode:     3,
+				diagnosticIn: "timed out",
+			},
+		},
+		{
+			name:    "lastPtyLine is redacted",
+			shell:   `printf 'secret-token-xyz leaked\n'; exit 7`,
+			waitFor: "ready",
+			timeout: 8000,
+			redact:  "secret-token-xyz",
+			want: want{
+				status:       artifacts.StatusErrored,
+				errorKind:    artifacts.ErrorKindTargetExited,
+				exitCode:     2,
+				targetCode:   7,
+				lastPtySub:   "[redacted]",
+				maxDuration:  3 * time.Second,
+				diagnosticIn: "target exited with code 7",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			specPath := filepath.Join(dir, "spec.yml")
+			// Escape shell for YAML double-quoted embedding via JSON string form
+			// in the cmd array — write via a small structured builder instead.
+			redactionBlock := ""
+			if tc.redact != "" {
+				redactionBlock = "redaction:\n  values:\n    - " + tc.redact + "\n"
+			}
+			// Process wait after screen wait only when we expect success, so
+			// target-exit cases don't need a second step.
+			processStep := ""
+			outcome := `  - id: placeholder
+    description: placeholder
+    verify:
+      command:
+        run: "true"
+`
+			if tc.want.status == artifacts.StatusPassed {
+				processStep = `
+  - wait:
+      process:
+        exitCode: 0
+      timeoutMs: 2000`
+				outcome = `  - id: ready_visible
+    description: ready is visible
+    verify:
+      screen:
+        contains: "ready"
+`
+			}
+			body := fmt.Sprintf(`version: 1
+name: target_exit_%s
+intent: screen wait observes target exit classification.
+%s
+target:
+  cmd: ["/bin/sh", "-lc", %q]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      screen:
+        contains: %q
+      timeoutMs: %d%s
+outcomes:
+%s`, strings.ReplaceAll(tc.name, " ", "_"), redactionBlock, tc.shell, tc.waitFor, tc.timeout, processStep, outcome)
+			if err := os.WriteFile(specPath, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			start := time.Now()
+			result, err := RunSpec(context.Background(), Options{
+				SpecPath:     specPath,
+				ArtifactRoot: filepath.Join(dir, "runs"),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			elapsed := time.Since(start)
+			if result.Status != tc.want.status {
+				t.Fatalf("status = %s, errorKind = %s, diagnostic = %q", result.Status, result.ErrorKind, result.Diagnostic)
+			}
+			if result.ErrorKind != tc.want.errorKind {
+				t.Fatalf("errorKind = %q, want %q; diagnostic = %q", result.ErrorKind, tc.want.errorKind, result.Diagnostic)
+			}
+			if result.ExitCode != tc.want.exitCode {
+				t.Fatalf("exitCode = %d, want %d", result.ExitCode, tc.want.exitCode)
+			}
+			if tc.want.diagnosticIn != "" && !strings.Contains(result.Diagnostic, tc.want.diagnosticIn) {
+				t.Fatalf("diagnostic missing %q: %q", tc.want.diagnosticIn, result.Diagnostic)
+			}
+			if tc.want.errorKind == artifacts.ErrorKindTargetExited {
+				if result.TargetExit == nil {
+					t.Fatalf("expected targetExit field, got nil; result = %#v", result)
+				}
+				if result.TargetExit.ExitCode != tc.want.targetCode {
+					t.Fatalf("targetExit.exitCode = %d, want %d", result.TargetExit.ExitCode, tc.want.targetCode)
+				}
+				if tc.want.lastPtySub != "" && !strings.Contains(result.TargetExit.LastPtyLine, tc.want.lastPtySub) {
+					t.Fatalf("lastPtyLine = %q, want substring %q", result.TargetExit.LastPtyLine, tc.want.lastPtySub)
+				}
+				if tc.redact != "" && strings.Contains(result.TargetExit.LastPtyLine, tc.redact) {
+					t.Fatalf("lastPtyLine still contains secret %q: %q", tc.redact, result.TargetExit.LastPtyLine)
+				}
+				if tc.redact != "" && strings.Contains(result.Diagnostic, tc.redact) {
+					t.Fatalf("diagnostic still contains secret %q: %q", tc.redact, result.Diagnostic)
+				}
+				// Next actions must not recommend raising timeouts (timeout errorKind does).
+				for _, na := range result.NextActions {
+					if strings.Contains(na.Reason, "raise timeoutMs") || strings.Contains(na.Reason, "raise timeout") {
+						t.Fatalf("nextActions must not suggest raising timeouts: %+v", result.NextActions)
+					}
+				}
+				if len(result.NextActions) == 0 {
+					t.Fatal("expected nextActions for target_exited")
+				}
+			} else if result.TargetExit != nil {
+				t.Fatalf("targetExit should be nil for non-exit classification, got %+v", result.TargetExit)
+			}
+			if tc.want.maxDuration > 0 && elapsed > tc.want.maxDuration {
+				t.Fatalf("elapsed %s exceeds max %s (should finish promptly on target exit)", elapsed, tc.want.maxDuration)
+			}
+		})
+	}
+}
+
+func TestRunSpecTargetExitScreenWaitCancellation(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "cancel.yml")
+	if err := os.WriteFile(specPath, []byte(`version: 1
+name: cancel_during_wait
+intent: cancellation during screen wait keeps cancellation semantics.
+target:
+  cmd: ["/bin/sh", "-lc", "printf 'still here\n'; sleep 30"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      screen:
+        contains: "never_appears"
+      timeoutMs: 10000
+outcomes:
+  - id: placeholder
+    description: placeholder
+    verify:
+      command:
+        run: "true"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	// Cancel shortly after start so we hit the wait select on ctx.Done.
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		cancel()
+	}()
+	result, err := RunSpec(ctx, Options{
+		SpecPath:     specPath,
+		ArtifactRoot: filepath.Join(dir, "runs"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cancellation surfaces as a step failure / errored run, not target_exited.
+	if result.ErrorKind == artifacts.ErrorKindTargetExited {
+		t.Fatalf("cancellation must not classify as target_exited: %#v", result)
+	}
+	if result.Status == artifacts.StatusPassed {
+		t.Fatalf("expected non-passed status on cancel, got %s", result.Status)
 	}
 }
 

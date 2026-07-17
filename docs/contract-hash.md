@@ -39,6 +39,7 @@ Every errored run — and any failed run with a runner-level cause — carries a
 | --- | --- | --- |
 | `target_start` | the target command could not start | fix `cmd`/`cwd` or ensure the binary exists |
 | `timeout` | the target or a step exceeded its timeout | raise `timeoutMs` |
+| `target_exited` | the target exited while a screen wait was still unsatisfied | inspect `diagnostic` / `raw/pty.raw.log` and fix the target (not `timeoutMs`) |
 | `contract_hash_mismatch` | the stamped hash doesn't match the computed one | re-stamp with `glyph spec verify --stamp` |
 | `unsupported_terminal` | the terminal behavior isn't supported by the active profile | switch `terminal.profile` |
 | `step_failure` | a step errored (non-timeout, non-terminal) | inspect `diagnostics/failure.md` |

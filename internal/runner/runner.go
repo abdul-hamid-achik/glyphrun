@@ -34,6 +34,13 @@ const (
 	DefaultTimeout      = 5 * time.Second
 	DefaultPollInterval = 25 * time.Millisecond
 	CleanupTimeout      = 2 * time.Second
+	// outputDrainTimeout bounds how long waitFor waits for the PTY reader to
+	// finish after the target process exits, so final bytes reach the emulator
+	// before a screen condition is re-checked or a target_exited error is raised.
+	outputDrainTimeout = 500 * time.Millisecond
+	// lastPtyLineMax is the max rune length of lastPtyLine in target-exit
+	// diagnostics. Kept short so the JSON envelope stays agent-friendly.
+	lastPtyLineMax = 200
 )
 
 const (
@@ -75,6 +82,23 @@ func (e unsupportedTerminalError) Error() string {
 
 func (e unsupportedTerminalError) Unwrap() error {
 	return e.Err
+}
+
+// targetExitedError is returned when a screen wait ends because the target
+// process exited while the wait condition was still unsatisfied. Distinct from
+// runTimeoutError so agents fix the target rather than raising timeoutMs.
+type targetExitedError struct {
+	ExitCode    int
+	Condition   string
+	LastPtyLine string
+}
+
+func (e targetExitedError) Error() string {
+	msg := fmt.Sprintf("target exited with code %d while waiting: %s", e.ExitCode, e.Condition)
+	if e.LastPtyLine != "" {
+		msg += fmt.Sprintf(" (lastPtyLine: %q)", e.LastPtyLine)
+	}
+	return msg
 }
 
 type Options struct {
@@ -153,14 +177,15 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		secretValues = values
 	}
 
-	writer := artifacts.NewWriter(runDir, buildRedactor(runtime.Config.Redaction, parse.Spec.Redaction, secretValues))
+	redactor := buildRedactor(runtime.Config.Redaction, parse.Spec.Redaction, secretValues)
+	writer := artifacts.NewWriter(runDir, redactor)
 	if err := writer.EnsureDirs(); err != nil {
 		return artifacts.RunResult{}, err
 	}
 	_ = writer.AppendEvent(event("run.started", resolved.Name, ""))
 	_ = writer.WriteResolvedSpec(resolved)
 
-	state := newRunState(resolved, runtime, writer, opts.UpdateSnapshots, opts.Listener)
+	state := newRunState(resolved, runtime, writer, redactor, opts.UpdateSnapshots, opts.Listener)
 	state.capturePolicy = resolveCapturePolicy(runtime.Config.Artifacts, parse.Spec.Artifacts, artifacts.StatusPassed)
 	if opts.Listener != nil {
 		opts.Listener.OnRunStart(resolved, runID, runDir)
@@ -212,6 +237,15 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 					kind = artifacts.ErrorKindUnsupportedTerminal
 				}
 				return state.finish(started, artifacts.StatusErrored, nil, message, kind, code), nil
+			}
+			var targetExit targetExitedError
+			if errors.As(err, &targetExit) {
+				message := fmt.Sprintf("step %d (%s) failed: %v", idx+1, stepKind(step), err)
+				state.pendingTargetExit = &artifacts.TargetExit{
+					ExitCode:    targetExit.ExitCode,
+					LastPtyLine: targetExit.LastPtyLine,
+				}
+				return state.finish(started, artifacts.StatusErrored, nil, message, artifacts.ErrorKindTargetExited, exitErrored), nil
 			}
 			result := state.evaluateOutcomes(ctx)
 			return state.finish(started, artifacts.StatusFailed, result, fmt.Sprintf("step %d failed: %v", idx+1, err), artifacts.ErrorKindStepFailure), nil
@@ -330,6 +364,7 @@ type runState struct {
 	spec            spec.Spec
 	runtime         config.Runtime
 	writer          *artifacts.Writer
+	redactor        artifacts.Redactor
 	emulator        terminal.Emulator
 	session         *ptyrunner.Session
 	updateSnapshots bool
@@ -357,6 +392,11 @@ type runState struct {
 	// run loop so finish() can include them in RunResult.Steps.
 	stepResults []artifacts.StepResult
 
+	// pendingTargetExit is set when a step fails with targetExitedError so
+	// finish() can attach the structured TargetExit field to RunResult
+	// before writing run.json (CLI stdout uses the same envelope).
+	pendingTargetExit *artifacts.TargetExit
+
 	// rawPTYTruncated is set the first time a PTY output chunk is
 	// dropped because rawPTY has already hit MaxRawLogBytes. finish()
 	// appends a marker to the artifact and emits a pty.truncated event
@@ -372,11 +412,12 @@ type runState struct {
 	monitorBin string // monitor binary path for `monitor:` steps (default "monitor")
 }
 
-func newRunState(s spec.Spec, rt config.Runtime, writer *artifacts.Writer, updateSnapshots bool, listener ProgressListener) *runState {
+func newRunState(s spec.Spec, rt config.Runtime, writer *artifacts.Writer, redactor artifacts.Redactor, updateSnapshots bool, listener ProgressListener) *runState {
 	return &runState{
 		spec:            s,
 		runtime:         rt,
 		writer:          writer,
+		redactor:        redactor,
 		emulator:        gote.New(s.Terminal.Cols, s.Terminal.Rows),
 		updateSnapshots: updateSnapshots,
 		listener:        listener,
@@ -976,6 +1017,10 @@ func (s *runState) waitFor(ctx context.Context, wait spec.WaitStep) error {
 	defer deadline.Stop()
 	tick := time.NewTicker(DefaultPollInterval)
 	defer tick.Stop()
+	// Only screen waits observe early target exit. wait.Idle can still
+	// become true after the process exits (quiet period elapses), and
+	// wait.Process models exit as the condition itself.
+	observeExit := wait.Screen != nil
 	for {
 		if err := s.terminalError(); err != nil {
 			return err
@@ -984,14 +1029,78 @@ func (s *runState) waitFor(ctx context.Context, wait spec.WaitStep) error {
 		if ok {
 			return nil
 		}
+		var exitCh <-chan ptyrunner.ExitState
+		if observeExit && s.session != nil {
+			if state := s.session.ExitState(); state.Exited {
+				return s.finishScreenWaitAfterExit(wait, message, state)
+			}
+			exitCh = s.session.WaitCh()
+		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
 			return runTimeoutError{Scope: "wait step", Timeout: timeout, Message: fmt.Sprintf("timed out after %s: %s", timeout, message)}
+		case <-exitCh:
+			// Re-read ExitState after the signal; a closed WaitCh can yield a
+			// zero value on subsequent selects, but ExitState is authoritative.
+			state := s.session.ExitState()
+			if !state.Exited {
+				// Spurious wake / already-closed channel before exit recorded.
+				continue
+			}
+			return s.finishScreenWaitAfterExit(wait, message, state)
 		case <-tick.C:
 		}
 	}
+}
+
+// finishScreenWaitAfterExit drains final PTY output, re-checks the screen
+// condition once, and either succeeds or returns a typed target-exit error.
+// Order matters: short-lived targets may exit after writing the expected text
+// while readLoop still has buffered bytes to feed into the emulator.
+func (s *runState) finishScreenWaitAfterExit(wait spec.WaitStep, unsatisfied string, state ptyrunner.ExitState) error {
+	if s.session != nil {
+		_ = s.session.WaitForOutput(outputDrainTimeout)
+	}
+	if err := s.terminalError(); err != nil {
+		return err
+	}
+	ok, message := s.checkWait(wait)
+	if ok {
+		return nil
+	}
+	if message != "" {
+		unsatisfied = message
+	}
+	return targetExitedError{
+		ExitCode:    state.ExitCode,
+		Condition:   unsatisfied,
+		LastPtyLine: s.lastPtyLineSummary(),
+	}
+}
+
+// lastPtyLineSummary returns a bounded, redacted last non-empty screen line.
+// Screen text is used (not raw PTY) so the summary is control-sequence-safe.
+// Redaction runs here because the in-memory CLI result does not pass through
+// the artifact writer's redactor automatically.
+func (s *runState) lastPtyLineSummary() string {
+	text := s.screenText()
+	var last string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			last = line
+		}
+	}
+	if last == "" {
+		return ""
+	}
+	runes := []rune(last)
+	if len(runes) > lastPtyLineMax {
+		last = string(runes[:lastPtyLineMax]) + "…"
+	}
+	return s.redactor.Text(last)
 }
 
 func (s *runState) checkWait(wait spec.WaitStep) (bool, string) {
@@ -1944,6 +2053,9 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	}
 	result.NextActions = artifacts.NextActionsFor(errorKind, s.spec.Name, s.spec.ContractHash, "")
 	result.Steps = s.stepResults
+	if s.pendingTargetExit != nil {
+		result.TargetExit = s.pendingTargetExit
+	}
 	s.applyProcmonArtifacts(&result)
 	// Use the policy the runner resolved at start (project config +
 	// spec override). It's in s.capturePolicy so the finish() function
@@ -2384,6 +2496,12 @@ func exitCodeForError(err error) int {
 	var terminalErr unsupportedTerminalError
 	if errors.As(err, &terminalErr) {
 		return exitUnsupportedTerminal
+	}
+	var targetExit targetExitedError
+	if errors.As(err, &targetExit) {
+		// Glyphrun retains runner exit code 2; the target's code lives on
+		// RunResult.TargetExit, not on the CLI exit code.
+		return exitErrored
 	}
 	return exitErrored
 }

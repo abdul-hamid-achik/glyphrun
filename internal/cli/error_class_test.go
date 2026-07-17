@@ -65,6 +65,77 @@ outcomes:
 	}
 }
 
+// TestRunErroredTargetExitedErrorKind guards that a target which prints an
+// error and exits while wait.screen is still unsatisfied is classified as
+// target_exited (exit 2), not timeout, with targetExit + lastPtyLine in JSON.
+func TestRunErroredTargetExitedErrorKind(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "early_exit.yml")
+	if err := os.WriteFile(specPath, []byte(`version: 1
+name: early_exit
+intent: target dies before screen ready.
+target:
+  cmd: ["/bin/sh", "-lc", "printf 'listen tcp 127.0.0.1:0: bind: operation not permitted\\n'; exit 3"]
+terminal:
+  cols: 80
+  rows: 24
+  profile: xterm-256color
+steps:
+  - wait:
+      screen:
+        contains: "ready"
+      timeoutMs: 8000
+outcomes:
+  - id: ok
+    description: placeholder
+    verify:
+      command:
+        run: "true"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := &globalOptions{format: "json", artifactRoot: filepath.Join(dir, "runs")}
+	cmd := newRootCommand(opts)
+	var stdout bytes.Buffer
+	cmd.SetOut(&stdout)
+	cmd.SetArgs([]string{"run", specPath, "--format", "json"})
+	err := cmd.Execute()
+	ee, ok := err.(exitError)
+	if !ok {
+		t.Fatalf("expected exitError, got %T %v", err, err)
+	}
+	if ee.code != 2 {
+		t.Fatalf("exit code = %d, want 2; stdout = %s", ee.code, stdout.String())
+	}
+	out := stdout.String()
+	if !bytes.Contains(stdout.Bytes(), []byte(`"errorKind": "target_exited"`)) {
+		t.Errorf("stdout missing errorKind=target_exited: %s", out)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"targetExit"`)) {
+		t.Errorf("stdout missing targetExit field: %s", out)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"exitCode": 3`)) {
+		// targetExit.exitCode is 3; Glyphrun's top-level exitCode is 2 — both appear.
+		// Prefer a more specific check on targetExit by scanning for lastPtyLine nearby.
+		if !bytes.Contains(stdout.Bytes(), []byte(`"lastPtyLine"`)) {
+			t.Errorf("stdout missing lastPtyLine / target exit code: %s", out)
+		}
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"lastPtyLine"`)) {
+		t.Errorf("stdout missing lastPtyLine: %s", out)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`bind: operation not permitted`)) {
+		t.Errorf("stdout should include bind error in diagnostic/lastPtyLine: %s", out)
+	}
+	if bytes.Contains(stdout.Bytes(), []byte(`raise timeoutMs`)) {
+		t.Errorf("nextActions must not suggest raising timeoutMs for target_exited: %s", out)
+	}
+	if !bytes.Contains(stdout.Bytes(), []byte(`"nextActions"`)) {
+		t.Errorf("stdout missing nextActions: %s", out)
+	}
+}
+
 // TestRunFailedStepFailureErrorKind guards that a failed run caused by a
 // step error (non-timeout, non-unsupported-terminal) carries
 // errorKind=step_failure.

@@ -57,6 +57,7 @@
       "enum": [
         "target_start",
         "timeout",
+        "target_exited",
         "contract_hash_mismatch",
         "unsupported_terminal",
         "step_failure",
@@ -66,6 +67,23 @@
     },
     "diagnostic": {
       "type": "string"
+    },
+    "targetExit": {
+      "type": "object",
+      "required": [
+        "exitCode"
+      ],
+      "properties": {
+        "exitCode": {
+          "type": "integer",
+          "description": "Target process exit code (not Glyphrun's CLI exit code)."
+        },
+        "lastPtyLine": {
+          "type": "string",
+          "description": "Bounded, redacted last non-empty PTY/screen line for diagnosis."
+        }
+      },
+      "additionalProperties": false
     },
     "startedAt": {
       "type": "string",

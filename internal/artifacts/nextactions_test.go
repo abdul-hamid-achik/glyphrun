@@ -6,9 +6,9 @@ func TestNextActionsForEveryErrorKind(t *testing.T) {
 	// Every declared errorKind maps to exactly one actionable next step that is
 	// NOT safe to auto-run (even re-stamping changes files).
 	kinds := []ErrorKind{
-		ErrorKindTargetStart, ErrorKindTimeout, ErrorKindContractHashMismatch,
-		ErrorKindUnsupportedTerminal, ErrorKindStepFailure, ErrorKindPrecondition,
-		ErrorKindSpecParse,
+		ErrorKindTargetStart, ErrorKindTimeout, ErrorKindTargetExited,
+		ErrorKindContractHashMismatch, ErrorKindUnsupportedTerminal,
+		ErrorKindStepFailure, ErrorKindPrecondition, ErrorKindSpecParse,
 	}
 	for _, k := range kinds {
 		acts := NextActionsFor(k, "spec_x", "", "")
@@ -32,6 +32,23 @@ func TestNextActionsForContractHashMismatchSuggestsRestamp(t *testing.T) {
 	}
 	if !contains(acts[0].Command, "--update-snapshots") {
 		t.Errorf("contract hash mismatch should suggest re-stamping, got %q", acts[0].Command)
+	}
+}
+
+func TestNextActionsForTargetExitedDoesNotSuggestTimeout(t *testing.T) {
+	acts := NextActionsFor(ErrorKindTargetExited, "spec_x", "", "")
+	if len(acts) != 1 {
+		t.Fatalf("expected one action, got %+v", acts)
+	}
+	// Must not recommend increasing a wait/target timeout (timeout errorKind does).
+	if contains(acts[0].Reason, "raise timeoutMs") || contains(acts[0].Reason, "raise timeout") {
+		t.Errorf("target_exited must not recommend raising timeouts, got %q", acts[0].Reason)
+	}
+	if !contains(acts[0].Reason, "inspect") {
+		t.Errorf("target_exited should recommend inspecting the target diagnostics, got %q", acts[0].Reason)
+	}
+	if !contains(acts[0].Reason, "fix the target") {
+		t.Errorf("target_exited should recommend fixing the target, got %q", acts[0].Reason)
 	}
 }
 

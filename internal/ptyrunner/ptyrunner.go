@@ -101,6 +101,21 @@ func (s *Session) WaitCh() <-chan ExitState {
 	return s.done
 }
 
+// OutputDoneCh is closed when the PTY read loop has finished (EOF or error).
+// After WaitCh signals process exit, callers should wait on this (or use
+// WaitForOutput) so final buffered PTY bytes reach the emulator before the
+// session is treated as fully drained.
+func (s *Session) OutputDoneCh() <-chan struct{} {
+	return s.outputDone
+}
+
+// WaitForOutput waits until the PTY reader finishes or timeout elapses.
+// Returns true if output drained within the timeout. Call this after the
+// process has exited so short-lived targets do not lose trailing bytes.
+func (s *Session) WaitForOutput(timeout time.Duration) bool {
+	return s.waitForOutput(timeout)
+}
+
 // PID returns the target process's PID, or 0 if the backend cannot expose it
 // (Windows ConPTY). Used by the opt-in `--monitor` process-telemetry capture.
 func (s *Session) PID() int {
