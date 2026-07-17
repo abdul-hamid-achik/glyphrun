@@ -20,6 +20,12 @@ func RenderRunMarkdown(result RunResult) string {
 	if result.Diagnostic != "" {
 		fmt.Fprintf(&b, "- diagnostic: %s\n", result.Diagnostic)
 	}
+	if result.TargetExit != nil {
+		fmt.Fprintf(&b, "- target exit code: %d\n", result.TargetExit.ExitCode)
+		if result.TargetExit.LastPtyLine != "" {
+			fmt.Fprintf(&b, "- lastPtyLine: %q\n", result.TargetExit.LastPtyLine)
+		}
+	}
 	if len(result.NextActions) > 0 {
 		b.WriteString("\n## Next actions\n\n")
 		for _, na := range result.NextActions {
@@ -139,6 +145,12 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string, recen
 	}
 	if result.Diagnostic != "" {
 		fmt.Fprintf(&b, "- diagnostic: %s\n", result.Diagnostic)
+	}
+	if result.TargetExit != nil {
+		fmt.Fprintf(&b, "- target exit code: %d\n", result.TargetExit.ExitCode)
+		if result.TargetExit.LastPtyLine != "" {
+			fmt.Fprintf(&b, "- lastPtyLine: %q\n", result.TargetExit.LastPtyLine)
+		}
 	}
 	fmt.Fprintf(&b, "- target: `%s`\n", shellJoin(result.Target.Cmd))
 	fmt.Fprintf(&b, "- command run: `glyph run <spec> --format json`\n")

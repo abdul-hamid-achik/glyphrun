@@ -18,12 +18,22 @@ type ErrorKind string
 const (
 	ErrorKindTargetStart          ErrorKind = "target_start"
 	ErrorKindTimeout              ErrorKind = "timeout"
+	ErrorKindTargetExited         ErrorKind = "target_exited"
 	ErrorKindContractHashMismatch ErrorKind = "contract_hash_mismatch"
 	ErrorKindUnsupportedTerminal  ErrorKind = "unsupported_terminal"
 	ErrorKindStepFailure          ErrorKind = "step_failure"
 	ErrorKindPrecondition         ErrorKind = "precondition"
 	ErrorKindSpecParse            ErrorKind = "spec_parse"
 )
+
+// TargetExit captures structured details when a screen wait ends because the
+// target process exited before the condition was satisfied. ExitCode is the
+// target's process exit code (not Glyphrun's CLI exit code). LastPtyLine is a
+// bounded, control-sequence-safe, redacted summary of final PTY output.
+type TargetExit struct {
+	ExitCode    int    `json:"exitCode" yaml:"exitCode"`
+	LastPtyLine string `json:"lastPtyLine,omitempty" yaml:"lastPtyLine,omitempty"`
+}
 
 type OutcomeStatus string
 
@@ -55,8 +65,12 @@ type RunResult struct {
 	Manifest       []ArtifactManifestEntry  `json:"manifest,omitempty" yaml:"manifest,omitempty"`
 	RunDir         string                   `json:"runDir" yaml:"runDir"`
 	ExitCode       int                      `json:"exitCode" yaml:"exitCode"`
-	NextActions    []NextAction             `json:"nextActions,omitempty" yaml:"nextActions,omitempty"`
-	Steps          []StepResult             `json:"steps,omitempty" yaml:"steps,omitempty"`
+	// TargetExit is set when errorKind is target_exited. It preserves the
+	// target process exit code separately from ExitCode (Glyphrun's runner
+	// exit code, typically 2 for this class of failure).
+	TargetExit  *TargetExit  `json:"targetExit,omitempty" yaml:"targetExit,omitempty"`
+	NextActions []NextAction `json:"nextActions,omitempty" yaml:"nextActions,omitempty"`
+	Steps       []StepResult `json:"steps,omitempty" yaml:"steps,omitempty"`
 }
 
 // StepResult is the per-step execution record (SPEC §7.3 structured StepResult[]).

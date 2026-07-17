@@ -28,6 +28,9 @@ func NextActionsFor(kind ErrorKind, specName, contractHash, expectedHash string)
 	case ErrorKindTimeout:
 		return []NextAction{{Command: rerun,
 			Reason: "the target or a step exceeded its timeout — raise timeoutMs in the spec/step, then rerun"}}
+	case ErrorKindTargetExited:
+		return []NextAction{{Command: rerun,
+			Reason: "the target exited while a screen wait was still unsatisfied — inspect the diagnostic and raw/pty.raw.log, fix the target startup/environment, then rerun"}}
 	case ErrorKindContractHashMismatch:
 		return []NextAction{{Command: "glyph run " + specName + " --update-snapshots",
 			Reason: "the contract hash changed after an intentional snapshot change — re-stamp it (writes files; not auto-safe)"}}
