@@ -493,3 +493,69 @@ func TestSimpleEmulatorECHCancelsPendingWrap(t *testing.T) {
 		}
 	}
 }
+
+// TestSimpleEmulatorCursorBackwardTabulation guards CBT (CSI Z): Bubble Tea
+// v2's cell-diff renderer moves backward to an 8-column tab stop before
+// rewriting a styled segment. Ignoring CBT left the cursor in place, so the
+// segment landed to the right of its true cells and tore an otherwise-static
+// row (observed as "Recovery rery rt review" in downstream terminal specs).
+func TestSimpleEmulatorCursorBackwardTabulation(t *testing.T) {
+	em := NewEmulator(80, 3)
+	if _, err := em.Feed([]byte("\x1b[2J\x1b[H")); err != nil {
+		t.Fatal(err)
+	}
+	// Column math is 0-based internally: after CUP to column 47 (1-based),
+	// one CBT lands on column 40 (0-based), the previous 8-column stop.
+	if _, err := em.Feed([]byte("\x1b[1;47H\x1b[Z")); err != nil {
+		t.Fatal(err)
+	}
+	if got := em.Screen().Cursor().X; got != 40 {
+		t.Fatalf("CBT cursor column = %d, want 40", got)
+	}
+	// A count moves that many stops; clamping stops at column zero.
+	if _, err := em.Feed([]byte("\x1b[1;47H\x1b[3Z")); err != nil {
+		t.Fatal(err)
+	}
+	if got := em.Screen().Cursor().X; got != 24 {
+		t.Fatalf("CBT×3 cursor column = %d, want 24", got)
+	}
+	if _, err := em.Feed([]byte("\x1b[1;3H\x1b[9Z")); err != nil {
+		t.Fatal(err)
+	}
+	if got := em.Screen().Cursor().X; got != 0 {
+		t.Fatalf("CBT overshoot cursor column = %d, want 0", got)
+	}
+	// CHT is the forward counterpart.
+	if _, err := em.Feed([]byte("\x1b[1;1H\x1b[2I")); err != nil {
+		t.Fatal(err)
+	}
+	if got := em.Screen().Cursor().X; got != 16 {
+		t.Fatalf("CHT×2 cursor column = %d, want 16", got)
+	}
+}
+
+// TestSimpleEmulatorCBTSegmentRewriteReplay replays the downstream failure
+// byte-for-byte: a row is written, the cursor ends past it, LF LF preserves
+// the column, CBT moves back to the tab stop, and a partially-underlined
+// segment rewrite must overlay the exact cells it targets.
+func TestSimpleEmulatorCBTSegmentRewriteReplay(t *testing.T) {
+	em := NewEmulator(80, 24)
+	feed := "\x1b[2J" +
+		"\x1b[3;19HRecovery receipt review" + // row write: title spans 0-based cols 18-40
+		"\x1b[1;20H" + // cursor parked on the filter input row
+		"filter" + // ends at 0-based column 25
+		"\n\n" + // LF preserves the column; lands on row 3 (0-based 2), column 25
+		"\x1b[Z" + // CBT → previous 8-column stop, column 24
+		"\x1b[4mry \x1b[24mr" // segment rewrite: title chars 6-9 ("ry r") live at cols 24-27
+	if _, err := em.Feed([]byte(feed)); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(em.Screen().Text(), "\n")
+	row := ""
+	if len(lines) > 2 {
+		row = lines[2]
+	}
+	if !strings.Contains(row, "Recovery receipt review") {
+		t.Fatalf("segment rewrite tore the row: %q", row)
+	}
+}

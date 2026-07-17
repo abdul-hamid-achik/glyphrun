@@ -326,6 +326,31 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		e.cursor.X = clamp(csiNumber(strings.TrimSuffix(body, "G"), 1)-1, 0, e.cols-1)
 		return
 	}
+	if strings.HasSuffix(body, "Z") {
+		// CBT — cursor backward tabulation: move to the n-th previous 8-column
+		// tab stop. Bubble Tea v2's cell-diff renderer emits this as a cheap
+		// backward motion; ignoring it makes subsequent segment writes land to
+		// the right of their true cells and visibly tears otherwise-static rows.
+		e.pendingWrap = false
+		n := csiNumber(strings.TrimSuffix(body, "Z"), 1)
+		x := e.cursor.X
+		for i := 0; i < n && x > 0; i++ {
+			x = ((x - 1) / 8) * 8
+		}
+		e.cursor.X = clamp(x, 0, e.cols-1)
+		return
+	}
+	if strings.HasSuffix(body, "I") {
+		// CHT — cursor forward tabulation: the forward counterpart of CBT.
+		e.pendingWrap = false
+		n := csiNumber(strings.TrimSuffix(body, "I"), 1)
+		x := e.cursor.X
+		for i := 0; i < n; i++ {
+			x = ((x / 8) + 1) * 8
+		}
+		e.cursor.X = clamp(x, 0, e.cols-1)
+		return
+	}
 	if strings.HasSuffix(body, "d") {
 		// VPA — line position absolute (1-based row), column unchanged.
 		// Bubble Tea's renderer uses this to jump between repaint regions;
