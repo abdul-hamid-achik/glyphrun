@@ -14,6 +14,14 @@ outcomes:
     verify:
       screen:
         contains: "Welcome"
+  - id: ready_exact
+    verify:
+      screen:
+        equals: "ready\n"
+  - id: ready_pattern
+    verify:
+      screen:
+        matches: "^Welcome \\d+"
   - id: clean_exit
     verify:
       process:
@@ -36,7 +44,7 @@ outcomes:
         run: "test -x ./bin/app"
 ```
 
-Screen verifiers support `contains`, `notContains`, and `regex`. Cell verifiers can check characters and style attributes such as foreground color, background color, bold, dim, italic, underline, and reverse.
+Screen and region verifiers accept exactly one of: `equals`, `contains`, `notContains`, `matches` (preferred regex form), or legacy `regex` (alias of `matches`). Cell verifiers can check characters and style attributes such as foreground color, background color, bold, dim, italic, underline, and reverse.
 
 Color values use a canonical form so `style: { fg, bg }` assertions are stable across SGR encodings:
 

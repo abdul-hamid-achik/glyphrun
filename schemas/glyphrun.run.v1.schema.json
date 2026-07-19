@@ -19,6 +19,10 @@
     "exitCode"
   ],
   "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "urn:glyphrun.dev:run:v1"
+    },
     "schemaVersion": {
       "const": 1
     },
@@ -29,6 +33,9 @@
     "specName": {
       "type": "string",
       "minLength": 1
+    },
+    "specPath": {
+      "type": "string"
     },
     "intent": {
       "type": "string"
@@ -354,6 +361,9 @@
         "index": {
           "type": "integer",
           "minimum": 1
+        },
+        "id": {
+          "type": "string"
         },
         "kind": {
           "type": "string",

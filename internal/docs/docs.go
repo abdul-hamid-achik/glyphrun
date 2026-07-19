@@ -29,7 +29,7 @@ Good specs assert user-visible behavior. Avoid coupling outcomes to implementati
 
 Create reusable terminal step snippets with ` + "`glyph spec scaffold --kind action`" + `. Import them from specs with ` + "`imports`" + ` and call them with ` + "`use`" + `.
 
-Use ` + "`when`" + ` on a step to run it only when a verifier is currently true. This is useful for optional TUI prompts, warnings, login walls, and other state that may or may not appear.
+Use ` + "`when`" + ` on a step to run it only when a verifier is currently true. This is useful for optional TUI prompts, warnings, login walls, and other state that may or may not appear. ` + "`when`" + ` accepts a full verifier object or a shorthand string such as ` + "`when: 'screen.contains:\"Login\"'`" + `. Optional ` + "`id:`" + ` labels make failures and ` + "`StepResult`" + ` readable. Set ` + "`mode: debug`" + ` on a spec to force verbose capture (frames, raw log, snapshots, agent context).
 
 Use trusted ` + "`command`" + ` verifiers for Bash checks such as ` + "`test -x ./bin/app`" + `.
 `,
@@ -39,13 +39,13 @@ Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + 
 
 ` + "`mouse: { x, y, button?, action? }`" + ` sends a mouse event at the 0-based cell (button: left/middle/right/wheelUp/wheelDown; action: click/press/release/move). The runner encodes it as SGR (1006) or legacy X10 depending on the mode the target enabled.
 
-Every step can include a ` + "`when`" + ` guard that uses the same verifier shape as an outcome. Prefer ` + "`wait`" + ` steps that synchronize on visible screen or process state. Use ` + "`snapshot`" + ` to capture named terminal states in the artifact pack.
+Every step can include a ` + "`when`" + ` guard (full verifier or shorthand string). Prefer ` + "`wait`" + ` steps that synchronize on visible screen or process state. Use ` + "`snapshot`" + ` to capture named terminal states in the artifact pack.
 
 ` + "`paste`" + ` sends bracketed paste delimiters only after the target enables terminal mode ` + "`?2004`" + `; otherwise it writes literal text.
 `,
 	"verifiers": `# Verifiers
 
-Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, ` + "`link`" + `, trusted ` + "`command`" + `, and the process-telemetry ` + "`metrics`" + ` verifier (see ` + "`process-telemetry`" + `).
+Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, ` + "`link`" + `, trusted ` + "`command`" + `, and the process-telemetry ` + "`metrics`" + ` verifier (see ` + "`process-telemetry`" + `). Screen/region matchers: ` + "`equals`" + `, ` + "`contains`" + `, ` + "`notContains`" + `, ` + "`matches`" + ` (preferred), or legacy ` + "`regex`" + `.
 
 Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes (fg, bg, bold, dim, italic, underline, reverse). Process verifiers can check exit state and exit code.
 
@@ -88,7 +88,7 @@ Do not edit ` + "`intent`" + ` or ` + "`outcomes`" + ` without surfacing the con
 `,
 	"mcp": `# MCP
 
-Run ` + "`glyph mcp`" + ` to start the stdio MCP server. The current server exposes tools for explain, docs, doctor, spec verification, spec scaffolding, runs, snapshot updates, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), step repair (` + "`glyph_repair`" + `), affected-spec selection (` + "`glyph_affected_specs`" + `), and artifact pruning (` + "`glyph_clean`" + `).
+Run ` + "`glyph mcp`" + ` to start the stdio MCP server. The current server exposes tools for explain, docs, doctor (full check matrix), list, spec verification, spec scaffolding, runs, snapshot updates, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), step repair with optional ` + "`verify`" + ` (` + "`glyph_repair`" + `), affected-spec selection (` + "`glyph_affected_specs`" + `), and artifact pruning (` + "`glyph_clean`" + `).
 `,
 	"configuration": `# Configuration
 
@@ -350,7 +350,7 @@ Error classification — every errored run (and failed runs with a runner-level 
 - ` + "`precondition`" + ` — precondition command or secret resolution failed
 - ` + "`spec_parse`" + ` — spec failed schema validation or parsing
 
-On exit 4/6 the structured JSON envelope is printed to stdout (not only stderr) so consumers decoding stdout never see an empty payload. For ` + "`contract_hash_mismatch`" + ` the envelope also includes ` + "`contractHash`" + ` (computed) and ` + "`expectedHash`" + ` (stamped). Every errored run also carries an additive ` + "`nextActions`" + ` array — one actionable next step per ` + "`errorKind`" + ` (command + reason + ` + "`safeToAutoRun`" + `: always false). Non-errored runs omit it.
+On exit 4/6 the structured JSON envelope is printed to stdout (not only stderr) so consumers decoding stdout never see an empty payload. For ` + "`contract_hash_mismatch`" + ` the envelope also includes ` + "`contractHash`" + ` (computed) and ` + "`expectedHash`" + ` (stamped). Every errored run also carries an additive ` + "`nextActions`" + ` array — ordered actionable commands per ` + "`errorKind`" + ` (path-aware when possible; ` + "`safeToAutoRun`" + ` always false). Contract-hash mismatches suggest ` + "`glyph spec verify --stamp`" + `, not snapshot updates. Non-errored runs omit it. Run results embed ` + "`$schema: urn:glyphrun.dev:run:v1`" + `.
 `,
 	"retention": `# Retention and ` + "`glyph clean`" + `
 
@@ -401,27 +401,18 @@ $ glyph clean --all --artifact-root /tmp/glyph
 `,
 	"rerun-failed": `# Rerunning Failed Specs
 
-` + "`glyph run`" + ` writes the names of failed and errored specs to ` + "`.glyphrun/runs/.last-failed.txt`" + ` at the artifact root. The list is sorted alphabetically and deduped, so a fresh failing run appends names and a passing run drops them.
+` + "`glyph run`" + ` writes a path-aware failure index to ` + "`.glyphrun/runs/.last-failed.json`" + ` (plus a legacy name list in ` + "`.last-failed.txt`" + `) at the artifact root. Each entry records ` + "`name`" + ` and the filesystem ` + "`path`" + ` of the failing spec. Passing runs drop their entry automatically.
 
-Re-run the failures with the ` + "`--rerun-failed`" + ` flag:
+Re-execute only the failures:
 
 ` + "```" + `
-$ glyph run <spec> --rerun-failed --format md
-# Glyphrun Rerun Failed
-# 3 spec(s) failed in the last run:
-#   - admin_dashboard
-#   - login_wall
-#   - tenant_switch
-#
-# Re-run each:
-#   glyph run specs/admin_dashboard.yml
-#   glyph run specs/login_wall.yml
-#   glyph run specs/tenant_switch.yml
+$ glyph run unused.yml --rerun-failed --format json
+# re-runs every path recorded in .last-failed.json
 ` + "```" + `
 
-The flag is interactive by design — ` + "`--rerun-failed`" + ` does not resolve the spec paths because the runner doesn't keep a name-to-path index. The output is a copy-pasteable list of ` + "`glyph run`" + ` invocations, scoped to your spec layout.
+When the index only has names (legacy text file, no paths), Glyphrun lists them and exits 0 so you can re-run those specs once with real paths and rebuild a path-aware index.
 
-` + "`.last-failed.txt`" + ` is committed to the artifact root, not the project root. Add ` + "`.glyphrun/`" + ` to ` + "`.gitignore`" + ` and the list never leaves the machine.
+Add ` + "`.glyphrun/`" + ` to ` + "`.gitignore`" + ` so the index never leaves the machine.
 `,
 	"capture-policy": `# Capture Policy
 

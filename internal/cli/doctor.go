@@ -2,13 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	goruntime "runtime"
 
-	"github.com/abdul-hamid-achik/glyphrun/internal/config"
-	"github.com/abdul-hamid-achik/glyphrun/internal/terminal/adapters/gote"
-	"github.com/creack/pty"
+	"github.com/abdul-hamid-achik/glyphrun/internal/doctor"
 	"github.com/spf13/cobra"
 )
 
@@ -21,63 +16,19 @@ func newDoctorCommand(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
-			checks := []map[string]any{}
-			add := func(name string, ok bool, detail string) {
-				checks = append(checks, map[string]any{"name": name, "ok": ok, "detail": detail})
+			result := doctor.Run(doctor.Options{
+				ConfigPath:   opts.configPath,
+				ArtifactRoot: opts.artifactRoot,
+				Environment:  opts.environment,
+			})
+			value := map[string]any{
+				"schemaVersion": result.SchemaVersion,
+				"ok":            result.OK,
+				"checks":        result.Checks,
 			}
-			add("go version", true, goruntime.Version())
-			add("platform", goruntime.GOOS == "darwin" || goruntime.GOOS == "linux", goruntime.GOOS+"/"+goruntime.GOARCH)
-			ptmx, tty, ptyErr := pty.Open()
-			if ptyErr == nil {
-				_ = ptmx.Close()
-				_ = tty.Close()
-			}
-			add("PTY availability", ptyErr == nil, detailOrOK(ptyErr))
-			cfgPath, _ := config.FindConfig(".")
-			if cfgPath == "" {
-				add("config", true, "not found; using defaults")
-			} else {
-				add("config", true, cfgPath)
-			}
-			rt, err := config.LoadRuntime(".", opts.configPath, opts.environment)
-			if err != nil {
-				add("config valid", false, err.Error())
-			} else {
-				configDetail := rt.ConfigPath
-				if configDetail == "" {
-					configDetail = "defaults"
-				}
-				add("config valid", true, configDetail)
-				root := opts.artifactRoot
-				if root == "" {
-					root = rt.Config.ArtifactRoot
-				}
-				if !filepath.IsAbs(root) {
-					root = filepath.Join(rt.ProjectRoot, root)
-				}
-				err := os.MkdirAll(root, 0o755)
-				add("artifact root writable", err == nil, root)
-			}
-			_, taskErr := os.Stat("Taskfile.yml")
-			add("Taskfile", taskErr == nil, "Taskfile.yml")
-			_, schemaErr := os.Stat("schemas/glyphrun.spec.v1.schema.json")
-			if schemaErr == nil {
-				add("schema files", true, "schemas/glyphrun.spec.v1.schema.json")
-			} else {
-				add("schema files", true, "embedded")
-			}
-			emulator := gote.New(80, 24)
-			add("terminal emulator", emulator != nil, "internal terminal adapter")
-			ok := true
-			for _, check := range checks {
-				if check["ok"] != true {
-					ok = false
-				}
-			}
-			value := map[string]any{"schemaVersion": 1, "ok": ok, "checks": checks}
 			output, err := emitForCLI(cmd, opts, format, value, func() string {
 				md := "# Glyphrun Doctor\n\n"
-				for _, check := range checks {
+				for _, check := range result.Checks {
 					mark := "PASS"
 					if check["ok"] != true {
 						mark = "FAIL"
@@ -90,17 +41,10 @@ func newDoctorCommand(opts *globalOptions) *cobra.Command {
 				return exitError{code: 2, err: err}
 			}
 			cmd.Print(output)
-			if !ok {
+			if !result.OK {
 				return exitError{code: 2}
 			}
 			return nil
 		},
 	}
-}
-
-func detailOrOK(err error) string {
-	if err == nil {
-		return "ok"
-	}
-	return err.Error()
 }

@@ -1,0 +1,97 @@
+name: Glyphrun
+description: >
+  Run Glyphrun terminal behavior specs, emit JSON results, optionally write a
+  JUnit report, and surface agent_context paths for coding agents.
+author: glyphrun
+branding:
+  icon: terminal
+  color: purple
+
+inputs:
+  specs:
+    description: Space-separated spec paths or globs (shell-expanded by the caller).
+    required: true
+  format:
+    description: Output format for the summary printed to the step log (json|yaml|md).
+    required: false
+    default: md
+  parallel:
+    description: Number of specs to run concurrently.
+    required: false
+    default: "1"
+  junit:
+    description: Optional path for a JUnit XML report (empty = skip).
+    required: false
+    default: ""
+  artifact-root:
+    description: Override artifact root (default from glyphrun.config.yml).
+    required: false
+    default: ""
+  glyph-bin:
+    description: Path to the glyph binary (default: glyph on PATH).
+    required: false
+    default: glyph
+  args:
+    description: Extra args appended to `glyph run` (e.g. --update-snapshots).
+    required: false
+    default: ""
+
+outputs:
+  exit-code:
+    description: Glyphrun process exit code.
+    value: ${{ steps.run.outputs.exit-code }}
+  artifact-root:
+    description: Artifact root used for this invocation.
+    value: ${{ steps.run.outputs.artifact-root }}
+
+runs:
+  using: composite
+  steps:
+    - name: Run Glyphrun specs
+      id: run
+      shell: bash
+      run: |
+        set +e
+        BIN="${{ inputs.glyph-bin }}"
+        SPECS="${{ inputs.specs }}"
+        FORMAT="${{ inputs.format }}"
+        PARALLEL="${{ inputs.parallel }}"
+        JUNIT="${{ inputs.junit }}"
+        ROOT="${{ inputs.artifact-root }}"
+        EXTRA="${{ inputs.args }}"
+
+        ARGS=(run)
+        # shellcheck disable=SC2206
+        SPEC_ARR=($SPECS)
+        ARGS+=("${SPEC_ARR[@]}")
+        ARGS+=(--format "$FORMAT" --parallel "$PARALLEL")
+        if [[ -n "$JUNIT" ]]; then
+          ARGS+=(--junit "$JUNIT")
+        fi
+        if [[ -n "$ROOT" ]]; then
+          ARGS+=(--artifact-root "$ROOT")
+        fi
+        if [[ -n "$EXTRA" ]]; then
+          # shellcheck disable=SC2206
+          EXTRA_ARR=($EXTRA)
+          ARGS+=("${EXTRA_ARR[@]}")
+        fi
+
+        echo "::group::glyph ${ARGS[*]}"
+        "$BIN" "${ARGS[@]}"
+        CODE=$?
+        echo "::endgroup::"
+
+        if [[ -z "$ROOT" ]]; then
+          ROOT=".glyphrun/runs"
+        fi
+        echo "exit-code=$CODE" >> "$GITHUB_OUTPUT"
+        echo "artifact-root=$ROOT" >> "$GITHUB_OUTPUT"
+
+        if [[ -d "$ROOT" ]]; then
+          LATEST=$(ls -1dt "$ROOT"/*/ 2>/dev/null | head -1 || true)
+          if [[ -n "$LATEST" && -f "${LATEST}agent_context.md" ]]; then
+            echo "::notice title=Glyphrun agent context::${LATEST}agent_context.md"
+          fi
+        fi
+        exit "$CODE"

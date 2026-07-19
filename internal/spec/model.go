@@ -1,12 +1,15 @@
 package spec
 
 type Spec struct {
-	Version       int            `yaml:"version" json:"version"`
-	Name          string         `yaml:"name" json:"name"`
-	ContractHash  string         `yaml:"contractHash,omitempty" json:"contractHash,omitempty"`
-	Intent        string         `yaml:"intent" json:"intent"`
-	Metadata      *Metadata      `yaml:"metadata,omitempty" json:"metadata,omitempty"`
-	CoversSymbol  string         `yaml:"coversSymbol,omitempty" json:"coversSymbol,omitempty"`
+	Version      int       `yaml:"version" json:"version"`
+	Name         string    `yaml:"name" json:"name"`
+	ContractHash string    `yaml:"contractHash,omitempty" json:"contractHash,omitempty"`
+	Intent       string    `yaml:"intent" json:"intent"`
+	Metadata     *Metadata `yaml:"metadata,omitempty" json:"metadata,omitempty"`
+	CoversSymbol string    `yaml:"coversSymbol,omitempty" json:"coversSymbol,omitempty"`
+	// Mode is "normal" (default) or "debug". Debug forces verbose capture
+	// (frames, raw log, snapshots, agent context) for flaky diagnosis.
+	Mode          string         `yaml:"mode,omitempty" json:"mode,omitempty"`
 	Imports       []string       `yaml:"imports,omitempty" json:"imports,omitempty"`
 	Target        Target         `yaml:"target" json:"target"`
 	Terminal      Terminal       `yaml:"terminal" json:"terminal"`
@@ -124,7 +127,11 @@ type Command struct {
 }
 
 type Step struct {
-	When      *Verify        `yaml:"when,omitempty" json:"when,omitempty"`
+	// ID is an optional stable label for failure messages, events, and StepResult.
+	// It is not part of the contract hash.
+	ID string `yaml:"id,omitempty" json:"id,omitempty"`
+	// When is a guard: full Verify object or shorthand string (see Conditional).
+	When      *Conditional   `yaml:"when,omitempty" json:"when,omitempty"`
 	Press     string         `yaml:"press,omitempty" json:"press,omitempty"`
 	Type      string         `yaml:"type,omitempty" json:"type,omitempty"`
 	Paste     string         `yaml:"paste,omitempty" json:"paste,omitempty"`
@@ -291,10 +298,18 @@ type ScriptCondition struct {
 	TimeoutMS int               `yaml:"timeoutMs,omitempty" json:"timeoutMs,omitempty"`
 }
 
+// ScreenCondition asserts against full-screen text. Matchers are additive
+// when multiple are set (all must pass). Preferred modern forms:
+//
+//	equals | contains | matches (alias of regex) | notContains
 type ScreenCondition struct {
+	Equals      string `yaml:"equals,omitempty" json:"equals,omitempty"`
 	Contains    string `yaml:"contains,omitempty" json:"contains,omitempty"`
 	NotContains string `yaml:"notContains,omitempty" json:"notContains,omitempty"`
-	Regex       string `yaml:"regex,omitempty" json:"regex,omitempty"`
+	// Matches is the preferred alias for Regex (cairn-style matcher name).
+	Matches string `yaml:"matches,omitempty" json:"matches,omitempty"`
+	// Regex is kept for backward compatibility; treated the same as Matches.
+	Regex string `yaml:"regex,omitempty" json:"regex,omitempty"`
 }
 
 type RegionCondition struct {
@@ -302,8 +317,10 @@ type RegionCondition struct {
 	Y           int    `yaml:"y" json:"y"`
 	Width       int    `yaml:"width" json:"width"`
 	Height      int    `yaml:"height" json:"height"`
+	Equals      string `yaml:"equals,omitempty" json:"equals,omitempty"`
 	Contains    string `yaml:"contains,omitempty" json:"contains,omitempty"`
 	NotContains string `yaml:"notContains,omitempty" json:"notContains,omitempty"`
+	Matches     string `yaml:"matches,omitempty" json:"matches,omitempty"`
 	Regex       string `yaml:"regex,omitempty" json:"regex,omitempty"`
 }
 

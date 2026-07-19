@@ -8,13 +8,16 @@ The v1 step vocabulary is `press`, `type`, `paste`, `send`, `mouse`, `wait`, `re
 
 `mouse: { x, y, button?, action? }` sends a mouse event at the 0-based cell `(x, y)`. `button` is one of `left` (default), `middle`, `right`, `wheelUp`, `wheelDown`; `action` is `click` (default), `press`, `release`, or `move`. The runner encodes the event as SGR (1006) when the target enabled that mode, otherwise as the legacy X10 encoding.
 
-Every step can include a `when` guard. The guard uses the same verifier shape as an outcome and skips the step when false.
+Every step can include a `when` guard. The guard uses the same verifier shape as an outcome (or a shorthand string) and skips the step when false.
 
-Common patterns:
+Optional `id:` labels make failure messages and `StepResult` entries readable (`open_menu` instead of `step 3`).
+
+Screen/region matchers accept `equals`, `contains`, `notContains`, `matches` (preferred), or legacy `regex`.
 
 ```yaml
 steps:
-  - wait:
+  - id: wait_ready
+    wait:
       screen:
         contains: "Welcome"
       timeoutMs: 5000
@@ -24,15 +27,19 @@ steps:
       cols: 120
       rows: 36
   - snapshot: after_submit
+  - when: 'screen.contains:"optional prompt"'
+    press: "enter"
   - when:
       screen:
-        contains: "optional prompt"
+        matches: "^Ready \\d+"
     press: "enter"
   - use: quit_cleanly
   - wait:
       process:
         exitCode: 0
 ```
+
+Set `mode: debug` at the top of a spec to force frames, raw logs, snapshots, and agent context on for flaky diagnosis.
 
 Use `wait` to synchronize on screen text, process state, snapshots, or trusted commands. Prefer visible screen conditions over sleeps.
 

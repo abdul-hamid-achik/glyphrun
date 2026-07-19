@@ -42,10 +42,17 @@ const (
 	OutcomeFailed OutcomeStatus = "failed"
 )
 
+// RunSchemaURI is the machine-negotiable schema identifier embedded in run
+// results so downstream tools can detect the envelope shape.
+const RunSchemaURI = "urn:glyphrun.dev:run:v1"
+
 type RunResult struct {
+	// Schema is the URI of the run result contract (optional for older packs).
+	Schema         string                   `json:"$schema,omitempty" yaml:"$schema,omitempty"`
 	SchemaVersion  int                      `json:"schemaVersion" yaml:"schemaVersion"`
 	RunID          string                   `json:"runId" yaml:"runId"`
 	SpecName       string                   `json:"specName" yaml:"specName"`
+	SpecPath       string                   `json:"specPath,omitempty" yaml:"specPath,omitempty"`
 	Intent         string                   `json:"intent,omitempty" yaml:"intent,omitempty"`
 	ContractHash   string                   `json:"contractHash,omitempty" yaml:"contractHash,omitempty"`
 	ExpectedHash   string                   `json:"expectedHash,omitempty" yaml:"expectedHash,omitempty"`
@@ -77,8 +84,9 @@ type RunResult struct {
 // Duration, kind, normalized error, and status let an agent see exactly which
 // step failed and how long each took without scanning events.ndjson.
 type StepResult struct {
-	Index      int    `json:"index" yaml:"index"`   // 1-based
-	Kind       string `json:"kind" yaml:"kind"`     // wait|type|press|click|hover|fill|...
+	Index      int    `json:"index" yaml:"index"` // 1-based
+	ID         string `json:"id,omitempty" yaml:"id,omitempty"`
+	Kind       string `json:"kind" yaml:"kind"`     // wait|type|press|paste|mouse|...
 	Status     string `json:"status" yaml:"status"` // passed|failed|skipped
 	DurationMS int64  `json:"durationMs" yaml:"durationMs"`
 	Error      string `json:"error,omitempty" yaml:"error,omitempty"`

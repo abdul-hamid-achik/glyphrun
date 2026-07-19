@@ -37,23 +37,34 @@ type Proposal struct {
 	Applied   bool   `json:"applied" yaml:"applied"`
 }
 
-// Analyze reads a run's events and final screen and proposes step repairs. The
-// steps argument is the spec's resolved steps (imports/use already expanded),
-// so indices line up with the run's step events.
+// Analyze reads a run's events/step results and final screen and proposes step
+// repairs. The steps argument is the spec's resolved steps (imports/use already
+// expanded), so indices line up with the run's step events / StepResult[].
 func Analyze(runDir string, steps []spec.Step) []Proposal {
 	failures := readStepFailures(runDir)
+	if len(failures) == 0 {
+		failures = readStepFailuresFromRunJSON(runDir)
+	}
 	finalScreen := readRunFile(runDir, "screens/final.txt")
 	return propose(steps, failures, finalScreen)
 }
 
-// Apply rewrites steps[p.StepIndex-1].wait.screen.contains in the spec file via
-// surgical YAML node editing, leaving every other node — including the
-// contract-hashed intent/outcomes — untouched.
+// Apply rewrites the proposed step field in the spec file via surgical YAML
+// node editing, leaving every other node — including the contract-hashed
+// intent/outcomes — untouched. Supported kinds: wait.screen.contains,
+// wait.timeoutMs.
 func Apply(specPath string, p Proposal) error {
 	if p.Proposed == "" || p.Current == "" {
 		return fmt.Errorf("proposal for step %d has nothing to apply", p.StepIndex)
 	}
-	return editStepWaitContains(specPath, p.StepIndex, p.Proposed)
+	switch p.Kind {
+	case "wait.timeoutMs":
+		return editStepWaitTimeoutMS(specPath, p.StepIndex, p.Proposed)
+	case "wait.screen.contains", "":
+		return editStepWaitContains(specPath, p.StepIndex, p.Proposed)
+	default:
+		return fmt.Errorf("proposal kind %q for step %d is not auto-applicable", p.Kind, p.StepIndex)
+	}
 }
 
 // VerifyOptions configures a verified repair (SPEC §7.2).
@@ -228,9 +239,11 @@ func stepIndexFromName(name string) int {
 	return idx
 }
 
-// propose builds repair suggestions for each failed `wait: screen: contains:`
-// step whose needle is missing from the final screen. The fix is the closest
-// line actually on screen — the common "the ready string changed" case.
+// propose builds repair suggestions for failed wait steps. Heuristics:
+//   - wait.screen.contains present at end → raise timeoutMs
+//   - wait.screen.contains missing → replace with closest on-screen line
+//   - wait.process failed → suggest a quit key if the screen shows one
+//   - timed-out wait message → suggest higher timeoutMs
 func propose(steps []spec.Step, failures []stepFailure, finalScreen string) []Proposal {
 	var proposals []Proposal
 	for _, fail := range failures {
@@ -240,24 +253,48 @@ func propose(steps []spec.Step, failures []stepFailure, finalScreen string) []Pr
 		step := steps[fail.index-1]
 		if step.Wait == nil || step.Wait.Screen == nil {
 			if step.Wait != nil && step.Wait.Process != nil {
+				quitKey := detectQuitKey(finalScreen)
+				rationale := "the process did not reach this exit state in time; you may be missing an interaction step (e.g. a quit key) before this wait"
+				if quitKey != "" {
+					rationale = fmt.Sprintf("%s; final screen suggests pressing %q before this wait", rationale, quitKey)
+				}
 				proposals = append(proposals, Proposal{
 					StepIndex: fail.index,
 					Kind:      "wait.process",
-					Rationale: "the process did not reach this exit state in time; you may be missing an interaction step (e.g. a quit key) before this wait",
+					Rationale: rationale,
 				})
 			}
 			continue
 		}
 		needle := step.Wait.Screen.Contains
 		if needle == "" {
+			// equals/matches forms: still suggest timeout if the failure was a timeout.
+			if strings.Contains(strings.ToLower(fail.message), "timed out") {
+				cur := step.Wait.TimeoutMS
+				if cur <= 0 {
+					cur = 5000
+				}
+				proposals = append(proposals, Proposal{
+					StepIndex: fail.index,
+					Kind:      "wait.timeoutMs",
+					Current:   strconv.Itoa(cur),
+					Proposed:  strconv.Itoa(cur * 2),
+					Rationale: "wait timed out; consider raising wait.timeoutMs (proposed 2x current)",
+				})
+			}
 			continue
 		}
 		if strings.Contains(finalScreen, needle) {
+			cur := step.Wait.TimeoutMS
+			if cur <= 0 {
+				cur = 5000
+			}
 			proposals = append(proposals, Proposal{
 				StepIndex: fail.index,
-				Kind:      "wait.screen.contains",
-				Current:   needle,
-				Rationale: "the expected text is present on the final screen; the wait may need a longer timeoutMs or an earlier step is out of order",
+				Kind:      "wait.timeoutMs",
+				Current:   strconv.Itoa(cur),
+				Proposed:  strconv.Itoa(cur * 2),
+				Rationale: "the expected text is present on the final screen; the wait likely needs a longer timeoutMs (or an earlier step is out of order)",
 			})
 			continue
 		}
@@ -271,6 +308,45 @@ func propose(steps []spec.Step, failures []stepFailure, finalScreen string) []Pr
 		})
 	}
 	return proposals
+}
+
+// detectQuitKey looks for common quit affordances on the final screen.
+func detectQuitKey(finalScreen string) string {
+	lower := strings.ToLower(finalScreen)
+	patterns := []struct {
+		needle string
+		key    string
+	}{
+		{"press q", "q"},
+		{"press 'q'", "q"},
+		{"(q)uit", "q"},
+		{"[q]uit", "q"},
+		{"quit with q", "q"},
+		{"ctrl+c", "ctrl+c"},
+		{"ctrl-c", "ctrl+c"},
+		{"^c", "ctrl+c"},
+	}
+	for _, p := range patterns {
+		if strings.Contains(lower, p.needle) {
+			return p.key
+		}
+	}
+	return ""
+}
+
+func readStepFailuresFromRunJSON(runDir string) []stepFailure {
+	result, err := artifacts.LoadRunResult(runDir)
+	if err != nil {
+		return nil
+	}
+	var out []stepFailure
+	for _, s := range result.Steps {
+		if s.Status != "failed" {
+			continue
+		}
+		out = append(out, stepFailure{index: s.Index, message: s.Error})
+	}
+	return out
 }
 
 // closestScreenLine returns the on-screen line most similar to needle (scored
@@ -387,6 +463,47 @@ func editStepWaitContains(specPath string, index int, newValue string) error {
 	}
 	contains.Value = newValue
 	contains.Tag = "!!str"
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(specPath, out, 0o644)
+}
+
+func editStepWaitTimeoutMS(specPath string, index int, newValue string) error {
+	data, err := os.ReadFile(specPath)
+	if err != nil {
+		return err
+	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return err
+	}
+	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("spec is not a mapping")
+	}
+	steps := mappingValue(doc.Content[0], "steps")
+	if steps == nil || steps.Kind != yaml.SequenceNode {
+		return fmt.Errorf("spec has no steps sequence")
+	}
+	if index < 1 || index > len(steps.Content) {
+		return fmt.Errorf("step index %d out of range", index)
+	}
+	wait := mappingValue(steps.Content[index-1], "wait")
+	if wait == nil {
+		return fmt.Errorf("step %d is not a wait", index)
+	}
+	timeout := mappingValue(wait, "timeoutMs")
+	if timeout == nil {
+		// Insert timeoutMs key into the wait mapping.
+		wait.Content = append(wait.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "timeoutMs"},
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: newValue},
+		)
+	} else {
+		timeout.Value = newValue
+		timeout.Tag = "!!int"
+	}
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
 		return err

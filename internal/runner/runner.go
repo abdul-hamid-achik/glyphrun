@@ -186,7 +186,7 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	_ = writer.WriteResolvedSpec(resolved)
 
 	state := newRunState(resolved, runtime, writer, redactor, opts.UpdateSnapshots, opts.Listener)
-	state.capturePolicy = resolveCapturePolicy(runtime.Config.Artifacts, parse.Spec.Artifacts, artifacts.StatusPassed)
+	state.capturePolicy = resolveCapturePolicy(runtime.Config.Artifacts, parse.Spec.Artifacts, resolved.Mode)
 	if opts.Listener != nil {
 		opts.Listener.OnRunStart(resolved, runID, runDir)
 	}
@@ -214,23 +214,31 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	}
 
 	for idx, step := range resolved.Steps {
-		name := fmt.Sprintf("step.%d", idx+1)
+		name := stepLabel(step, idx+1)
 		_ = writer.AppendEvent(event("step.started", name, describeStep(step)))
 		stepStart := time.Now()
 		if state.listener != nil {
 			state.listener.OnStepStart(idx, step)
 		}
 		result, err := state.executeStep(runCtx, step)
+		stepRec := artifacts.StepResult{
+			Index:      idx + 1,
+			ID:         strings.TrimSpace(step.ID),
+			Kind:       stepKind(step),
+			DurationMS: time.Since(stepStart).Milliseconds(),
+		}
 		if err != nil {
 			_ = writer.AppendEvent(event("step.failed", name, err.Error()))
-			state.stepResults = append(state.stepResults, artifacts.StepResult{Index: idx + 1, Kind: stepKind(step), Status: "failed", DurationMS: time.Since(stepStart).Milliseconds(), Error: err.Error()})
+			stepRec.Status = "failed"
+			stepRec.Error = err.Error()
+			state.stepResults = append(state.stepResults, stepRec)
 			if state.listener != nil {
 				state.listener.OnStepFinish(idx, step, ProgressFailed, time.Since(stepStart), err.Error())
 			}
 			if code := exitCodeForError(err); code == exitTimedOut || code == exitUnsupportedTerminal {
-				message := fmt.Sprintf("step %d failed: %v", idx+1, err)
+				message := fmt.Sprintf("step %s failed: %v", name, err)
 				if errors.Is(err, context.DeadlineExceeded) && resolved.Target.TimeoutMS > 0 {
-					message = fmt.Sprintf("step %d failed: %s", idx+1, targetTimeoutMessage(resolved.Target.TimeoutMS))
+					message = fmt.Sprintf("step %s failed: %s", name, targetTimeoutMessage(resolved.Target.TimeoutMS))
 				}
 				kind := artifacts.ErrorKindTimeout
 				if code == exitUnsupportedTerminal {
@@ -240,19 +248,20 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 			}
 			var targetExit targetExitedError
 			if errors.As(err, &targetExit) {
-				message := fmt.Sprintf("step %d (%s) failed: %v", idx+1, stepKind(step), err)
+				message := fmt.Sprintf("step %s (%s) failed: %v", name, stepKind(step), err)
 				state.pendingTargetExit = &artifacts.TargetExit{
 					ExitCode:    targetExit.ExitCode,
 					LastPtyLine: targetExit.LastPtyLine,
 				}
 				return state.finish(started, artifacts.StatusErrored, nil, message, artifacts.ErrorKindTargetExited, exitErrored), nil
 			}
-			result := state.evaluateOutcomes(ctx)
-			return state.finish(started, artifacts.StatusFailed, result, fmt.Sprintf("step %d failed: %v", idx+1, err), artifacts.ErrorKindStepFailure), nil
+			outcomeResults := state.evaluateOutcomes(ctx)
+			return state.finish(started, artifacts.StatusFailed, outcomeResults, fmt.Sprintf("step %s failed: %v", name, err), artifacts.ErrorKindStepFailure), nil
 		}
 		if result.Skipped {
 			_ = writer.AppendEvent(event("step.skipped", name, result.Message))
-			state.stepResults = append(state.stepResults, artifacts.StepResult{Index: idx + 1, Kind: stepKind(step), Status: "skipped", DurationMS: time.Since(stepStart).Milliseconds()})
+			stepRec.Status = "skipped"
+			state.stepResults = append(state.stepResults, stepRec)
 			if state.listener != nil {
 				state.listener.OnStepFinish(idx, step, ProgressSkipped, time.Since(stepStart), result.Message)
 			}
@@ -261,7 +270,8 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 		if state.listener != nil {
 			state.listener.OnStepFinish(idx, step, ProgressPassed, time.Since(stepStart), "")
 		}
-		state.stepResults = append(state.stepResults, artifacts.StepResult{Index: idx + 1, Kind: stepKind(step), Status: "passed", DurationMS: time.Since(stepStart).Milliseconds()})
+		stepRec.Status = "passed"
+		state.stepResults = append(state.stepResults, stepRec)
 		_ = writer.AppendEvent(event("step.finished", name, ""))
 	}
 
@@ -325,9 +335,11 @@ func parseErrorResult(specPath string, err error) artifacts.RunResult {
 	}
 	ended := time.Now().UTC()
 	return artifacts.RunResult{
+		Schema:        artifacts.RunSchemaURI,
 		SchemaVersion: 1,
 		RunID:         makeRunID(started, name),
 		SpecName:      name,
+		SpecPath:      specPath,
 		Status:        artifacts.StatusErrored,
 		ErrorKind:     kind,
 		Diagnostic:    err.Error(),
@@ -339,7 +351,12 @@ func parseErrorResult(specPath string, err error) artifacts.RunResult {
 		ExitCode:      exitCode,
 		Outcomes:      []artifacts.OutcomeResult{},
 		Artifacts:     map[string]string{},
-		NextActions:   artifacts.NextActionsFor(kind, name, contractHash, expectedHash),
+		NextActions: artifacts.NextActionsForOpts(kind, artifacts.NextActionsOptions{
+			SpecPath:     specPath,
+			SpecName:     name,
+			ContractHash: contractHash,
+			ExpectedHash: expectedHash,
+		}),
 	}
 }
 
@@ -515,7 +532,7 @@ func (s *runState) executeStep(ctx context.Context, step spec.Step) (stepExecuti
 		return stepExecutionResult{}, err
 	}
 	if step.When != nil {
-		ok, message := s.checkVerify(ctx, *step.When, nil)
+		ok, message := s.checkVerify(ctx, *step.When.AsVerify(), nil)
 		if !ok {
 			return stepExecutionResult{Skipped: true, Message: message}, nil
 		}
@@ -931,8 +948,9 @@ func buildRedactor(cfg config.Redaction, specRedaction *spec.Redaction, secretVa
 // resolveCapturePolicy composes the effective capture policy for a
 // run. The project config supplies the base (booleans); the spec's
 // `artifacts:` block overrides per channel. An empty CaptureMode
-// inherits from the base.
-func resolveCapturePolicy(base config.Artifacts, specPolicy *spec.CapturePolicy, status artifacts.RunStatus) spec.CapturePolicy {
+// inherits from the base. mode "debug" forces verbose capture channels
+// to always so a flaky diagnosis run does not require config edits.
+func resolveCapturePolicy(base config.Artifacts, specPolicy *spec.CapturePolicy, mode string) spec.CapturePolicy {
 	out := spec.CapturePolicy{
 		Snapshots:      boolToMode(base.Snapshots),
 		Frames:         boolToMode(base.Frames),
@@ -941,23 +959,29 @@ func resolveCapturePolicy(base config.Artifacts, specPolicy *spec.CapturePolicy,
 		AgentContext:   boolToMode(base.AgentContext),
 		NamedArtifacts: spec.CaptureAlways, // named artifacts are always-on; they're the spec's contract
 	}
-	if specPolicy == nil {
-		return out
+	if specPolicy != nil {
+		if specPolicy.Snapshots != "" {
+			out.Snapshots = specPolicy.Snapshots
+		}
+		if specPolicy.Frames != "" {
+			out.Frames = specPolicy.Frames
+		}
+		if specPolicy.RawLog != "" {
+			out.RawLog = specPolicy.RawLog
+		}
+		if specPolicy.FinalScreen != "" {
+			out.FinalScreen = specPolicy.FinalScreen
+		}
+		if specPolicy.AgentContext != "" {
+			out.AgentContext = specPolicy.AgentContext
+		}
 	}
-	if specPolicy.Snapshots != "" {
-		out.Snapshots = specPolicy.Snapshots
-	}
-	if specPolicy.Frames != "" {
-		out.Frames = specPolicy.Frames
-	}
-	if specPolicy.RawLog != "" {
-		out.RawLog = specPolicy.RawLog
-	}
-	if specPolicy.FinalScreen != "" {
-		out.FinalScreen = specPolicy.FinalScreen
-	}
-	if specPolicy.AgentContext != "" {
-		out.AgentContext = specPolicy.AgentContext
+	if strings.EqualFold(strings.TrimSpace(mode), "debug") {
+		out.Snapshots = spec.CaptureAlways
+		out.Frames = spec.CaptureAlways
+		out.RawLog = spec.CaptureAlways
+		out.FinalScreen = spec.CaptureAlways
+		out.AgentContext = spec.CaptureAlways
 	}
 	return out
 }
@@ -1221,8 +1245,10 @@ func (s *runState) checkVerifyWithEvidence(ctx context.Context, verify spec.Veri
 	case verify.Region != nil:
 		cond := verify.Region
 		ok, message := checkScreen(normalizeText(screen.Region(cond.X, cond.Y, cond.Width, cond.Height).Text(), normalize), spec.ScreenCondition{
+			Equals:      cond.Equals,
 			Contains:    cond.Contains,
 			NotContains: cond.NotContains,
+			Matches:     cond.Matches,
 			Regex:       cond.Regex,
 		})
 		return ok, message, nil
@@ -2031,9 +2057,11 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		exitCode = exitCodeOverride[0]
 	}
 	result := artifacts.RunResult{
+		Schema:        artifacts.RunSchemaURI,
 		SchemaVersion: 1,
 		RunID:         makeRunID(started, s.spec.Name),
 		SpecName:      s.spec.Name,
+		SpecPath:      s.runtime.SpecPath,
 		Intent:        strings.TrimSpace(s.spec.Intent),
 		ContractHash:  s.spec.ContractHash,
 		Metadata:      s.spec.Metadata,
@@ -2051,7 +2079,12 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		ExitCode:      exitCode,
 		Artifacts:     map[string]string{"events": "events.ndjson", "environmentDiagnostic": "diagnostics/environment.md"},
 	}
-	result.NextActions = artifacts.NextActionsFor(errorKind, s.spec.Name, s.spec.ContractHash, "")
+	result.NextActions = artifacts.NextActionsForOpts(errorKind, artifacts.NextActionsOptions{
+		SpecPath:     s.runtime.SpecPath,
+		SpecName:     s.spec.Name,
+		ContractHash: s.spec.ContractHash,
+		RunDir:       s.writer.RunDir,
+	})
 	result.Steps = s.stepResults
 	if s.pendingTargetExit != nil {
 		result.TargetExit = s.pendingTargetExit
@@ -2182,27 +2215,28 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 			}
 		}
 	}
-	// Last-failed tracking: write this spec's name to .last-failed.txt
-	// at the artifact root when the run didn't pass. The list is
-	// rebuilt (not appended) by the next run, so a spec that
-	// subsequently passes drops off the list automatically.
+	// Last-failed tracking: write name+path so --rerun-failed can re-execute.
+	// The list is rebuilt (not appended) by the next run, so a spec that
+	// subsequently passes drops off automatically.
 	if artifactRoot != "" {
 		existing, _ := artifacts.ReadLastFailed(artifactRoot)
+		specPath := s.runtime.SpecPath
 		switch status {
 		case artifacts.StatusFailed, artifacts.StatusErrored:
-			// Add (or keep) the failing name.
-			existing = append(existing, s.spec.Name)
+			existing = append(existing, artifacts.FailedSpec{Name: s.spec.Name, Path: specPath})
 			if err := artifacts.WriteLastFailed(artifactRoot, existing); err != nil {
 				_ = s.writer.AppendEvent(event("lastfailed.error", "", err.Error()))
 			}
 		case artifacts.StatusPassed:
-			// Drop the passing name so `--rerun-failed` doesn't keep
-			// replaying a now-passing spec.
 			filtered := existing[:0]
-			for _, n := range existing {
-				if n != s.spec.Name {
-					filtered = append(filtered, n)
+			for _, e := range existing {
+				if e.Name == s.spec.Name {
+					continue
 				}
+				if specPath != "" && e.Path == specPath {
+					continue
+				}
+				filtered = append(filtered, e)
 			}
 			if err := artifacts.WriteLastFailed(artifactRoot, filtered); err != nil {
 				_ = s.writer.AppendEvent(event("lastfailed.error", "", err.Error()))
@@ -2294,6 +2328,11 @@ func renderEnvironmentDiagnostic(rt config.Runtime, s spec.Spec, result artifact
 
 func checkScreen(text string, cond spec.ScreenCondition) (bool, string) {
 	switch {
+	case cond.Equals != "":
+		if text == cond.Equals {
+			return true, fmt.Sprintf("screen equals %q", cond.Equals)
+		}
+		return false, fmt.Sprintf("expected screen to equal %q", cond.Equals)
 	case cond.Contains != "":
 		if strings.Contains(text, cond.Contains) {
 			return true, fmt.Sprintf("screen contains %q", cond.Contains)
@@ -2304,15 +2343,19 @@ func checkScreen(text string, cond spec.ScreenCondition) (bool, string) {
 			return true, fmt.Sprintf("screen does not contain %q", cond.NotContains)
 		}
 		return false, fmt.Sprintf("expected screen not to contain %q", cond.NotContains)
-	case cond.Regex != "":
-		re, err := regexp.Compile(cond.Regex)
+	case cond.Matches != "", cond.Regex != "":
+		pat := cond.Matches
+		if pat == "" {
+			pat = cond.Regex
+		}
+		re, err := regexp.Compile(pat)
 		if err != nil {
 			return false, err.Error()
 		}
 		if re.MatchString(text) {
-			return true, fmt.Sprintf("screen matches %q", cond.Regex)
+			return true, fmt.Sprintf("screen matches %q", pat)
 		}
-		return false, fmt.Sprintf("expected screen to match %q", cond.Regex)
+		return false, fmt.Sprintf("expected screen to match %q", pat)
 	default:
 		return false, "screen condition is empty"
 	}
@@ -2619,6 +2662,8 @@ func stepKind(step spec.Step) string {
 		return "press"
 	case step.Type != "":
 		return "type"
+	case step.Paste != "":
+		return "paste"
 	case step.Mouse != nil:
 		return "mouse"
 	case step.Send != nil:
@@ -2640,6 +2685,14 @@ func stepKind(step spec.Step) string {
 	default:
 		return "unknown"
 	}
+}
+
+// stepLabel returns a human/agent-facing step name: id when set, else "step.N".
+func stepLabel(step spec.Step, index1Based int) string {
+	if id := strings.TrimSpace(step.ID); id != "" {
+		return id
+	}
+	return fmt.Sprintf("step.%d", index1Based)
 }
 
 func makeRunID(t time.Time, name string) string {

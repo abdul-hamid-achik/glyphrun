@@ -11,6 +11,7 @@
     "intent": { "type": "string", "minLength": 1 },
     "metadata": { "$ref": "#/$defs/metadata" },
     "coversSymbol": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["normal", "debug"] },
     "redaction": { "$ref": "#/$defs/redaction" },
     "artifacts": { "$ref": "#/$defs/capturePolicy" },
     "imports": { "type": "array", "items": { "type": "string" } },
@@ -174,7 +175,13 @@
         { "required": ["batch"] }
       ],
       "properties": {
-        "when": { "$ref": "#/$defs/verify" },
+        "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+        "when": {
+          "oneOf": [
+            { "$ref": "#/$defs/verify" },
+            { "type": "string", "minLength": 1 }
+          ]
+        },
         "press": { "type": "string", "minLength": 1 },
         "type": { "type": "string", "minLength": 1 },
         "paste": { "type": "string", "minLength": 1 },
@@ -453,13 +460,17 @@
     "screenCondition": {
       "type": "object",
       "oneOf": [
+        { "required": ["equals"] },
         { "required": ["contains"] },
         { "required": ["notContains"] },
+        { "required": ["matches"] },
         { "required": ["regex"] }
       ],
       "properties": {
+        "equals": { "type": "string" },
         "contains": { "type": "string", "minLength": 1 },
         "notContains": { "type": "string", "minLength": 1 },
+        "matches": { "type": "string", "minLength": 1 },
         "regex": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
@@ -468,8 +479,10 @@
       "type": "object",
       "required": ["x", "y", "width", "height"],
       "oneOf": [
+        { "required": ["equals"] },
         { "required": ["contains"] },
         { "required": ["notContains"] },
+        { "required": ["matches"] },
         { "required": ["regex"] }
       ],
       "properties": {
@@ -477,8 +490,10 @@
         "y": { "type": "integer", "minimum": 0 },
         "width": { "type": "integer", "minimum": 1 },
         "height": { "type": "integer", "minimum": 1 },
+        "equals": { "type": "string" },
         "contains": { "type": "string", "minLength": 1 },
         "notContains": { "type": "string", "minLength": 1 },
+        "matches": { "type": "string", "minLength": 1 },
         "regex": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false

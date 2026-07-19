@@ -283,8 +283,8 @@ outcomes:
 	if !bytes.Contains(stdout.Bytes(), []byte(`"errorKind": "contract_hash_mismatch"`)) {
 		t.Errorf("stdout missing errorKind=contract_hash_mismatch: %s", stdout.String())
 	}
-	if !bytes.Contains(stdout.Bytes(), []byte(`--update-snapshots`)) {
-		t.Errorf("nextActions for a hash mismatch should suggest re-stamping: %s", stdout.String())
+	if !bytes.Contains(stdout.Bytes(), []byte(`spec verify`)) || !bytes.Contains(stdout.Bytes(), []byte(`--stamp`)) {
+		t.Errorf("nextActions for a hash mismatch should suggest spec verify --stamp: %s", stdout.String())
 	}
 	if !bytes.Contains(stdout.Bytes(), []byte(`"contractHash":`)) {
 		t.Errorf("stdout missing contractHash: %s", stdout.String())

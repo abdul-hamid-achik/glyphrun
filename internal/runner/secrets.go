@@ -152,6 +152,7 @@ func envSlice(env map[string]string) []string {
 func earlyError(runDir string, started time.Time, specName, diagnostic string, errorKind artifacts.ErrorKind, exitCode int) artifacts.RunResult {
 	ended := time.Now().UTC()
 	return artifacts.RunResult{
+		Schema:        artifacts.RunSchemaURI,
 		SchemaVersion: 1,
 		RunID:         makeRunID(started, specName),
 		SpecName:      specName,

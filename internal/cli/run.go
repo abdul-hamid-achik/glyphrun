@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -41,16 +42,10 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 			if err != nil {
 				return exitError{code: 2, err: err}
 			}
-			// --rerun-failed: read the previous run's failure list
-			// (recorded as <artifactRoot>/.last-failed.txt) and replay
-			// only those specs. Useful in a CI loop where a flaky
-			// test made the run fail and you want to retry just the
-			// failing ones without re-running the green ones.
-			//
-			// The list contains spec *names* (from spec.Name), not
-			// file paths, because the runner may have resolved the
-			// spec from any path. We surface the names so the
-			// contributor can decide which paths to pass next.
+			// --rerun-failed: read the previous failure index
+			// (<artifactRoot>/.last-failed.json) and re-execute those
+			// specs when paths were recorded. Legacy name-only entries
+			// are listed with a hint when no path is available.
 			if rerunFailed {
 				cp := opts.configPath
 				if cp == "" {
@@ -69,44 +64,53 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 				}
 				failed, err := artifacts.ReadLastFailed(artifactRoot)
 				if err != nil {
-					return exitError{code: 2, err: fmt.Errorf("rerun-failed: read %s: %w", filepath.Join(artifactRoot, artifacts.LastFailedFile), err)}
+					return exitError{code: 2, err: fmt.Errorf("rerun-failed: read %s: %w", filepath.Join(artifactRoot, artifacts.LastFailedJSON), err)}
 				}
-				lastFailedPath := filepath.Join(artifactRoot, artifacts.LastFailedFile)
 				if failed == nil {
-					failed = []string{}
+					failed = []artifacts.FailedSpec{}
 				}
-				// The list of failing spec *names* is informational: the
-				// contributor copies them into the next `glyph run`
-				// invocation, since the runner keeps no name→path index.
-				// Route through emitForCLI so --format json/yaml stays
-				// machine-parseable instead of emitting Markdown.
-				value := map[string]any{
-					"schemaVersion":  1,
-					"lastFailedFile": lastFailedPath,
-					"failed":         failed,
-				}
-				output, err := emitForCLI(cmd, opts, format, value, func() string {
-					var b strings.Builder
-					b.WriteString("# Glyphrun Rerun Failed\n\n")
-					if len(failed) == 0 {
-						b.WriteString("No previous failures recorded in " + lastFailedPath + ".\n")
+				paths := artifacts.FailedPaths(failed)
+				// Prefer re-executing when we have paths. Positional args
+				// are ignored in that case (the flag scopes the set).
+				if len(paths) > 0 {
+					args = paths
+				} else {
+					// Name-only legacy index: emit the list and exit 0 so
+					// operators can map names → paths manually.
+					lastFailedPath := filepath.Join(artifactRoot, artifacts.LastFailedJSON)
+					if _, statErr := os.Stat(lastFailedPath); os.IsNotExist(statErr) {
+						lastFailedPath = filepath.Join(artifactRoot, artifacts.LastFailedFile)
+					}
+					value := map[string]any{
+						"schemaVersion":  1,
+						"lastFailedFile": lastFailedPath,
+						"failed":         failed,
+						"rerun":          false,
+						"reason":         "no filesystem paths recorded; re-run those specs once with current glyph so paths are indexed",
+					}
+					output, err := emitForCLI(cmd, opts, format, value, func() string {
+						var b strings.Builder
+						b.WriteString("# Glyphrun Rerun Failed\n\n")
+						if len(failed) == 0 {
+							b.WriteString("No previous failures recorded in " + lastFailedPath + ".\n")
+							return b.String()
+						}
+						fmt.Fprintf(&b, "Previous failures (from %s) have names but no paths:\n\n", lastFailedPath)
+						for _, e := range failed {
+							b.WriteString("- " + e.Name + "\n")
+						}
+						b.WriteString("\nRe-run once with paths so the index becomes path-aware, e.g.:\n")
+						for _, e := range failed {
+							fmt.Fprintf(&b, "  glyph run <path-to-%s> ...\n", e.Name)
+						}
 						return b.String()
+					})
+					if err != nil {
+						return exitError{code: 2, err: err}
 					}
-					fmt.Fprintf(&b, "Previous failures (from %s):\n\n", lastFailedPath)
-					for _, n := range failed {
-						b.WriteString("- " + n + "\n")
-					}
-					b.WriteString("\nRe-run with:\n")
-					for _, n := range failed {
-						fmt.Fprintf(&b, "  glyph run <path-to-%s> ...\n", n)
-					}
-					return b.String()
-				})
-				if err != nil {
-					return exitError{code: 2, err: err}
+					cmd.Print(output)
+					return nil
 				}
-				cmd.Print(output)
-				return nil
 			}
 			// --repeat N runs each spec N times and reports stability, to
 			// back up the determinism the tool promises. It's a separate
@@ -173,7 +177,7 @@ func newRunCommand(opts *globalOptions) *cobra.Command {
 	cmd.Flags().StringVar(&monitorBin, "monitor", "", "opt-in: sample the spawned target's CPU/RSS via the monitor binary at this path and write a diagnostics/process.{md,json} artifact (empty = off)")
 	cmd.Flags().DurationVar(&monitorInterval, "monitor-interval", 250*time.Millisecond, "process-telemetry sample interval (use with --monitor)")
 	cmd.Flags().StringVar(&monitorProfile, "monitor-profile", "", "capture an end-of-run process profile via monitor: heap|cpu|goroutine|sample (use with --monitor)")
-	cmd.Flags().BoolVar(&rerunFailed, "rerun-failed", false, "re-run only the specs that failed in the previous invocation (from .last-failed.txt)")
+	cmd.Flags().BoolVar(&rerunFailed, "rerun-failed", false, "re-run only the specs that failed in the previous invocation (from .last-failed.json path index)")
 	cmd.Flags().IntVar(&repeat, "repeat", 1, "run each spec N times and report flakiness/stability instead of a single result")
 	cmd.Flags().BoolVar(&watch, "watch", false, "re-run on spec/source changes (interactive; markdown output only)")
 	cmd.Flags().StringArrayVar(&watchPaths, "watch-path", nil, "additional file or directory to watch (repeatable); implies --watch")

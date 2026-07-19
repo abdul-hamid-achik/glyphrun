@@ -3,8 +3,8 @@ package artifacts
 import "testing"
 
 func TestNextActionsForEveryErrorKind(t *testing.T) {
-	// Every declared errorKind maps to exactly one actionable next step that is
-	// NOT safe to auto-run (even re-stamping changes files).
+	// Every declared errorKind maps to at least one actionable next step that
+	// is NOT safe to auto-run (even re-stamping changes files).
 	kinds := []ErrorKind{
 		ErrorKindTargetStart, ErrorKindTimeout, ErrorKindTargetExited,
 		ErrorKindContractHashMismatch, ErrorKindUnsupportedTerminal,
@@ -12,43 +12,87 @@ func TestNextActionsForEveryErrorKind(t *testing.T) {
 	}
 	for _, k := range kinds {
 		acts := NextActionsFor(k, "spec_x", "", "")
-		if len(acts) != 1 {
-			t.Errorf("errorKind %s: expected 1 action, got %d", k, len(acts))
+		if len(acts) < 1 {
+			t.Errorf("errorKind %s: expected at least 1 action, got %d", k, len(acts))
 			continue
 		}
-		if acts[0].SafeToAutoRun {
-			t.Errorf("errorKind %s: action must not be safeToAutoRun", k)
-		}
-		if acts[0].Reason == "" {
-			t.Errorf("errorKind %s: action must carry a reason", k)
+		for i, a := range acts {
+			if a.SafeToAutoRun {
+				t.Errorf("errorKind %s action %d: must not be safeToAutoRun", k, i)
+			}
+			if a.Reason == "" {
+				t.Errorf("errorKind %s action %d: must carry a reason", k, i)
+			}
+			if a.Command == "" {
+				t.Errorf("errorKind %s action %d: must carry a command", k, i)
+			}
 		}
 	}
 }
 
-func TestNextActionsForContractHashMismatchSuggestsRestamp(t *testing.T) {
-	acts := NextActionsFor(ErrorKindContractHashMismatch, "spec_x", "sha256:abc", "sha256:def")
-	if len(acts) != 1 || acts[0].Command == "" {
-		t.Fatalf("expected one command action, got %+v", acts)
+func TestNextActionsForContractHashMismatchSuggestsStamp(t *testing.T) {
+	acts := NextActionsForOpts(ErrorKindContractHashMismatch, NextActionsOptions{
+		SpecPath:     "specs/foo.yml",
+		SpecName:     "foo",
+		ContractHash: "sha256:abc",
+		ExpectedHash: "sha256:def",
+	})
+	if len(acts) < 1 || acts[0].Command == "" {
+		t.Fatalf("expected stamp action, got %+v", acts)
 	}
-	if !contains(acts[0].Command, "--update-snapshots") {
-		t.Errorf("contract hash mismatch should suggest re-stamping, got %q", acts[0].Command)
+	if !contains(acts[0].Command, "spec verify") || !contains(acts[0].Command, "--stamp") {
+		t.Errorf("contract hash mismatch should suggest spec verify --stamp, got %q", acts[0].Command)
+	}
+	if contains(acts[0].Command, "--update-snapshots") {
+		t.Errorf("contract hash mismatch must not suggest --update-snapshots, got %q", acts[0].Command)
+	}
+	if !contains(acts[0].Command, "specs/foo.yml") {
+		t.Errorf("stamp command should use the spec path, got %q", acts[0].Command)
 	}
 }
 
 func TestNextActionsForTargetExitedDoesNotSuggestTimeout(t *testing.T) {
 	acts := NextActionsFor(ErrorKindTargetExited, "spec_x", "", "")
-	if len(acts) != 1 {
-		t.Fatalf("expected one action, got %+v", acts)
+	if len(acts) < 1 {
+		t.Fatalf("expected actions, got %+v", acts)
 	}
-	// Must not recommend increasing a wait/target timeout (timeout errorKind does).
-	if contains(acts[0].Reason, "raise timeoutMs") || contains(acts[0].Reason, "raise timeout") {
-		t.Errorf("target_exited must not recommend raising timeouts, got %q", acts[0].Reason)
+	for _, a := range acts {
+		if contains(a.Reason, "raise timeoutMs") || contains(a.Reason, "raise timeout") {
+			t.Errorf("target_exited must not recommend raising timeouts, got %q", a.Reason)
+		}
 	}
-	if !contains(acts[0].Reason, "inspect") {
-		t.Errorf("target_exited should recommend inspecting the target diagnostics, got %q", acts[0].Reason)
+	joined := ""
+	for _, a := range acts {
+		joined += a.Reason + " "
 	}
-	if !contains(acts[0].Reason, "fix the target") {
-		t.Errorf("target_exited should recommend fixing the target, got %q", acts[0].Reason)
+	if !contains(joined, "inspect") {
+		t.Errorf("target_exited should recommend inspecting diagnostics, got %q", joined)
+	}
+	if !contains(joined, "fixing the target") && !contains(joined, "fix the target") {
+		t.Errorf("target_exited should recommend fixing the target, got %q", joined)
+	}
+}
+
+func TestNextActionsForStepFailureIncludesRepair(t *testing.T) {
+	acts := NextActionsForOpts(ErrorKindStepFailure, NextActionsOptions{
+		SpecPath: "examples/specs/hello.yml",
+		RunDir:   "/tmp/run-x",
+	})
+	foundRepair := false
+	foundContext := false
+	for _, a := range acts {
+		if contains(a.Command, "repair") {
+			foundRepair = true
+		}
+		if contains(a.Command, "context") && contains(a.Command, "/tmp/run-x") {
+			foundContext = true
+		}
+	}
+	if !foundRepair {
+		t.Errorf("step_failure should suggest glyph repair, got %+v", acts)
+	}
+	if !foundContext {
+		t.Errorf("step_failure should suggest context with run dir, got %+v", acts)
 	}
 }
 

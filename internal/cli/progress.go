@@ -47,12 +47,10 @@ func progressEnabled(w io.Writer, opts *globalOptions, format outputFormat, para
 	case "never":
 		return false, nil
 	case "always":
-		if parallel != 1 {
-			return false, fmt.Errorf("--progress always requires --parallel 1")
-		}
+		// Parallel progress is supported: lines are prefixed with the spec name.
 		return true, nil
 	case "auto":
-		if parallel != 1 || format != formatMD {
+		if format != formatMD {
 			return false, nil
 		}
 		return isTerminalWriter(w), nil
@@ -209,7 +207,10 @@ func (l *runProgressListener) warn(text string) string {
 func stepSummary(step spec.Step) string {
 	prefix := ""
 	if step.When != nil {
-		prefix = "if " + verifySummary(*step.When) + " then "
+		prefix = "if " + verifySummary(*step.When.AsVerify()) + " then "
+	}
+	if id := strings.TrimSpace(step.ID); id != "" {
+		prefix = "[" + id + "] " + prefix
 	}
 	switch {
 	case step.Press != "":

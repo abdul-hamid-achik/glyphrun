@@ -6,11 +6,15 @@ description: glyph mcp starts a stdio MCP server that mirrors the CLI, so coding
 
 Run `glyph mcp` to start the stdio MCP server.
 
-The server exposes `glyph_explain`, `glyph_docs`, `glyph_doctor`, `glyph_spec_verify`, `glyph_spec_scaffold`, `glyph_run`, `glyph_snapshot_update`, `glyph_diff`, `glyph_context`, `glyph_render`, `glyph_repair`, `glyph_affected_specs`, and `glyph_clean`. Tools call the same internal paths as the CLI so agents get the same validation, artifact packs, and exit behavior.
+The server exposes `glyph_explain`, `glyph_docs`, `glyph_doctor`, `glyph_list`, `glyph_spec_verify`, `glyph_spec_scaffold`, `glyph_run`, `glyph_snapshot_update`, `glyph_diff`, `glyph_context`, `glyph_render`, `glyph_repair`, `glyph_affected_specs`, and `glyph_clean`. Tools call the same internal paths as the CLI so agents get the same validation, artifact packs, and exit behavior.
+
+`glyph_doctor` runs the full prerequisite matrix (platform/PTY/config/artifacts/emulator), not a config smoke test.
+
+`glyph_list` returns specs under given paths (name, path, coversSymbol).
 
 `glyph_spec_scaffold` accepts `kind: "spec"` or `kind: "action"` so agents can create reusable action snippets without guessing the YAML shape.
 
-`glyph_render` returns a deterministic SVG of a run's final screen (or a named snapshot). `glyph_repair` analyzes a spec's failed run and proposes step fixes; with `write: true` it applies them, only ever editing `steps` so the contract hash stays valid.
+`glyph_render` returns a deterministic SVG of a run's final screen (or a named snapshot). `glyph_repair` analyzes a spec's failed run and proposes step fixes; with `write: true` it applies them, only ever editing `steps` so the contract hash stays valid. Set `verify: true` for a transactional cold-start verification (SPEC §7.2) before applying.
 
 `glyph_affected_specs` selects the specs a git change can hit: it shells out to `codemap review --json` and intersects each spec's `coversSymbol` against the changed symbols plus their blast radius, returning the minimal spec set to run via `glyph_run`. One of `since`/`staged` selects the diff scope; passing neither means the working tree.
 

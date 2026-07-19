@@ -22,6 +22,9 @@ func Validate(s Spec) error {
 	if err := validateCoversSymbol(s.CoversSymbol); err != nil {
 		return err
 	}
+	if err := validateMode(s.Mode); err != nil {
+		return err
+	}
 	if len(s.Target.Cmd) == 0 || s.Target.Cmd[0] == "" {
 		return fmt.Errorf("target.cmd must contain at least one argv item")
 	}
@@ -43,6 +46,27 @@ func Validate(s Spec) error {
 		if err := validateVerify(outcome.Verify); err != nil {
 			return fmt.Errorf("outcome %s: %w", outcome.ID, err)
 		}
+	}
+	return nil
+}
+
+func validateMode(mode string) error {
+	switch strings.TrimSpace(mode) {
+	case "", "normal", "debug":
+		return nil
+	default:
+		return fmt.Errorf("mode must be normal or debug")
+	}
+}
+
+func validateStepID(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("id must be non-empty when set")
+	}
+	// Same shape as outcome ids / artifact assign: readable for events.
+	if !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`).MatchString(id) {
+		return fmt.Errorf("id %q must match [A-Za-z][A-Za-z0-9_-]*", id)
 	}
 	return nil
 }
@@ -78,8 +102,13 @@ func validateCoversSymbol(s string) error {
 }
 
 func validateStep(step Step) error {
+	if step.ID != "" {
+		if err := validateStepID(step.ID); err != nil {
+			return err
+		}
+	}
 	if step.When != nil {
-		if err := validateVerify(*step.When); err != nil {
+		if err := validateVerify(*step.When.AsVerify()); err != nil {
 			return fmt.Errorf("when: %w", err)
 		}
 	}
@@ -448,41 +477,43 @@ func validateScriptCondition(s ScriptCondition) error {
 }
 
 func validateRegionCondition(cond RegionCondition) error {
-	count := 0
-	if cond.Contains != "" {
-		count++
-	}
-	if cond.NotContains != "" {
-		count++
-	}
-	if cond.Regex != "" {
-		count++
-		if _, err := regexp.Compile(cond.Regex); err != nil {
-			return fmt.Errorf("region.regex is invalid: %w", err)
-		}
-	}
-	if count != 1 {
-		return fmt.Errorf("region condition must contain exactly one assertion")
-	}
-	return nil
+	return validateTextMatchers("region", cond.Equals, cond.Contains, cond.NotContains, cond.Matches, cond.Regex)
 }
 
 func validateScreenCondition(cond ScreenCondition) error {
+	return validateTextMatchers("screen", cond.Equals, cond.Contains, cond.NotContains, cond.Matches, cond.Regex)
+}
+
+// validateTextMatchers requires exactly one of equals|contains|notContains|matches|regex.
+// matches and regex are aliases; setting both is an error.
+func validateTextMatchers(scope, equals, contains, notContains, matches, regex string) error {
 	count := 0
-	if cond.Contains != "" {
+	if equals != "" {
 		count++
 	}
-	if cond.NotContains != "" {
+	if contains != "" {
 		count++
 	}
-	if cond.Regex != "" {
+	if notContains != "" {
 		count++
-		if _, err := regexp.Compile(cond.Regex); err != nil {
-			return fmt.Errorf("screen.regex is invalid: %w", err)
+	}
+	if matches != "" {
+		count++
+		if _, err := regexp.Compile(matches); err != nil {
+			return fmt.Errorf("%s.matches is invalid: %w", scope, err)
 		}
 	}
+	if regex != "" {
+		count++
+		if _, err := regexp.Compile(regex); err != nil {
+			return fmt.Errorf("%s.regex is invalid: %w", scope, err)
+		}
+	}
+	if matches != "" && regex != "" {
+		return fmt.Errorf("%s condition: use matches or regex, not both", scope)
+	}
 	if count != 1 {
-		return fmt.Errorf("screen condition must contain exactly one assertion")
+		return fmt.Errorf("%s condition must contain exactly one of equals, contains, notContains, matches, regex", scope)
 	}
 	return nil
 }

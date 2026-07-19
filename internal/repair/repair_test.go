@@ -64,8 +64,8 @@ func TestPropose(t *testing.T) {
 
 	t.Run("present string is timing not stale", func(t *testing.T) {
 		ps := propose(steps, []stepFailure{{index: 1, message: "timed out"}}, "OLD GREETING is here")
-		if len(ps) != 1 || ps[0].Proposed != "" {
-			t.Fatalf("expected a no-rewrite timing proposal, got %+v", ps)
+		if len(ps) != 1 || ps[0].Kind != "wait.timeoutMs" || ps[0].Proposed == "" {
+			t.Fatalf("expected a timeoutMs raise proposal, got %+v", ps)
 		}
 	})
 

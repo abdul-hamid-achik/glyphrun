@@ -93,7 +93,7 @@ glyph run $(glyph affected-specs --since HEAD^) --format md
 | `--progress <auto\|always\|never>` | `auto` | Live progress to stderr. The final report stays on stdout. |
 | `--junit <path>` | off | Write a JUnit XML report (`.xml`) consumable by the GitHub test UI. |
 | `--repeat <N>` | `1` | Run each spec N times and report flakiness/stability instead of a single result. Exits non-zero if any iteration of any spec fails. |
-| `--rerun-failed` | off | Re-run only the specs that failed in the previous invocation (read from `<artifactRoot>/.last-failed.txt`). |
+| `--rerun-failed` | off | Re-run only the specs that failed in the previous invocation. Reads `<artifactRoot>/.last-failed.json` (path-aware index; also writes a legacy `.last-failed.txt` name list). When paths are present, re-executes them; name-only legacy indexes are listed for manual re-run. |
 | `--update-snapshots` | off | Update committed terminal snapshots instead of comparing against them. |
 | `--watch` | off | Re-run on spec/source changes. Interactive; requires `--format md`. Polls the filesystem (no file-notify dependency). |
 | `--watch-path <path>` | none | Additional file or directory to watch (repeatable). Implies `--watch`. |

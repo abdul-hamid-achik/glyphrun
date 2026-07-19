@@ -9,6 +9,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	glyphdocs "github.com/abdul-hamid-achik/glyphrun/internal/docs"
+	"github.com/abdul-hamid-achik/glyphrun/internal/doctor"
 	"github.com/abdul-hamid-achik/glyphrun/internal/render"
 	"github.com/abdul-hamid-achik/glyphrun/internal/repair"
 	"github.com/abdul-hamid-achik/glyphrun/internal/runner"
@@ -117,7 +118,16 @@ func tools() []map[string]any {
 			"type":       "object",
 			"properties": map[string]any{"topic": map[string]any{"type": "string"}},
 		}),
-		tool("glyph_doctor", "Check local Glyphrun prerequisites.", map[string]any{"type": "object", "properties": map[string]any{}}),
+		tool("glyph_doctor", "Check local Glyphrun prerequisites (same matrix as `glyph doctor`).", map[string]any{"type": "object", "properties": map[string]any{}}),
+		tool("glyph_list", "List specs under paths with optional feature/tag/owner filters.", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"paths":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"feature": map[string]any{"type": "string"},
+				"tag":     map[string]any{"type": "string"},
+				"owner":   map[string]any{"type": "string"},
+			},
+		}),
 		tool("glyph_spec_verify", "Validate a Glyphrun spec.", map[string]any{
 			"type":       "object",
 			"required":   []string{"path"},
@@ -159,10 +169,15 @@ func tools() []map[string]any {
 			"type":       "object",
 			"properties": map[string]any{"run": map[string]any{"type": "string"}, "screen": map[string]any{"type": "string"}},
 		}),
-		tool("glyph_repair", "Propose step repairs for a spec's failed run (never touches the contract).", map[string]any{
-			"type":       "object",
-			"required":   []string{"path"},
-			"properties": map[string]any{"path": map[string]any{"type": "string"}, "run": map[string]any{"type": "string"}, "write": map[string]any{"type": "boolean"}},
+		tool("glyph_repair", "Propose step repairs for a spec's failed run (never touches the contract). Set verify=true for a transactional cold-start verification (SPEC §7.2).", map[string]any{
+			"type":     "object",
+			"required": []string{"path"},
+			"properties": map[string]any{
+				"path":   map[string]any{"type": "string"},
+				"run":    map[string]any{"type": "string"},
+				"write":  map[string]any{"type": "boolean"},
+				"verify": map[string]any{"type": "boolean", "description": "cold-start verify proposals on a temp copy before applying"},
+			},
 		}),
 		tool("glyph_affected_specs", "Select the specs a git change can hit: shells out to `codemap review --json`, intersects each spec's coversSymbol against the changed symbols + blast radius, and returns the minimal spec set (run those via glyph_run). One of since/staged selects the diff scope; neither means the working tree.", map[string]any{
 			"type": "object",
@@ -216,11 +231,38 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		topic := stringArg(params.Arguments, "topic", "overview")
 		return toolText(map[string]any{"topic": topic, "content": docs(topic)})
 	case "glyph_doctor":
-		rt, err := config.LoadRuntime(".", opts.ConfigPath, opts.Environment)
+		// Full doctor matrix (shared with CLI) so agents get the same checks.
+		result := doctor.Run(doctor.Options{
+			ConfigPath:   opts.ConfigPath,
+			ArtifactRoot: opts.ArtifactRoot,
+			Environment:  opts.Environment,
+		})
+		return toolText(map[string]any{
+			"schemaVersion": result.SchemaVersion,
+			"ok":            result.OK,
+			"checks":        result.Checks,
+		})
+	case "glyph_list":
+		paths := stringSliceArg(params.Arguments, "paths")
+		if len(paths) == 0 {
+			paths = []string{"."}
+		}
+		rows, err := affected.LoadSpecs(paths, opts.ConfigPath, opts.Environment)
 		if err != nil {
 			return toolError(err)
 		}
-		return toolText(map[string]any{"ok": true, "config": rt.ConfigPath, "artifactRoot": rt.Config.ArtifactRoot})
+		out := make([]map[string]any, 0, len(rows))
+		for _, r := range rows {
+			if r.ParseError != "" {
+				continue
+			}
+			out = append(out, map[string]any{
+				"name":         r.Name,
+				"path":         r.Path,
+				"coversSymbol": r.CoversSymbol,
+			})
+		}
+		return toolText(map[string]any{"schemaVersion": 1, "specs": out, "count": len(out)})
 	case "glyph_spec_verify":
 		path := stringArg(params.Arguments, "path", "")
 		if path == "" {
@@ -327,7 +369,7 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		if path == "" {
 			return nil, &responseError{Code: -32602, Message: "path is required"}
 		}
-		result, err := repairSpec(path, stringArg(params.Arguments, "run", "latest"), boolArg(params.Arguments, "write", false), opts)
+		result, err := repairSpec(path, stringArg(params.Arguments, "run", "latest"), boolArg(params.Arguments, "write", false), boolArg(params.Arguments, "verify", false), opts)
 		if err != nil {
 			return toolError(err)
 		}
@@ -455,7 +497,7 @@ func renderScreen(run, screen string, opts ServerOptions) (string, error) {
 
 // repairSpec mirrors `glyph repair`: it analyzes a spec's failed run and
 // proposes (optionally applies) step repairs that never touch the contract.
-func repairSpec(path, run string, write bool, opts ServerOptions) (any, error) {
+func repairSpec(path, run string, write, verify bool, opts ServerOptions) (any, error) {
 	rt, err := config.LoadRuntime(path, opts.ConfigPath, opts.Environment)
 	if err != nil {
 		return nil, err
@@ -480,12 +522,36 @@ func repairSpec(path, run string, write bool, opts ServerOptions) (any, error) {
 		return nil, err
 	}
 	proposals := repair.Analyze(runDir, parsed.Resolved.Steps)
+	if verify {
+		vr, verr := repair.Verify(context.Background(), path, runDir, proposals, repair.VerifyOptions{
+			ConfigPath:   opts.ConfigPath,
+			Environment:  opts.Environment,
+			ArtifactRoot: root,
+		})
+		if verr != nil {
+			return nil, verr
+		}
+		vr.Spec = parsed.Resolved.Name
+		if vr.Verified && write {
+			for i := range proposals {
+				if proposals[i].Proposed == "" || proposals[i].Current == "" {
+					continue
+				}
+				if err := repair.Apply(path, proposals[i]); err != nil {
+					return nil, err
+				}
+				proposals[i].Applied = true
+			}
+			vr.Proposals = proposals
+		}
+		return vr, nil
+	}
 	if write {
 		for i := range proposals {
 			if proposals[i].Proposed == "" || proposals[i].Current == "" {
 				continue
 			}
-			if err := repair.Apply(parsed.Path, proposals[i]); err != nil {
+			if err := repair.Apply(path, proposals[i]); err != nil {
 				return nil, err
 			}
 			proposals[i].Applied = true

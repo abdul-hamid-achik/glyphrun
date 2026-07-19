@@ -52,7 +52,7 @@ func TestResolveCapturePolicy_ProjectConfigOnly(t *testing.T) {
 		RawLog:       true,
 		FinalScreen:  true,
 		AgentContext: false,
-	}, nil, artifacts.StatusPassed)
+	}, nil, "")
 	if p.Snapshots != spec.CaptureAlways {
 		t.Errorf("Snapshots: got %q, want always", p.Snapshots)
 	}
@@ -81,7 +81,7 @@ func TestResolveCapturePolicy_SpecOverrideWins(t *testing.T) {
 		RawLog:       spec.CaptureOnFailure,
 		AgentContext: spec.CaptureAlways,
 	}
-	p := resolveCapturePolicy(base, specPol, artifacts.StatusPassed)
+	p := resolveCapturePolicy(base, specPol, "")
 	if p.Snapshots != spec.CaptureNever {
 		t.Errorf("Snapshots: got %q, want never (spec override)", p.Snapshots)
 	}
@@ -90,6 +90,22 @@ func TestResolveCapturePolicy_SpecOverrideWins(t *testing.T) {
 	}
 	if p.AgentContext != spec.CaptureAlways {
 		t.Errorf("AgentContext: got %q, want always (spec override)", p.AgentContext)
+	}
+}
+
+// TestResolveCapturePolicy_DebugForcesAlways ensures mode: debug turns on
+// the expensive channels regardless of config defaults.
+func TestResolveCapturePolicy_DebugForcesAlways(t *testing.T) {
+	base := config.Artifacts{
+		Snapshots:    false,
+		Frames:       false,
+		RawLog:       false,
+		FinalScreen:  false,
+		AgentContext: false,
+	}
+	p := resolveCapturePolicy(base, nil, "debug")
+	if p.Snapshots != spec.CaptureAlways || p.Frames != spec.CaptureAlways || p.RawLog != spec.CaptureAlways {
+		t.Errorf("debug mode should force always capture, got %+v", p)
 	}
 }
 
@@ -107,7 +123,7 @@ func TestResolveCapturePolicy_SpecLeavesInherit(t *testing.T) {
 		// Only override snapshots.
 		Snapshots: spec.CaptureNever,
 	}
-	p := resolveCapturePolicy(base, specPol, artifacts.StatusPassed)
+	p := resolveCapturePolicy(base, specPol, "")
 	if p.Snapshots != spec.CaptureNever {
 		t.Errorf("Snapshots: got %q, want never (overridden)", p.Snapshots)
 	}
