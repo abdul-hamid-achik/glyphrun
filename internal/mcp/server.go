@@ -430,9 +430,11 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		archive := artifacts.ArchiveConfig{}
 		if !boolArg(params.Arguments, "noArchive", false) {
 			archive = artifacts.ArchiveConfig{
-				Enabled: rt.Config.Retention.Archive.Enabled,
-				Command: rt.Config.Retention.Archive.Command,
-				Args:    rt.Config.Retention.Archive.Args,
+				Enabled:       rt.Config.Retention.Archive.Enabled,
+				Mode:          rt.Config.Retention.Archive.Mode,
+				Command:       rt.Config.Retention.Archive.Command,
+				Args:          rt.Config.Retention.Archive.Args,
+				RetentionDays: rt.Config.Retention.Archive.RetentionDays,
 			}
 			if d, perr := artifacts.ParseArchiveTimeout(rt.Config.Retention.Archive.Timeout); perr == nil {
 				archive.Timeout = d

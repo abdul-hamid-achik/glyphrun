@@ -8,8 +8,10 @@ package ptyrunner
 import (
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -226,6 +228,36 @@ func mergeEnv(base []string, overlay map[string]string) []string {
 		out = append(out, k+"="+v)
 	}
 	return out
+}
+
+// SanitizedEnv creates the target-process environment. Keep only portable
+// process-discovery variables from the caller, then apply the run environment.
+// TinyVault unlock material and the file.cheap publisher credential remain
+// private to their control-plane subprocesses even when the runtime overlay
+// was populated from the caller's environment.
+func SanitizedEnv(overlay map[string]string) []string {
+	allowed := map[string]bool{
+		"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "SHELL": true,
+		"TMPDIR": true, "TMP": true, "TEMP": true, "SystemRoot": true,
+		"WINDIR": true, "ComSpec": true, "PATHEXT": true,
+		"XDG_CACHE_HOME": true, "XDG_CONFIG_HOME": true, "XDG_DATA_HOME": true,
+	}
+	base := make([]string, 0, len(allowed))
+	for _, pair := range os.Environ() {
+		key, _, ok := splitEnv(pair)
+		if ok && allowed[key] {
+			base = append(base, pair)
+		}
+	}
+	filtered := make(map[string]string, len(overlay))
+	for key, value := range overlay {
+		upperKey := strings.ToUpper(key)
+		if strings.HasPrefix(upperKey, "TVAULT_") || upperKey == "FILECHEAP_INGEST_TOKEN" {
+			continue
+		}
+		filtered[key] = value
+	}
+	return mergeEnv(base, filtered)
 }
 
 func splitEnv(pair string) (string, string, bool) {

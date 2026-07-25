@@ -805,13 +805,12 @@ func (s *runState) runTransformScript(parent context.Context, runtime string, sc
 	runCtx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
-	env := os.Environ()
-	env = append(env,
-		"GLYPHRUN_INPUT="+input,
-		"GLYPHRUN_OUTPUT="+outputPath,
-	)
+	envExtra := map[string]string{
+		"GLYPHRUN_INPUT":  input,
+		"GLYPHRUN_OUTPUT": outputPath,
+	}
 	if data, err := json.Marshal(fixtures); err == nil {
-		env = append(env, "GLYPHRUN_FIXTURES_JSON="+string(data))
+		envExtra["GLYPHRUN_FIXTURES_JSON"] = string(data)
 	}
 
 	var cmd *exec.Cmd
@@ -840,7 +839,7 @@ func (s *runState) runTransformScript(parent context.Context, runtime string, sc
 	default: // "shell"
 		cmd = exec.CommandContext(runCtx, "/bin/sh", "-lc", "\""+scriptPath+"\"")
 	}
-	cmd.Env = env
+	cmd.Env = s.childEnv(envExtra)
 	cmd.Dir = outputDir
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -848,7 +847,7 @@ func (s *runState) runTransformScript(parent context.Context, runtime string, sc
 		if runCtx.Err() != nil {
 			return runTimeoutError{Scope: "transform", Timeout: timeout, Message: fmt.Sprintf("transform timed out after %s", timeout)}
 		}
-		return fmt.Errorf("transform %s failed: %v %s", scriptPath, err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("transform %s failed: %v %s", scriptPath, err, s.redactor.Text(strings.TrimSpace(stderr.String())))
 	}
 	return nil
 }
@@ -1195,6 +1194,9 @@ func (s *runState) evaluateOutcome(ctx context.Context, outcome spec.Outcome) ou
 			return failedOutcome(outcome, err.Error(), lastRaw)
 		}
 		ok, message, raw := s.checkVerifyWithEvidence(ctx, outcome.Verify, outcome.Normalize)
+		// Verifier messages can include external command output. Redact before
+		// they reach the run result, events, or any CLI result surface.
+		message = s.redactor.Text(message)
 		if raw != nil {
 			lastRaw = raw
 		}
@@ -1479,12 +1481,9 @@ func (s *runState) checkScript(ctx context.Context, cond spec.ScriptCondition) (
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	env := append(os.Environ(),
-		"GLYPHRUN_RUN_DIR="+s.writer.RunDir,
-		"GLYPHRUN=1",
-	)
+	envExtra := map[string]string{}
 	if data, err := json.Marshal(resolvedFixtures); err == nil {
-		env = append(env, "GLYPHRUN_FIXTURES_JSON="+string(data))
+		envExtra["GLYPHRUN_FIXTURES_JSON"] = string(data)
 	}
 
 	var cmd *exec.Cmd
@@ -1503,7 +1502,7 @@ func (s *runState) checkScript(ctx context.Context, cond spec.ScriptCondition) (
 	default: // "shell"
 		cmd = exec.CommandContext(runCtx, "/bin/sh", scriptPath)
 	}
-	cmd.Env = env
+	cmd.Env = s.childEnv(envExtra)
 	cmd.Dir = s.writer.RunDir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -1512,7 +1511,7 @@ func (s *runState) checkScript(ctx context.Context, cond spec.ScriptCondition) (
 		if runCtx.Err() != nil {
 			return false, fmt.Sprintf("script timed out after %s", timeout), nil
 		}
-		return false, fmt.Sprintf("script %s failed: %v %s", scriptPath, err, strings.TrimSpace(stderr.String())), nil
+		return false, fmt.Sprintf("script %s failed: %v %s", scriptPath, err, s.redactor.Text(strings.TrimSpace(stderr.String()))), nil
 	}
 
 	// Parse the script's stdout as JSON. We accept the cairn shape
@@ -1527,7 +1526,7 @@ func (s *runState) checkScript(ctx context.Context, cond spec.ScriptCondition) (
 		Evidence interface{} `json:"evidence"`
 	}
 	if err := json.Unmarshal([]byte(rawOut), &result); err != nil {
-		return false, fmt.Sprintf("script returned non-JSON output: %s", truncateScriptOutput(rawOut, 200)), nil
+		return false, fmt.Sprintf("script returned non-JSON output: %s", s.redactor.Text(truncateScriptOutput(rawOut, 200))), nil
 	}
 	if !result.OK {
 		message := "script verifier returned ok=false"
@@ -1776,21 +1775,14 @@ func (s *runState) runShellCommand(ctx context.Context, command string, cwd stri
 	// in startTarget (the runner's run-dir is authoritative) and lets a
 	// `command:` verifier reference $GLYPHRUN_RUN_DIR / ${env.*} /
 	// ${vars.*} the same way an outcome can.
-	cmd.Env = os.Environ()
-	for k, v := range s.runtime.Env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-	}
-	cmd.Env = append(cmd.Env,
-		"GLYPHRUN_RUN_DIR="+s.writer.RunDir,
-		"GLYPHRUN=1",
-	)
+	cmd.Env = s.childEnv(nil)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if runCtx.Err() != nil {
 			return runTimeoutError{Scope: "command", Timeout: timeout, Message: fmt.Sprintf("%q timed out after %s", command, timeout)}
 		}
-		return fmt.Errorf("%q failed: %v %s", command, err, strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("%q failed: %v %s", command, err, s.redactor.Text(strings.TrimSpace(stderr.String())))
 	}
 	return nil
 }
@@ -2028,9 +2020,11 @@ func (s *runState) terminalPolicyFailure() string {
 // timeout string that fails to parse is dropped (default applies).
 func archiveConfigFromConfig(c config.ArchiveConfig) artifacts.ArchiveConfig {
 	out := artifacts.ArchiveConfig{
-		Enabled: c.Enabled,
-		Command: c.Command,
-		Args:    c.Args,
+		Enabled:       c.Enabled,
+		Mode:          c.Mode,
+		Command:       c.Command,
+		Args:          c.Args,
+		RetentionDays: c.RetentionDays,
 	}
 	if d, err := artifacts.ParseArchiveTimeout(c.Timeout); err == nil {
 		out.Timeout = d
@@ -2039,6 +2033,7 @@ func archiveConfigFromConfig(c config.ArchiveConfig) artifacts.ArchiveConfig {
 }
 
 func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcomes []artifacts.OutcomeResult, diagnostic string, errorKind artifacts.ErrorKind, exitCodeOverride ...int) artifacts.RunResult {
+	diagnostic = s.redactor.Text(diagnostic)
 	if outcomes == nil {
 		outcomes = []artifacts.OutcomeResult{}
 	}

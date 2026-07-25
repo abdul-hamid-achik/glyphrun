@@ -55,8 +55,19 @@ tasks:
     cmds:
       - gofmt -w .
 
+  privacy:
+    desc: Reject private employer references from tracked release content
+    cmds:
+      - |
+        private_marker='graph''ite'
+        if git grep -n -i -- "$private_marker"; then
+          echo "private documentation reference detected"
+          exit 1
+        fi
+
   verify:
     cmds:
+      - task privacy
       - task fmt
       - task lint
       - task test
@@ -109,4 +120,3 @@ tasks:
     deps: [build]
     cmds:
       - '{{.BIN}} context latest --format md'
-

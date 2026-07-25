@@ -124,11 +124,24 @@ func applyExplicitConfigFields(cfg *Config, data []byte) error {
 			if v, ok := archive["enabled"].(bool); ok {
 				cfg.Retention.Archive.Enabled = v
 			}
+			if v, ok := archive["mode"].(string); ok {
+				cfg.Retention.Archive.Mode = v
+			}
 			if v, ok := archive["command"].(string); ok {
 				cfg.Retention.Archive.Command = v
 			}
 			if v, ok := archive["timeout"].(string); ok {
 				cfg.Retention.Archive.Timeout = v
+			}
+			if v, ok := archive["retentionDays"]; ok {
+				switch n := v.(type) {
+				case int:
+					cfg.Retention.Archive.RetentionDays = n
+				case int64:
+					cfg.Retention.Archive.RetentionDays = int(n)
+				case float64:
+					cfg.Retention.Archive.RetentionDays = int(n)
+				}
 			}
 			if args, ok := archive["args"].([]any); ok {
 				parsed := make([]string, 0, len(args))
@@ -281,11 +294,17 @@ func mergeConfig(base Config, overlay Config) Config {
 	if overlay.Retention.Archive.Command != "" {
 		base.Retention.Archive.Command = overlay.Retention.Archive.Command
 	}
+	if overlay.Retention.Archive.Mode != "" {
+		base.Retention.Archive.Mode = overlay.Retention.Archive.Mode
+	}
 	if len(overlay.Retention.Archive.Args) > 0 {
 		base.Retention.Archive.Args = overlay.Retention.Archive.Args
 	}
 	if overlay.Retention.Archive.Timeout != "" {
 		base.Retention.Archive.Timeout = overlay.Retention.Archive.Timeout
+	}
+	if overlay.Retention.Archive.RetentionDays != 0 {
+		base.Retention.Archive.RetentionDays = overlay.Retention.Archive.RetentionDays
 	}
 	return base
 }

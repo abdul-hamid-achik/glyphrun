@@ -35,18 +35,16 @@ type Environment struct {
 
 // Secrets declares a tvault env-group whose resolved values are injected
 // into the run environment at start time. The config file carries only the
-// group/env names (or a direct project) — never secret values. At run time
+// source identifiers and key selectors — never secret values. At run time
 // glyphrun calls `tvault env --group <g> --env <e> --format json`, parses the
-// output, and merges the key/value pairs into the process environment. All
+// output, and merges the selected key/value pairs into the process environment. All
 // resolved values are also added to the per-run redactor so they are scrubbed
 // from every artifact before it lands on disk.
 //
-// Either (Group + Env) or Project must be set. If neither is set, the block is
-// a no-op (useful for sharing a config across environments where only some
-// have a tvault backend).
+// Exactly one source must be set: either Group + Env or Project.
 //
-// Only and Prefix are optional least-privilege filters applied client-side
-// after resolution. A key is kept if it matches either filter.
+// One of Only or Prefix is required. The selector is sent to TinyVault so
+// Glyphrun never fetches values outside the run's declared scope.
 type Secrets struct {
 	// Provider is the secrets backend. Currently only "tvault" is supported.
 	// Defaults to "tvault" when empty.
@@ -68,8 +66,7 @@ type Secrets struct {
 	// part of an environment group. Mutually exclusive with Group+Env.
 	Project string `yaml:"project,omitempty" json:"project,omitempty"`
 
-	// Only is an explicit allowlist of secret keys to inject. Keys not in
-	// this list are dropped after resolution.
+	// Only is an explicit allowlist of secret keys to inject.
 	Only []string `yaml:"only,omitempty" json:"only,omitempty"`
 
 	// Prefix injects only secret keys that start with this prefix.
@@ -143,10 +140,19 @@ type Retention struct {
 // It is a sub-block of retention. Timeout is a duration string (e.g.
 // "5m", "30s"); empty means the default (5m).
 type ArchiveConfig struct {
-	Enabled bool     `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Mode selects a constrained archive protocol. "fcheap-publish" packages
+	// the complete run directory as a bounded deterministic tar.gz and requires
+	// a strict credential-free filecheap-publish/1 receipt that matches those
+	// exact bytes before local deletion. Empty preserves the legacy generic
+	// command integration.
+	Mode    string   `yaml:"mode,omitempty" json:"mode,omitempty"`
 	Command string   `yaml:"command,omitempty" json:"command,omitempty"`
 	Args    []string `yaml:"args,omitempty" json:"args,omitempty"`
 	Timeout string   `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	// RetentionDays is used only by fcheap-publish. Zero selects its
+	// seven-day default; the schema bounds explicit values to 1..31.
+	RetentionDays int `yaml:"retentionDays,omitempty" json:"retentionDays,omitempty"`
 }
 
 type RedactionPattern struct {

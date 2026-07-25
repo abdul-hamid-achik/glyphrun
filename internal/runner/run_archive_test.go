@@ -11,7 +11,7 @@ import (
 
 // TestArchiveConfigFromConfig guards the config→artifacts archive
 // translation that the runner owns (the artifacts package must not
-// import internal/config). It copies Enabled/Command/Args verbatim and
+// import internal/config). It copies Enabled/Mode/Command/Args verbatim and
 // parses Timeout via artifacts.ParseArchiveTimeout; an unparseable
 // timeout is dropped (left 0) so the downstream default applies, and an
 // empty timeout is likewise 0.
@@ -25,6 +25,11 @@ func TestArchiveConfigFromConfig(t *testing.T) {
 			name: "full block parses timeout",
 			in:   config.ArchiveConfig{Enabled: true, Command: "fcheap", Args: []string{"store"}, Timeout: "90s"},
 			want: artifacts.ArchiveConfig{Enabled: true, Command: "fcheap", Args: []string{"store"}, Timeout: 90 * time.Second},
+		},
+		{
+			name: "strict fcheap mode crosses package boundary",
+			in:   config.ArchiveConfig{Enabled: true, Mode: "fcheap-publish", Command: "fcheap", Timeout: "90s", RetentionDays: 14},
+			want: artifacts.ArchiveConfig{Enabled: true, Mode: "fcheap-publish", Command: "fcheap", Timeout: 90 * time.Second, RetentionDays: 14},
 		},
 		{
 			name: "bad timeout dropped to zero without panic",

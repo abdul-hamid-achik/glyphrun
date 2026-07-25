@@ -122,7 +122,6 @@ environments:
         - STRIPE_SECRET_KEY
     env:
       TVAULT_DIR: .glyphrun/tmp/vault
-      TVAULT_PASSPHRASE: glyphpass
 `
 	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
@@ -158,6 +157,8 @@ environments:
   ci:
     secrets:
       project: liftclub-preview
+      only:
+        - DATABASE_URL
 `
 	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
 		t.Fatal(err)
@@ -176,6 +177,40 @@ environments:
 	}
 	if rt.Secrets.Group != "" {
 		t.Fatalf("Group = %q, want empty", rt.Secrets.Group)
+	}
+}
+
+func TestLoadRuntimeRejectsSecretsSchemaRuntimeDrift(t *testing.T) {
+	tests := map[string]string{
+		"empty only selector": `version: 1
+environments:
+  local:
+    secrets:
+      project: app
+      only: []
+`,
+		"ambiguous source": `version: 1
+environments:
+  local:
+    secrets:
+      project: app
+      group: app
+      env: preview
+      only:
+        - DATABASE_URL
+`,
+	}
+	for name, yaml := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+			if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := LoadRuntime(dir, cfgPath, ""); err == nil {
+				t.Fatal("invalid secrets block passed schema validation")
+			}
+		})
 	}
 }
 
@@ -305,5 +340,52 @@ retention:
 	}
 	if a.Timeout != "90s" {
 		t.Errorf("Archive.Timeout = %q, want %q", a.Timeout, "90s")
+	}
+}
+
+func TestLoadRuntimeFcheapPublishArchiveBlock(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	yaml := `version: 1
+retention:
+  keepRuns: 3
+  archive:
+    enabled: true
+    mode: fcheap-publish
+    command: fcheap
+    timeout: 90s
+    retentionDays: 7
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rt, err := LoadRuntime(dir, cfgPath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rt.Config.Retention.Archive.Mode; got != "fcheap-publish" {
+		t.Fatalf("Archive.Mode = %q, want fcheap-publish", got)
+	}
+	if got := rt.Config.Retention.Archive.RetentionDays; got != 7 {
+		t.Fatalf("Archive.RetentionDays = %d, want 7", got)
+	}
+}
+
+func TestLoadRuntimeFcheapPublishRejectsCustomArgs(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+	yaml := `version: 1
+retention:
+  archive:
+    enabled: true
+    mode: fcheap-publish
+    command: fcheap
+    args: [store]
+`
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadRuntime(dir, cfgPath, ""); err == nil {
+		t.Fatal("fcheap-publish accepted custom command arguments")
 	}
 }

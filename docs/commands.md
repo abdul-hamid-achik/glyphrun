@@ -190,7 +190,7 @@ glyph render 20260629-001 --screen ready --out -
 
 ### `glyph clean`
 
-Prune old run directories from the artifact root. By default keeps the newest N runs per the project config (`retention.keepRuns`, default **3**) and prunes older ones. When `retention.archive` is configured, pruned runs are sent to the external archive command (e.g. `fcheap`) before being deleted locally (move semantics); on archive failure the local dir is preserved. Safe to run while a parallel `glyph run` is executing.
+Prune old run directories from the artifact root. By default keeps the newest N runs per the project config (`retention.keepRuns`, default **3**) and prunes older ones. With `retention.archive.mode: fcheap-publish`, Glyphrun packages the complete run directory into a deterministic tar.gz and deletes locally only after validating a credential-free server-SHA-256 receipt whose digest and size match the package exactly. Symlinks, special files, an archive over 2 MiB, and any publish or receipt failure preserve the local directory. Safe to run while a parallel `glyph run` is executing.
 
 ```bash
 glyph clean --format md
