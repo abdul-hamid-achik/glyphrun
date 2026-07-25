@@ -23,12 +23,7 @@ jobs:
           cache: true
 
       - name: Privacy scan
-        run: |
-          private_marker='graph''ite'
-          if git grep -n -i -- "$private_marker"; then
-            echo "::error::Private documentation reference detected"
-            exit 1
-          fi
+        run: ./scripts/privacy-check.sh
 
       - name: Format check
         run: |

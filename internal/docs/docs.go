@@ -226,7 +226,7 @@ metadata:
   priority: high
   tags:
     - smoke
-    - OPG-1234
+    - EXAMPLE-1234
 intent: ...
 ` + "```" + `
 
