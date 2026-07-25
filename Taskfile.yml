@@ -56,14 +56,9 @@ tasks:
       - gofmt -w .
 
   privacy:
-    desc: Reject private employer references from tracked release content
+    desc: Reject private references from tracked content and paths
     cmds:
-      - |
-        private_marker='graph''ite'
-        if git grep -n -i -- "$private_marker"; then
-          echo "private documentation reference detected"
-          exit 1
-        fi
+      - ./scripts/privacy-check.sh
 
   verify:
     cmds:
