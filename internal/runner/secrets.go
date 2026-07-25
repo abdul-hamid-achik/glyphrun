@@ -27,9 +27,9 @@ import (
 // environment, typically set by the config's env block — they are never
 // read from the config file itself.
 //
-// Only and Prefix are optional least-privilege filters applied client-side
-// after resolution. A key is kept if it matches either filter (union
-// semantics, matching tvault run --only/--prefix).
+// Only and Prefix are passed to TinyVault. Glyphrun deliberately never asks
+// TinyVault for every value and filters locally: values that are outside the
+// run's scope must not enter this process in the first place.
 func resolveSecrets(ctx context.Context, cfg *config.Secrets, env []string) (map[string]string, []string, error) {
 	if cfg == nil {
 		return nil, nil, nil
@@ -52,6 +52,12 @@ func resolveSecrets(ctx context.Context, cfg *config.Secrets, env []string) (map
 		args = append(args, "-p", cfg.Project)
 		source = cfg.Project
 	}
+	for _, key := range cfg.Only {
+		args = append(args, "--only", key)
+	}
+	if cfg.Prefix != "" {
+		args = append(args, "--prefix", cfg.Prefix)
+	}
 
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Env = env
@@ -59,13 +65,8 @@ func resolveSecrets(ctx context.Context, cfg *config.Secrets, env []string) (map
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		detail := strings.TrimSpace(stderr.String())
-		if detail == "" {
-			detail = strings.TrimSpace(stdout.String())
-		}
-		if detail != "" {
-			return nil, nil, fmt.Errorf("tvault env %s: %w (%s)", source, err, detail)
-		}
+		// TinyVault's stdout is secret-bearing JSON and stderr is controlled by
+		// an external program. Neither may cross a Glyphrun error surface.
 		return nil, nil, fmt.Errorf("tvault env %s: %w", source, err)
 	}
 
@@ -73,8 +74,9 @@ func resolveSecrets(ctx context.Context, cfg *config.Secrets, env []string) (map
 	if err := json.Unmarshal(stdout.Bytes(), &resolved); err != nil {
 		return nil, nil, fmt.Errorf("parse tvault env json: %w", err)
 	}
-
-	resolved = filterSecrets(resolved, cfg)
+	if err := validateResolvedSecretKeys(resolved, cfg); err != nil {
+		return nil, nil, err
+	}
 
 	values := make([]string, 0, len(resolved))
 	for _, v := range resolved {
@@ -83,6 +85,23 @@ func resolveSecrets(ctx context.Context, cfg *config.Secrets, env []string) (map
 	sort.Strings(values)
 
 	return resolved, values, nil
+}
+
+// validateResolvedSecretKeys fails closed if a provider ignores the selector.
+// This is not a local filtering fallback: no unrequested value is returned to
+// the caller or placed into a target environment.
+func validateResolvedSecretKeys(resolved map[string]string, cfg *config.Secrets) error {
+	only := make(map[string]bool, len(cfg.Only))
+	for _, key := range cfg.Only {
+		only[key] = true
+	}
+	for key := range resolved {
+		if only[key] || (cfg.Prefix != "" && strings.HasPrefix(key, cfg.Prefix)) {
+			continue
+		}
+		return fmt.Errorf("tvault env returned key outside declared selector")
+	}
+	return nil
 }
 
 // validateSecrets checks that the config block is well-formed: either
@@ -114,26 +133,10 @@ func validateSecrets(cfg *config.Secrets) error {
 	if hasEnv && !hasGroup {
 		return fmt.Errorf("secrets: env requires group")
 	}
-	return nil
-}
-
-// filterSecrets applies the Only allowlist and Prefix filter client-side.
-// A key is kept if it matches either selector (union semantics).
-func filterSecrets(all map[string]string, cfg *config.Secrets) map[string]string {
 	if len(cfg.Only) == 0 && cfg.Prefix == "" {
-		return all
+		return fmt.Errorf("secrets: set only or prefix so TinyVault resolves a bounded secret set")
 	}
-	onlySet := make(map[string]bool, len(cfg.Only))
-	for _, k := range cfg.Only {
-		onlySet[k] = true
-	}
-	selected := make(map[string]string)
-	for k, v := range all {
-		if onlySet[k] || (cfg.Prefix != "" && strings.HasPrefix(k, cfg.Prefix)) {
-			selected[k] = v
-		}
-	}
-	return selected
+	return nil
 }
 
 // envSlice converts a map to "KEY=VALUE" slices suitable for exec.Cmd.Env.

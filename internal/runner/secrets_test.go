@@ -48,18 +48,18 @@ func TestValidateSecrets(t *testing.T) {
 			wantErr: "unsupported provider",
 		},
 		{
-			name:    "group+env valid",
-			cfg:     &config.Secrets{Group: "liftclub", Env: "preview"},
-			wantErr: "",
-		},
-		{
-			name:    "project valid",
-			cfg:     &config.Secrets{Project: "liftclub-preview"},
-			wantErr: "",
-		},
-		{
-			name:    "default provider valid when empty",
+			name:    "selector is required",
 			cfg:     &config.Secrets{Project: "app"},
+			wantErr: "only or prefix",
+		},
+		{
+			name:    "group+env with only is valid",
+			cfg:     &config.Secrets{Group: "liftclub", Env: "preview", Only: []string{"DATABASE_URL"}},
+			wantErr: "",
+		},
+		{
+			name:    "project with prefix is valid",
+			cfg:     &config.Secrets{Project: "liftclub-preview", Prefix: "APP_"},
 			wantErr: "",
 		},
 	}
@@ -78,64 +78,6 @@ func TestValidateSecrets(t *testing.T) {
 			}
 			if !contains(err.Error(), tt.wantErr) {
 				t.Fatalf("error %q does not contain %q", err.Error(), tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestFilterSecrets(t *testing.T) {
-	all := map[string]string{
-		"DATABASE_URL":      "postgres://prod",
-		"STRIPE_SECRET_KEY": "sk_live_abc",
-		"NUXT_DATABASE_URL": "postgres://nuxt",
-		"RESEND_KEY":        "re_abc",
-		"OTHER_KEY":         "other",
-	}
-
-	tests := []struct {
-		name   string
-		only   []string
-		prefix string
-		want   []string
-	}{
-		{
-			name: "no filter keeps all",
-			want: []string{"DATABASE_URL", "NUXT_DATABASE_URL", "OTHER_KEY", "RESEND_KEY", "STRIPE_SECRET_KEY"},
-		},
-		{
-			name: "only allowlist",
-			only: []string{"DATABASE_URL", "RESEND_KEY"},
-			want: []string{"DATABASE_URL", "RESEND_KEY"},
-		},
-		{
-			name:   "prefix filter",
-			prefix: "NUXT_",
-			want:   []string{"NUXT_DATABASE_URL"},
-		},
-		{
-			name:   "union of only and prefix",
-			only:   []string{"DATABASE_URL"},
-			prefix: "NUXT_",
-			want:   []string{"DATABASE_URL", "NUXT_DATABASE_URL"},
-		},
-		{
-			name: "only key not present is dropped silently",
-			only: []string{"NONEXISTENT"},
-			want: []string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &config.Secrets{Only: tt.only, Prefix: tt.prefix}
-			got := filterSecrets(all, cfg)
-			if len(got) != len(tt.want) {
-				t.Fatalf("got %d keys, want %d (%v)", len(got), len(tt.want), got)
-			}
-			for _, k := range tt.want {
-				if _, ok := got[k]; !ok {
-					t.Fatalf("missing key %q in filtered result", k)
-				}
 			}
 		})
 	}
@@ -167,7 +109,7 @@ func TestResolveSecretsGroupEnv(t *testing.T) {
 	binPath := filepath.Join(dir, "tvault")
 	script := `#!/bin/sh
 # Emit a deterministic JSON payload for the env command.
-echo '{"DATABASE_URL":"postgres://prod","STRIPE_SECRET_KEY":"sk_live_abc123"}'
+echo '{"DATABASE_URL":"postgres://prod","STRIPE_SECRET_KEY":"fixture"}'
 `
 	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -177,6 +119,7 @@ echo '{"DATABASE_URL":"postgres://prod","STRIPE_SECRET_KEY":"sk_live_abc123"}'
 		Group:  "liftclub",
 		Env:    "preview",
 		Binary: binPath,
+		Only:   []string{"DATABASE_URL", "STRIPE_SECRET_KEY"},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -191,8 +134,8 @@ echo '{"DATABASE_URL":"postgres://prod","STRIPE_SECRET_KEY":"sk_live_abc123"}'
 	if resolved["DATABASE_URL"] != "postgres://prod" {
 		t.Fatalf("DATABASE_URL = %q, want %q", resolved["DATABASE_URL"], "postgres://prod")
 	}
-	if resolved["STRIPE_SECRET_KEY"] != "sk_live_abc123" {
-		t.Fatalf("STRIPE_SECRET_KEY = %q, want %q", resolved["STRIPE_SECRET_KEY"], "sk_live_abc123")
+	if resolved["STRIPE_SECRET_KEY"] != "fixture" {
+		t.Fatalf("STRIPE_SECRET_KEY = %q, want %q", resolved["STRIPE_SECRET_KEY"], "fixture")
 	}
 	if len(values) != 2 {
 		t.Fatalf("expected 2 redaction values, got %d", len(values))
@@ -202,11 +145,10 @@ echo '{"DATABASE_URL":"postgres://prod","STRIPE_SECRET_KEY":"sk_live_abc123"}'
 func TestResolveSecretsWithOnlyFilter(t *testing.T) {
 	dir := t.TempDir()
 	binPath := filepath.Join(dir, "tvault")
-	// Include keys that should be filtered out.
+	// A fake TinyVault emits exactly the requested value. A separate test
+	// confirms that unexpected values fail closed instead of being filtered.
 	output := map[string]string{
-		"DATABASE_URL":      "postgres://prod",
-		"STRIPE_SECRET_KEY": "sk_live_abc",
-		"OTHER_KEY":         "should-be-filtered",
+		"DATABASE_URL": "postgres://prod",
 	}
 	data, _ := json.Marshal(output)
 	script := "#!/bin/sh\necho '" + string(data) + "'\n"
@@ -241,6 +183,43 @@ func TestResolveSecretsWithOnlyFilter(t *testing.T) {
 	}
 }
 
+func TestResolveSecretsRejectsProviderValuesOutsideSelector(t *testing.T) {
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "tvault")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\necho '{\"DATABASE_URL\":\"selected\",\"OTHER_KEY\":\"must-not-enter-run\"}'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := resolveSecrets(context.Background(), &config.Secrets{Project: "app", Binary: binPath, Only: []string{"DATABASE_URL"}}, os.Environ())
+	if err == nil || !contains(err.Error(), "outside declared selector") {
+		t.Fatalf("resolveSecrets error = %v, want selector failure", err)
+	}
+}
+
+func TestResolveSecretsPassesSelectorsToTinyVault(t *testing.T) {
+	dir := t.TempDir()
+	argsPath := filepath.Join(dir, "args.txt")
+	binPath := filepath.Join(dir, "tvault")
+	script := "#!/bin/sh\nprintf '%s' \"$*\" > " + argsPath + "\necho '{\"DATABASE_URL\":\"selected-value\"}'\n"
+	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := resolveSecrets(context.Background(), &config.Secrets{
+		Project: "myapp", Binary: binPath, Only: []string{"DATABASE_URL"}, Prefix: "APP_",
+	}, os.Environ())
+	if err != nil {
+		t.Fatalf("resolveSecrets failed: %v", err)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"env", "--format json", "-p myapp", "--only DATABASE_URL", "--prefix APP_"} {
+		if !contains(string(args), want) {
+			t.Fatalf("TinyVault args %q missing %q", args, want)
+		}
+	}
+}
+
 func TestResolveSecretsProjectMode(t *testing.T) {
 	dir := t.TempDir()
 	binPath := filepath.Join(dir, "tvault")
@@ -254,6 +233,7 @@ echo '{"API_KEY":"key123"}'
 	cfg := &config.Secrets{
 		Project: "myapp",
 		Binary:  binPath,
+		Only:    []string{"API_KEY"},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -282,6 +262,7 @@ exit 1
 		Group:  "liftclub",
 		Env:    "preview",
 		Binary: binPath,
+		Only:   []string{"DATABASE_URL"},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -308,6 +289,7 @@ echo "not json at all"
 	cfg := &config.Secrets{
 		Project: "myapp",
 		Binary:  binPath,
+		Only:    []string{"API_KEY"},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

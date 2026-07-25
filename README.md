@@ -309,13 +309,14 @@ Retention, last-failed tracking, and explicit cleanup are first-class commands:
 # glyphrun.config.yml
 retention:
   keepRuns: 20   # default is 3; 0 disables auto-prune
-  # archive pruned runs to an external store (e.g. fcheap / file.cheap)
-  # instead of deleting them. On exit 0 the local dir is removed (move);
-  # on failure it is preserved. Archival never fails the run.
+  # Package and publish the complete run directory to file.cheap.
+  # Glyphrun removes a local run only after validating its credential-free,
+  # server-SHA-256 receipt; a failed or malformed receipt preserves it.
   archive:
     enabled: true
+    mode: fcheap-publish
     command: fcheap
-    args: ["store"]   # invoked as: fcheap store <runDir>
+    retentionDays: 7
 ```
 
 ```bash
@@ -326,7 +327,7 @@ glyph clean --no-archive        # delete locally without archiving first
 glyph run <spec> --rerun-failed  # replay only the specs in .last-failed.txt
 ```
 
-The default is **3**: a config that omits `retention.keepRuns` keeps the 3 newest run dirs; an explicit `0` disables auto-prune. Auto-prune runs after every successful run (best-effort; logged as `retention.pruned` / `retention.archived` in `events.ndjson`). The current run is always kept; the cap applies to historical runs only.
+The default is **3**: a config that omits `retention.keepRuns` keeps the 3 newest run dirs; an explicit `0` disables auto-prune. Auto-prune runs after every successful run (best-effort; logged as `retention.pruned` / `retention.archived` in `events.ndjson`). The current run is always kept; the cap applies to historical runs only. `fcheap-publish` creates a deterministic tar.gz containing the complete run directory in a private temporary location. Symlinks and special files are rejected, and a compressed package over 2 MiB remains local. Remote evidence expires after `retentionDays` (seven by default, bounded to 1–31 days). Glyphrun deletes the run only when the credential-free receipt reports the exact package SHA-256 and size. The publisher receives its scoped ingest token directly from the `glyph` process environment; targets and verifiers never receive it. This strict contract requires `fcheap` v0.31.0 or newer.
 
 ## Repairing Drifted Steps
 

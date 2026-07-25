@@ -5,7 +5,6 @@ package ptyrunner
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"syscall"
 
@@ -28,7 +27,7 @@ func newBackend(opts Options) (backend, error) {
 		buildCommandLine(opts.Cmd),
 		conpty.ConPtyDimensions(opts.Cols, opts.Rows),
 		conpty.ConPtyWorkDir(opts.Cwd),
-		conpty.ConPtyEnv(mergeEnv(os.Environ(), opts.Env)),
+		conpty.ConPtyEnv(SanitizedEnv(opts.Env)),
 	)
 	if err != nil {
 		return nil, err

@@ -10,8 +10,8 @@ head:
 Date: 2026-06-13
 Scope: side-by-side feature comparison of `cairntrace` (browser specs, v1.8.0) and
 `glyphrun` (terminal specs, current `main`), plus prioritized improvement ideas
-for glyphrun derived from cairn's design choices and the real-world flows under
-`~/projects/automations/graphite/flows/`.
+for glyphrun derived from cairn's design choices and representative browser
+workflows that download, transform, and validate artifacts.
 
 This is a **design document**, not a PR. The recommendations are sequenced by
 effort/value and written so any of them can be lifted into a single PR without
@@ -242,10 +242,10 @@ prints a path to a file, spawns a child that writes a file, or downloads
 something, there's no way for a glyphrun spec to (a) capture that file path
 into a named artifact and (b) reference it from a later step or outcome.
 
-The pattern shows up *everywhere* in the cairn graphite flows — `template`
-artifact is downloaded, `invalidTemplate` is built via a Node `transform`,
-and they're referenced by `${artifacts.template.path}` from a Node verifier
-in `outcomes`.
+The pattern appears throughout artifact-heavy browser workflows: a `template`
+artifact is downloaded, `invalidTemplate` is built via a Node `transform`, and
+both are referenced by `${artifacts.template.path}` from a Node verifier in
+`outcomes`.
 
 **What to add.**
 
@@ -347,10 +347,10 @@ simpler and matches the cairn "import project deps" use case.
 
 **Why.** Two real cairn features that earn their place:
 
-- **`metadata:` block.** Today the graphite flows encode
-  `feature / priority / tags` only in a YAML comment, which means you can't
+- **`metadata:` block.** Many browser flows encode `feature / priority / tags`
+  only in a YAML comment, which means you can't
   filter, group, or report on specs by feature. Adding a typed `metadata:`
-  block lets `glyph run --feature table-import` or `glyph list --tag OPG-14010`
+  block lets `glyph run --feature table-import` or `glyph list --tag smoke`
   work. The cairn spec schema has this at lines 499-507.
 - **`glyph import <tool>` / `glyph export <tool>`.** Cairn ships
   Playwright import (`cairntrace/src/core/importers/playwrightImporter.ts`)
@@ -457,10 +457,9 @@ in a few weeks. Cairn has both a per-config `retention.keepRuns` and a
 
 **Why.** Cairn lets a spec declare `redaction: { values: ["${secrets.X}"] }`
 so that a leaked value in PTY output gets scrubbed before it lands in
-artifacts. Glyphrun's redaction is config-only, and the graphite-style
-flows are exactly the use case that motivated cairn's per-spec override
-(see the `redaction: { values: ["${secrets.GRAPHITE_E2E_EMAIL}"] }` block in
-`automations/graphite/flows/table_template_download_and_upload_validation.yml:22-25`).
+artifacts. Glyphrun's redaction is config-only, and credentialed end-to-end
+flows are exactly the use case that motivates a per-spec override such as
+`redaction: { values: ["${secrets.EXAMPLE_E2E_EMAIL}"] }`.
 
 **What to add.**
 
@@ -501,9 +500,9 @@ integration in `cairntrace/src/core/runner/Runner.ts`.
 ### 3.10 `parallel` runs — **P2**
 
 **Why.** Two `glyph run` invocations on independent specs can safely run
-in parallel because each is its own PTY process. The `automations/graphite/`
-flows run one at a time today; cutting that wall-time by running
-independent specs concurrently is a real CI win.
+in parallel because each is its own PTY process. Large example suites often run
+one flow at a time; cutting that wall-time by running independent specs
+concurrently is a real CI win.
 
 **What to add.**
 
@@ -746,7 +745,6 @@ The two documents you should also update when any of this lands:
    that prints paths (download), spawns children (transform input),
    or uses the mouse (none of this helps) shapes which of 3.1/3.2/3.3
    is most urgent.
-3. **Are the `automations/graphite/flows/` specs the gold standard for
-   the kind of things you want glyphrun to express?** If yes, the
-   `download`/`transform` artifact pipeline is the first thing to
-   build — every graphite flow uses it.
+3. **Are artifact-heavy browser specs representative of the behavior you want
+   glyphrun to express?** If yes, the `download`/`transform` artifact pipeline
+   is the first thing to build because those workflows depend on it.

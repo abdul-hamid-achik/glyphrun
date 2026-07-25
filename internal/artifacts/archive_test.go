@@ -222,6 +222,33 @@ func TestArchiveRun_BoundsCommandOutput(t *testing.T) {
 	}
 }
 
+func TestArchiveRun_FcheapPublishRequiresValidatedReceipt(t *testing.T) {
+	runDir := stageCompletedRun(t)
+	pack, err := buildEvidencePack(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pack.cleanup()
+	receipt := validPublishReceipt(pack.SHA256, pack.Size)
+	script := writeScript(t, "printf '%s\\n' '"+receipt+"'")
+	res, err := ArchiveRun(ArchiveConfig{Enabled: true, Mode: fcheapPublishMode, Command: script}, runDir)
+	if err != nil || !res.OK {
+		t.Fatalf("ArchiveRun() = %#v, %v; want validated success", res, err)
+	}
+}
+
+func TestArchiveRun_FcheapPublishRejectsUnvalidatedReceipt(t *testing.T) {
+	runDir := stageCompletedRun(t)
+	script := writeScript(t, `echo '{"version":"filecheap-publish/1"}'`)
+	res, err := ArchiveRun(ArchiveConfig{Enabled: true, Mode: fcheapPublishMode, Command: script}, runDir)
+	if err == nil || res.OK {
+		t.Fatalf("ArchiveRun() = %#v, %v; want receipt rejection", res, err)
+	}
+	if res.Message != "fcheap publish returned an invalid receipt" {
+		t.Fatalf("unexpected failure message %q", res.Message)
+	}
+}
+
 // TestParseArchiveTimeout table-tests the duration parser: empty → 0
 // (no error), a valid duration parses, an invalid string errors.
 func TestParseArchiveTimeout(t *testing.T) {
@@ -268,6 +295,7 @@ func TestArchiveConfig_ArchiveEnabled(t *testing.T) {
 		{"enabled no command", ArchiveConfig{Enabled: true}, false},
 		{"command no enabled", ArchiveConfig{Command: "fcheap"}, false},
 		{"both set", ArchiveConfig{Enabled: true, Command: "fcheap"}, true},
+		{"fcheap publish fails closed without command", ArchiveConfig{Enabled: true, Mode: fcheapPublishMode}, true},
 	}
 	for _, tc := range tests {
 		if got := tc.cfg.archiveEnabled(); got != tc.want {

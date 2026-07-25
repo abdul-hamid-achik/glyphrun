@@ -37,7 +37,7 @@
     },
     "secrets": {
       "type": "object",
-      "description": "Declare a tvault env-group (or direct project) whose resolved secrets are injected into the run environment at start time. The config carries only group/env/project names — never secret values.",
+      "description": "Declare a TinyVault env-group (or direct project) whose bounded resolved secrets are injected into the run environment at start time. The config carries only identifiers and selectors — never secret values or TinyVault credentials.",
       "properties": {
         "provider": { "type": "string", "enum": ["tvault"], "default": "tvault" },
         "binary": { "type": "string", "minLength": 1, "description": "Path to the tvault executable (defaults to 'tvault' on PATH)" },
@@ -46,15 +46,34 @@
         "project": { "type": "string", "minLength": 1, "description": "Direct tvault project name (mutually exclusive with group+env)" },
         "only": {
           "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
           "items": { "type": "string", "minLength": 1 },
           "description": "Allowlist of secret keys to inject (least privilege)"
         },
         "prefix": { "type": "string", "minLength": 1, "description": "Inject only keys with this prefix" }
       },
       "additionalProperties": false,
-      "anyOf": [
-        { "required": ["group", "env"] },
-        { "required": ["project"] }
+      "allOf": [
+        { "oneOf": [
+          {
+            "required": ["group", "env"],
+            "not": { "required": ["project"] }
+          },
+          {
+            "required": ["project"],
+            "not": {
+              "anyOf": [
+                { "required": ["group"] },
+                { "required": ["env"] }
+              ]
+            }
+          }
+        ] },
+        { "anyOf": [
+          { "required": ["only"] },
+          { "required": ["prefix"] }
+        ] }
       ]
     },
     "terminal": {
@@ -141,14 +160,22 @@
         "keepRuns": { "type": "integer", "minimum": 0, "description": "Number of newest run dirs to keep. Default 3; 0 disables auto-prune." },
         "archive": {
           "type": "object",
-          "description": "External archival of pruned run directories. The command is invoked as <command> <args...> <runDir>; exit 0 removes the local dir (move semantics), non-zero/timeout keeps it.",
+          "description": "External archival of pruned run directories. fcheap-publish packages the complete run as a deterministic tar.gz and removes it only after an exact credential-free receipt match.",
           "properties": {
             "enabled": { "type": "boolean" },
+            "mode": { "type": "string", "enum": ["fcheap-publish"], "description": "Publish a complete deterministic tar.gz of at most 2 MiB and delete only after a credential-free receipt exactly matches its SHA-256 and size." },
             "command": { "type": "string", "minLength": 1 },
             "args": { "type": "array", "items": { "type": "string" } },
-            "timeout": { "type": "string", "description": "Duration string e.g. 5m, 30s. Default 5m." }
+            "timeout": { "type": "string", "description": "Duration string e.g. 5m, 30s. Default 5m." },
+            "retentionDays": { "type": "integer", "minimum": 1, "maximum": 31, "default": 7, "description": "Remote file.cheap lifetime for fcheap-publish evidence packs. Defaults to 7 days." }
           },
-          "additionalProperties": false
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": { "properties": { "mode": { "const": "fcheap-publish" } }, "required": ["mode"] },
+              "then": { "required": ["command"], "not": { "required": ["args"] } }
+            }
+          ]
         }
       },
       "additionalProperties": false

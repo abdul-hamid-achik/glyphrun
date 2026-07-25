@@ -19,7 +19,7 @@ type unixBackend struct {
 func newBackend(opts Options) (backend, error) {
 	cmd := exec.Command(opts.Cmd[0], opts.Cmd[1:]...)
 	cmd.Dir = opts.Cwd
-	cmd.Env = mergeEnv(os.Environ(), opts.Env)
+	cmd.Env = SanitizedEnv(opts.Env)
 
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: uint16(opts.Cols),

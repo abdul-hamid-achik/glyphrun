@@ -30,7 +30,7 @@ Specs can override target, terminal, artifact, and environment settings locally.
 
 ## Secrets (tvault env-group integration)
 
-Declare a tvault env-group (or direct project) in the environment block and glyphrun resolves the secrets at run time, injecting them into the process environment. The config file carries only group/env/project names — never secret values.
+Declare a tvault env-group (or direct project) in the environment block and glyphrun resolves the secrets at run time, injecting them into the process environment. The config file carries only source identifiers and key selectors — never secret values.
 
 ```yaml
 environments:
@@ -38,12 +38,9 @@ environments:
     secrets:
       group: liftclub        # tvault environment group
       env: preview            # environment within the group
-      only:                   # optional: inject only these keys (least privilege)
+      only:                   # required unless prefix is set; inject only these keys
         - DATABASE_URL
         - STRIPE_SECRET_KEY
-    env:
-      TVAULT_DIR: .glyphrun/tmp/vault
-      TVAULT_PASSPHRASE: glyphpass
 ```
 
 Or use a direct project (no env group):
@@ -55,11 +52,13 @@ environments:
       project: liftclub-preview
 ```
 
-At run time glyphrun calls `tvault env --group <g> --env <e> --format json` (or `-p <project>`), parses the JSON output, and merges the key/value pairs into the run environment. All resolved values are added to the per-run redactor so they are scrubbed from every artifact.
+At run time glyphrun calls `tvault env --group <g> --env <e> --format json --only <key>` (or `-p <project>`), parses only the selected JSON output, and merges those values into the run environment. All resolved values are added to the per-run redactor before target or verifier subprocesses start.
 
-`TVAULT_DIR` and `TVAULT_PASSPHRASE` (or `TVAULT_IDENTITY_KEY`) must be in the environment — set them in the config `env` block or export them before running glyph.
+Set TinyVault's own unlock material in the environment of the `glyph` process. It is passed only to TinyVault itself and is never inherited by targets or verifiers. Do not put passphrases or identity keys in `glyphrun.config.yml`.
 
-The `only` allowlist and `prefix` filter are applied client-side after resolution. A key is kept if it matches either selector (union semantics, matching `tvault run --only/--prefix`).
+An `only` allowlist or `prefix` selector is required and is passed directly to TinyVault. Glyphrun does not fetch all secrets and filter them locally.
+This contract requires TinyVault v0.19.0 or newer; earlier releases do not
+provide selectors on `tvault env`.
 
 When `secrets` is absent, behavior is identical to today — the block is purely additive.
 
@@ -78,18 +77,20 @@ retention:
 
 The default is **3**. A config that omits `retention.keepRuns` keeps the default; an explicit `0` disables auto-prune ("keep everything"). The current run is always kept; the cap applies to historical runs only. For an explicit sweep, use [`glyph clean --keep N`](/commands#glyph-clean) (or `--all` to wipe the artifact root).
 
-### Archiving pruned runs (fcheap / file.cheap)
+### Publishing pruned evidence packs (fcheap / file.cheap)
 
-Instead of deleting pruned runs, route them to an external storage tool (e.g. `fcheap` / `file.cheap`). The runner invokes your command with the run directory appended as the final positional argument. On archive success (exit 0) the local directory is deleted (move semantics); on a non-zero exit, timeout, or missing binary the local directory is preserved and the failure is surfaced as a `retention.archive.error` event. Archival never fails the run.
+Use `fcheap-publish` to package the complete run directory as a deterministic tar.gz in a private temporary directory. Glyphrun rejects symlinks and special files, bounds the compressed package to 2 MiB, and invokes `fcheap publish` with fixed metadata and an explicit remote lifetime. It removes the local run directory only after a strict credential-free `filecheap-publish/1` receipt reports `server-sha256` verification and exactly matches the uploaded package's digest and size. A timeout, oversized or incomplete package, publish failure, or malformed receipt preserves the local directory and records `retention.archive.error`. The publisher receives only the scoped file.cheap ingest environment; targets and verifiers receive neither it nor TinyVault material.
+The strict publisher contract requires `fcheap` v0.31.0 or newer.
 
 ```yaml
 retention:
   keepRuns: 3
   archive:
     enabled: true
-    command: fcheap          # your storage binary
-    args: ["store"]          # invoked as: fcheap store <runDir>
+    mode: fcheap-publish
+    command: fcheap
     timeout: 5m              # duration string; default 5m
+    retentionDays: 7         # remote lifetime; 1–31 days
 ```
 
 Skip archival for a single `glyph clean` with `--no-archive`.
