@@ -365,7 +365,7 @@ After each run, the runner prunes the oldest run directories, keeping the N most
 
 ## Publishing pruned evidence packs (fcheap / file.cheap)
 
-Instead of deleting pruned runs, use file.cheap's strict bounded publisher. Glyphrun packages the complete run directory as a deterministic tar.gz in a private temporary directory. It rejects symlinks and special files and preserves any run whose compressed package exceeds 2 MiB:
+Instead of deleting pruned runs, use file.cheap's strict bounded publisher. Glyphrun packages the complete run directory as a deterministic tar.gz in a private temporary directory. It rejects symlinks and special files and preserves any run whose compressed package exceeds 8 MiB (the Glyphrun producer's file.cheap publish quota):
 
 ` + "```yaml" + `
 retention:
