@@ -17,14 +17,18 @@ import (
 	"time"
 )
 
-// MaxFcheapEvidencePackBytes matches fcheap publish's bounded-file contract.
-const MaxFcheapEvidencePackBytes int64 = 2 * 1024 * 1024
+// MaxFcheapEvidencePackBytes matches the file.cheap publisher quota assigned
+// to the `glyphrun` producer. file.cheap's global artifact ceiling is 64 MiB,
+// but each producer is additionally capped by its own server-side
+// `maxSizeBytes`; publishing above that quota is rejected with 413. Raise this
+// only together with the Glyphrun entry in FILECHEAP_PUBLISHER_TOKENS.
+const MaxFcheapEvidencePackBytes int64 = 8 * 1024 * 1024
 
 // MaxEvidencePackEntries prevents a highly fragmented tree from consuming
 // unbounded packaging time even when compression keeps its byte size small.
 const MaxEvidencePackEntries = 10_000
 
-var errEvidencePackTooLarge = errors.New("complete evidence pack exceeds the 2097152-byte publish limit")
+var errEvidencePackTooLarge = fmt.Errorf("complete evidence pack exceeds the %d-byte publish limit", MaxFcheapEvidencePackBytes)
 
 type evidencePack struct {
 	Path   string
@@ -74,7 +78,8 @@ func (w *boundedPackWriter) Write(data []byte) (int, error) {
 
 // buildEvidencePack snapshots one completed run directory into a deterministic
 // tar.gz. The temporary directory is private (0700), the package is 0600, and
-// the writer aborts before it can exceed file.cheap's 2 MiB input bound.
+// the writer aborts before it can exceed the Glyphrun producer's file.cheap
+// publish quota.
 func buildEvidencePack(runDir string) (pack evidencePack, err error) {
 	if err := validateCompletedRun(runDir); err != nil {
 		return evidencePack{}, err
