@@ -24,3 +24,38 @@ Progress is written to stderr; the final Markdown, JSON, or YAML report remains 
 If the terminal screen looks wrong, compare `screens/final.txt` with `raw/pty.raw.log`. The screen file is normalized and assertion-friendly; the raw log is useful for escape sequence or terminal-emulation issues.
 
 If a spec stopped reaching the expected state, adjust `steps`. If the expected behavior changed, update `intent` or `outcomes` deliberately and run `glyph spec verify --stamp`.
+
+## Known issue: TUI target shuts down early on Linux PTY (under investigation)
+
+Observed 2026-08-04 while driving Teak (a Bubbletea TUI editor) from glyphrun specs:
+three `tui_agent_*` specs pass on macOS but fail consistently on Linux. The target
+completes its startup work (the ACP agent connects in ~0.5s and stays alive), reaches
+the expected UI state for one frame, then the *target itself* shuts down before the
+spec's first `wait` step can observe it. No crash and no `target_exited` from the
+child process — the final frame shows Teak's own shutdown screen.
+
+This is not yet root-caused, but it points at a difference between glyphrun's Linux
+and macOS PTY lifecycle. Candidate hypotheses, in priority order:
+
+- **stdin EOF on the Linux PTY.** If the PTY master's stdin side closes or returns
+  EOF early on Linux, Bubbletea's input loop exits and the program shuts down
+  cleanly. macOS uses a different PTY/`term` path that may keep the read side open.
+- **`EIO` on PTY read.** Linux returns `EIO` when the slave side of a PTY is closed;
+  some input loops treat that as clean exit. Check whether glyphrun closes or
+  reopens the PTY slave on Linux during setup.
+- **Resize/`SIGWINCH` handling.** If the initial size is set but no resize event is
+  delivered, some frameworks treat the session as terminated. Compare how glyphrun
+  sets `winsize` on Linux vs macOS.
+
+Where to look in glyphrun: the PTY open/write/close ordering in the Linux runner path
+(`internal/` PTY handling), whether stdin stays open for the target's full lifetime,
+and the raw log (`raw/pty.raw.log`) for an early EOF marker. Repro:
+
+```bash
+docker run --rm -v $PWD:/glyphrun -v /path/to/teak:/src -w /src golang:1.26-bookworm \
+  bash -c 'cd /glyphrun && go build -o /tmp/glyph ./cmd/glyph && cd /src && \
+  go build -o bin/teak ./cmd/teak && /tmp/glyph run specs/tui_agent_prompt.yml --parallel 1'
+```
+
+Until this is fixed, Linux runs of specs against long-lived TUI targets may fail on
+the first `wait` step even though the target itself starts correctly.
