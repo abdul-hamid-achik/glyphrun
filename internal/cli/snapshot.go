@@ -2,11 +2,18 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
+	"github.com/abdul-hamid-achik/glyphrun/internal/config"
+	"github.com/abdul-hamid-achik/glyphrun/internal/inventory"
 	"github.com/abdul-hamid-achik/glyphrun/internal/runner"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
+	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +23,7 @@ func newSnapshotCommand(opts *globalOptions) *cobra.Command {
 		Short: "Manage committed terminal snapshots",
 	}
 	cmd.AddCommand(newSnapshotUpdateCommand(opts))
+	cmd.AddCommand(newSnapshotInventoryCommand(opts))
 	return cmd
 }
 
@@ -69,4 +77,71 @@ func newSnapshotUpdateCommand(opts *globalOptions) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newSnapshotInventoryCommand(opts *globalOptions) *cobra.Command {
+	var screen string
+	cmd := &cobra.Command{
+		Use:   "inventory [run|latest]",
+		Short: "List authoring hints (rows, prompts, hotkeys) from a recorded screen",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			format, err := resolveFormat(opts.format)
+			if err != nil {
+				return exitError{code: 2, err: err}
+			}
+			run := "latest"
+			if len(args) == 1 {
+				run = args[0]
+			}
+			rt, err := config.LoadRuntime(".", opts.configPath, opts.environment)
+			if err != nil {
+				return exitError{code: 2, err: err}
+			}
+			root := opts.artifactRoot
+			if root == "" {
+				root = rt.Config.ArtifactRoot
+			}
+			if !filepath.IsAbs(root) {
+				root = filepath.Join(rt.ProjectRoot, root)
+			}
+			runDir, err := resolveRunDir(root, run)
+			if err != nil {
+				return exitError{code: 2, err: err}
+			}
+			rel := filepath.Join("screens", "final.json")
+			if screen != "" && screen != "final" {
+				rel = filepath.Join("snapshots", artifacts.SafeName(screen)+".json")
+			}
+			data, err := os.ReadFile(filepath.Join(runDir, rel))
+			if err != nil {
+				return exitError{code: 2, err: err}
+			}
+			var snap terminal.ScreenSnapshot
+			if err := json.Unmarshal(data, &snap); err != nil {
+				return exitError{code: 2, err: err}
+			}
+			report := inventory.FromSnapshot(snap)
+			output, err := emitForCLI(cmd, opts, format, report, func() string {
+				md := "# Snapshot inventory\n\n"
+				md += "- run: `" + filepath.Base(runDir) + "`\n"
+				md += "- size: " + fmt.Sprintf("%dx%d", report.Cols, report.Rows) + "\n\n"
+				for _, item := range report.Items {
+					md += "- `" + item.Kind + "` row " + fmt.Sprintf("%d", item.Row) + ": " + item.Text
+					if item.Hotkey != "" {
+						md += " → `" + item.Hotkey + "`"
+					}
+					md += "\n"
+				}
+				return md
+			})
+			if err != nil {
+				return exitError{code: 2, err: err}
+			}
+			cmd.Print(output)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&screen, "screen", "final", "final screen or snapshot name")
+	return cmd
 }

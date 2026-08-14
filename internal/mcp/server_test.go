@@ -459,3 +459,43 @@ outcomes:
 		t.Errorf("nextActions should carry a concrete rerun command: %s", text)
 	}
 }
+
+func TestServeDiscoverAndSearch(t *testing.T) {
+	input := strings.NewReader(strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"server/discover"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"glyph_search_tools","arguments":{"query":"run","limit":3}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{"query":"repair"}}`,
+	}, "\n") + "\n")
+	var output bytes.Buffer
+	if err := Serve(context.Background(), input, &output, ServerOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 responses, got %d: %s", len(lines), output.String())
+	}
+	if !strings.Contains(lines[0], `"2026-07-28"`) || !strings.Contains(lines[0], `"filtering"`) {
+		t.Fatalf("discover missing modern protocol/filtering: %s", lines[0])
+	}
+	if !strings.Contains(lines[1], `"2025-11-25"`) {
+		t.Fatalf("initialize should echo 2025-11-25: %s", lines[1])
+	}
+	if !strings.Contains(lines[2], "glyph_run") {
+		t.Fatalf("search should match glyph_run: %s", lines[2])
+	}
+	if !strings.Contains(lines[3], "glyph_repair") {
+		t.Fatalf("tools/list query=repair should include glyph_repair: %s", lines[3])
+	}
+}
+
+func TestServeRejectsUnknownProtocol(t *testing.T) {
+	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"1900-01-01"}}}` + "\n")
+	var output bytes.Buffer
+	if err := Serve(context.Background(), input, &output, ServerOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "-32022") {
+		t.Fatalf("expected unsupported protocol error: %s", output.String())
+	}
+}

@@ -88,7 +88,11 @@ Do not edit ` + "`intent`" + ` or ` + "`outcomes`" + ` without surfacing the con
 `,
 	"mcp": `# MCP
 
-Run ` + "`glyph mcp`" + ` to start the stdio MCP server. The current server exposes tools for explain, docs, doctor (full check matrix), list, spec verification, spec scaffolding, runs, snapshot updates, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), step repair with optional ` + "`verify`" + ` (` + "`glyph_repair`" + `), affected-spec selection (` + "`glyph_affected_specs`" + `), and artifact pruning (` + "`glyph_clean`" + `).
+Run ` + "`glyph mcp`" + ` to start the stdio MCP server.
+
+The server is dual-era: legacy clients still handshake with ` + "`initialize`" + ` (` + "`2024-11-05`" + ` / ` + "`2025-11-25`" + `). Modern clients (` + "`2026-07-28`" + `) can call ` + "`server/discover`" + ` first. ` + "`tools/list`" + ` supports a ` + "`query`" + ` filter. ` + "`glyph_search_tools`" + ` is the catalog search tool so hosts can defer loading full schemas and still find ` + "`glyph_run`" + `, repair, inventory, and the rest on demand.
+
+The current server exposes tools for search, explain, docs, doctor, list, spec verification, spec scaffolding, runs, snapshot updates, snapshot inventory, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), step repair with optional ` + "`verify`" + ` (` + "`glyph_repair`" + `), affected-spec selection (` + "`glyph_affected_specs`" + `), and artifact pruning (` + "`glyph_clean`" + `).
 `,
 	"configuration": `# Configuration
 
@@ -539,6 +543,21 @@ Run specs in CI and surface the results on the pull request:
 A reusable composite action lives at ` + "`.github/actions/glyphrun`" + ` and an example workflow at ` + "`examples/github/glyphrun-pr.yml`" + `. ` + "`glyph comment`" + ` writes to stdout by default, so it also pipes straight into ` + "`gh pr comment -F -`" + `.
 `,
 
+	"compat": `# Compatibility
+
+Glyphrun is black-box: if the target runs in a PTY, a spec can drive it.
+
+| Kit | Status |
+|---|---|
+| Charm Bubble Tea | supported |
+| Ratatui / crossterm | supported |
+| Textual / Rich | supported |
+| Windows ConPTY | supported |
+| OSC 8 hyperlinks | supported |
+| Sixel / Kitty graphics | consumed, not rendered |
+
+Use ` + "`glyph doctor`" + ` and ` + "`glyph run --repeat 20`" + ` before trusting a new kit.
+`,
 	"distribution": `# Distribution & Releasing
 
 Glyphrun ships cross-platform binaries via GoReleaser.
@@ -573,6 +592,7 @@ Cut a release by pushing a ` + "`v*`" + ` tag: ` + "`.github/workflows/release.y
 - count-verifier
 - process-telemetry
 - github
+- compat
 - distribution
 - install
 - topics

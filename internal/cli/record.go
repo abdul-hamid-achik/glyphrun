@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +19,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal/adapters/gote"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 func newRecordCommand(opts *globalOptions) *cobra.Command {
@@ -80,7 +80,7 @@ func renderScaffoldMarkdown(s *scaffold.Result) string {
 	if s.NeedsEdit {
 		b.WriteString("- NOTE: no assertion could be inferred; edit the `REPLACE_ME` outcome before running.\n")
 	}
-	b.WriteString("- next: add interaction steps (keystrokes), then `glyph spec verify --stamp` after editing intent/outcomes.\n")
+	b.WriteString("- next: review inferred `press`/`type` steps, then `glyph spec verify --stamp` after editing intent/outcomes.\n")
 	return b.String()
 }
 
@@ -129,8 +129,29 @@ func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd 
 	if err != nil {
 		return artifacts.RunResult{}, nil, err
 	}
+	var inputMu sync.Mutex
+	var inputLog []byte
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		st, err := term.MakeRaw(int(os.Stdin.Fd()))
+		if err == nil {
+			defer func() { _ = term.Restore(int(os.Stdin.Fd()), st) }()
+		}
+	}
 	go func() {
-		_, _ = io.Copy(sessionWriter{session: session}, os.Stdin)
+		buf := make([]byte, 256)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if n > 0 {
+				chunk := append([]byte(nil), buf[:n]...)
+				inputMu.Lock()
+				inputLog = append(inputLog, chunk...)
+				inputMu.Unlock()
+				_ = session.Write(chunk)
+			}
+			if err != nil {
+				return
+			}
+		}
 	}()
 	var exit ptyrunner.ExitState
 	if timeoutMS > 0 {
@@ -171,7 +192,9 @@ func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd 
 			"finalScreenJSON": "screens/final.json",
 			"finalScreenSVG":  "screens/final.svg",
 			"frames":          "frames/frames.ndjson",
+			"traceHTML":       "screens/trace.html",
 			"rawPtyLog":       "raw/pty.raw.log",
+			"inputLog":        "raw/input.raw.log",
 			"events":          "events.ndjson",
 		},
 	}
@@ -180,8 +203,13 @@ func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd 
 	framesCopy := append([]terminal.Frame(nil), frames...)
 	mu.Unlock()
 	finalSnapshot := emulator.Screen().Snapshot()
+	inputMu.Lock()
+	inputCopy := append([]byte(nil), inputLog...)
+	inputMu.Unlock()
 	_ = writer.WriteRawPTY(rawCopy)
+	_ = writer.WriteInputLog(inputCopy)
 	_ = writer.WriteFrames(framesCopy)
+	_ = writer.WriteTraceHTML(runID, "record", finalSnapshot.Text, framesCopy)
 	_ = writer.WriteFinalScreen(finalSnapshot)
 	_ = writer.WriteScreenSVG("screens/final.svg", render.SnapshotSVG(finalSnapshot, render.DefaultOptions()))
 	_ = writer.WriteDiagnostic("record", "## Recorded Command\n\n`"+strings.Join(argv, " ")+"`\n")
@@ -201,23 +229,13 @@ func recordCommand(ctx context.Context, opts *globalOptions, argv []string, cwd 
 			ConfigPath:   opts.configPath,
 			Environment:  opts.environment,
 			CoversSymbol: coversSymbol,
+			Input:        inputCopy,
 		})
 		if err != nil {
 			return result, nil, fmt.Errorf("scaffold: %w", err)
 		}
 	}
 	return result, scaffoldResult, nil
-}
-
-type sessionWriter struct {
-	session *ptyrunner.Session
-}
-
-func (w sessionWriter) Write(data []byte) (int, error) {
-	if err := w.session.Write(data); err != nil {
-		return 0, err
-	}
-	return len(data), nil
 }
 
 func runnerCleanupTimeout() time.Duration {

@@ -6,6 +6,19 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-14
+
+### Added
+
+- Dual-era MCP: `server/discover`, protocol versions `2024-11-05` / `2025-11-25` / `2026-07-28`, `tools/list` query filtering, and `glyph_search_tools` for deferred/infinite tool catalogs.
+- `glyph snapshot inventory` and `glyph_snapshot_inventory` for authoring hints from a recorded screen.
+- `glyph replay --html` and `screens/trace.html` in run packs.
+- `glyph record` captures keystrokes (raw TTY) into `raw/input.raw.log` and scaffolds `press`/`type` steps.
+
+### Changed
+
+- Unix PTY re-applies `winsize` shortly after start (Linux TUI SIGWINCH).
+
 ## [0.16.1] - 2026-07-24
 
 ### Security
@@ -47,6 +60,7 @@ follows Semantic Versioning for its pre-1.0 release line.
 - CI and release workflows reject private employer references in tracked
   release content.
 
-[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.15.0...v0.16.0

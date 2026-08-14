@@ -10,6 +10,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	glyphdocs "github.com/abdul-hamid-achik/glyphrun/internal/docs"
 	"github.com/abdul-hamid-achik/glyphrun/internal/doctor"
+	"github.com/abdul-hamid-achik/glyphrun/internal/inventory"
 	"github.com/abdul-hamid-achik/glyphrun/internal/render"
 	"github.com/abdul-hamid-achik/glyphrun/internal/repair"
 	"github.com/abdul-hamid-achik/glyphrun/internal/runner"
@@ -46,6 +47,7 @@ type response struct {
 type responseError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
 }
 
 type toolCallParams struct {
@@ -86,20 +88,18 @@ func Serve(ctx context.Context, in io.Reader, out io.Writer, opts ServerOptions)
 }
 
 func handle(ctx context.Context, req request, opts ServerOptions) (any, *responseError) {
+	if ver := requestedProtocol(req); ver != "" && !supportsProtocol(ver) && req.Method != "server/discover" {
+		return nil, unsupportedProtocolError(ver)
+	}
 	switch req.Method {
 	case "initialize":
-		return map[string]any{
-			"protocolVersion": "2024-11-05",
-			"capabilities": map[string]any{
-				"tools": map[string]any{},
-			},
-			"serverInfo": map[string]any{
-				"name":    "glyphrun",
-				"version": "0.1.0",
-			},
-		}, nil
+		return initializeResult(requestedProtocol(req)), nil
+	case "server/discover":
+		return discoverResult(), nil
+	case "ping":
+		return map[string]any{}, nil
 	case "tools/list":
-		return map[string]any{"tools": tools()}, nil
+		return listToolsResult(req.Params), nil
 	case "tools/call":
 		var params toolCallParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
@@ -113,6 +113,14 @@ func handle(ctx context.Context, req request, opts ServerOptions) (any, *respons
 
 func tools() []map[string]any {
 	return []map[string]any{
+		tool("glyph_search_tools", "Search the Glyphrun MCP tool catalog by capability. Use this instead of loading every tool when the host defers tool schemas.", map[string]any{
+			"type":     "object",
+			"required": []string{"query"},
+			"properties": map[string]any{
+				"query": map[string]any{"type": "string", "description": "natural-language or substring query (run, repair, docs, snapshots, …)"},
+				"limit": map[string]any{"type": "integer", "minimum": 1, "description": "max matches (default 8)"},
+			},
+		}),
 		tool("glyph_explain", "Describe Glyphrun commands, steps, verifiers, and artifacts.", map[string]any{"type": "object", "properties": map[string]any{}}),
 		tool("glyph_docs", "Return focused Glyphrun documentation.", map[string]any{
 			"type":       "object",
@@ -152,6 +160,13 @@ func tools() []map[string]any {
 			"type":       "object",
 			"required":   []string{"path"},
 			"properties": map[string]any{"path": map[string]any{"type": "string"}},
+		}),
+		tool("glyph_snapshot_inventory", "List rows, prompts, and hotkeys from a run's final screen or named snapshot for spec authoring.", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"run":    map[string]any{"type": "string"},
+				"screen": map[string]any{"type": "string"},
+			},
 		}),
 		tool("glyph_diff", "Compare two Glyphrun artifact packs.", map[string]any{
 			"type":       "object",
@@ -201,18 +216,34 @@ func tools() []map[string]any {
 }
 
 func tool(name string, description string, inputSchema map[string]any) map[string]any {
-	return map[string]any{"name": name, "description": description, "inputSchema": inputSchema}
+	return map[string]any{
+		"name":        name,
+		"title":       strings.ReplaceAll(name, "_", " "),
+		"description": description,
+		"inputSchema": inputSchema,
+		"annotations": map[string]any{"readOnlyHint": !strings.Contains(name, "run") && !strings.Contains(name, "repair") && !strings.Contains(name, "clean") && !strings.Contains(name, "snapshot")},
+	}
 }
 
 func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (any, *responseError) {
 	switch params.Name {
+	case "glyph_search_tools":
+		query := stringArg(params.Arguments, "query", "")
+		if query == "" {
+			return nil, &responseError{Code: -32602, Message: "query is required"}
+		}
+		return toolText(map[string]any{
+			"schemaVersion": 1,
+			"query":         query,
+			"tools":         searchTools(query, intArg(params.Arguments, "limit", 8)),
+		})
 	case "glyph_explain":
 		return toolText(map[string]any{
 			"project":   "glyphrun",
 			"binary":    "glyph",
 			"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "download", "transform", "monitor", "batch", "when"},
 			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"},
-			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "clean", "clean --no-archive", "mcp"},
+			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "snapshot inventory", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "clean", "clean --no-archive", "mcp", "replay --html"},
 			"namedArtifacts": map[string]any{
 				"placeholders": []string{"${artifacts.<name>.path}", "${artifacts.<name>.relativePath}"},
 				"stepKinds":    []string{"download", "transform"},
@@ -324,6 +355,14 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 			return toolError(err)
 		}
 		return toolText(result)
+	case "glyph_snapshot_inventory":
+		run := stringArg(params.Arguments, "run", "latest")
+		screen := stringArg(params.Arguments, "screen", "final")
+		rep, err := inventoryScreen(run, screen, opts)
+		if err != nil {
+			return toolError(err)
+		}
+		return toolText(rep)
 	case "glyph_diff":
 		runA := stringArg(params.Arguments, "runA", "")
 		runB := stringArg(params.Arguments, "runB", "")
@@ -495,6 +534,30 @@ func renderScreen(run, screen string, opts ServerOptions) (string, error) {
 		return "", err
 	}
 	return render.SnapshotSVG(snapshot, render.DefaultOptions()), nil
+}
+
+func inventoryScreen(run, screen string, opts ServerOptions) (inventory.Report, error) {
+	root, err := artifactRoot(opts)
+	if err != nil {
+		return inventory.Report{}, err
+	}
+	runDir, err := resolveRunDir(root, run)
+	if err != nil {
+		return inventory.Report{}, err
+	}
+	rel := filepath.Join("screens", "final.json")
+	if screen != "" && screen != "final" {
+		rel = filepath.Join("snapshots", artifacts.SafeName(screen)+".json")
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, rel))
+	if err != nil {
+		return inventory.Report{}, err
+	}
+	var snapshot terminal.ScreenSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return inventory.Report{}, err
+	}
+	return inventory.FromSnapshot(snapshot), nil
 }
 
 // repairSpec mirrors `glyph repair`: it analyzes a spec's failed run and

@@ -13,6 +13,7 @@ import (
 	"unicode"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
+	"github.com/abdul-hamid-achik/glyphrun/internal/input"
 	"github.com/abdul-hamid-achik/glyphrun/internal/ptyrunner"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"gopkg.in/yaml.v3"
@@ -29,6 +30,7 @@ type Params struct {
 	ConfigPath   string
 	Environment  string
 	CoversSymbol string // optional: symbol the scaffolded spec exercises (from codemap)
+	Input        []byte // captured keystrokes; decoded into press/type steps when present
 }
 
 // Result summarizes what FromSession produced.
@@ -42,12 +44,12 @@ type Result struct {
 
 // FromSession writes a draft spec at p.Path and stamps its contract hash so it
 // is immediately runnable. The draft captures the observable contract — a
-// representative "ready" string and the exit code — as outcomes; interaction
-// steps are left for the author to fill in, since recording does not capture
-// input. The contract is what matters; steps are repairable hints.
+// representative "ready" string and the exit code — as outcomes. When Input is
+// present, keystrokes are decoded into press/type steps; otherwise the author
+// still fills those in. The contract is what matters; steps are repairable hints.
 func FromSession(p Params) (*Result, error) {
 	name := deriveSpecName(p.Argv)
-	draft, ready, needsEdit := buildSpec(name, p.Argv, p.Cwd, p.Terminal, p.FinalScreen, p.Exit, p.CoversSymbol)
+	draft, ready, needsEdit := buildSpec(name, p.Argv, p.Cwd, p.Terminal, p.FinalScreen, p.Exit, p.CoversSymbol, p.Input)
 
 	data, err := yaml.Marshal(draft)
 	if err != nil {
@@ -90,7 +92,7 @@ func FromSession(p Params) (*Result, error) {
 // buildSpec assembles the draft spec. It returns the spec, the inferred ready
 // string (may be empty), and whether the author still needs to fill in a real
 // assertion.
-func buildSpec(name string, argv []string, cwd string, term spec.Terminal, finalScreen string, exit ptyrunner.ExitState, coversSymbol string) (spec.Spec, string, bool) {
+func buildSpec(name string, argv []string, cwd string, term spec.Terminal, finalScreen string, exit ptyrunner.ExitState, coversSymbol string, capturedInput []byte) (spec.Spec, string, bool) {
 	ready := pickReadyLine(finalScreen)
 	var steps []spec.Step
 	var outcomes []spec.Outcome
@@ -105,6 +107,16 @@ func buildSpec(name string, argv []string, cwd string, term spec.Terminal, final
 			Description: "the app reaches its ready state",
 			Verify:      spec.Verify{Screen: &spec.ScreenCondition{Contains: ready}},
 		})
+	}
+	for _, tok := range input.Tokens(capturedInput) {
+		switch tok.Kind {
+		case "press":
+			steps = append(steps, spec.Step{Press: tok.Value})
+		case "type":
+			if tok.Value != "" {
+				steps = append(steps, spec.Step{Type: tok.Value})
+			}
+		}
 	}
 	// Only assert the exit code when the process exited on its own. A negative
 	// code means glyphrun killed it (timeout / interrupt), which is an artifact
