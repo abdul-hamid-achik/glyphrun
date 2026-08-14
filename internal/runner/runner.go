@@ -2168,6 +2168,7 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	}
 	if shouldCapture(policy.Frames, status) {
 		_ = s.writer.WriteFrames(frames)
+		_ = s.writer.WriteTraceHTML(result.RunID, s.spec.Name, finalSnapshot.Text, frames)
 	}
 	_ = s.writer.WriteDiagnostic("environment", renderEnvironmentDiagnostic(s.runtime, s.spec, result))
 	if status == artifacts.StatusPassed {

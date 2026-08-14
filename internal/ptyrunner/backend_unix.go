@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/creack/pty"
 )
@@ -28,6 +29,11 @@ func newBackend(opts Options) (backend, error) {
 	if err != nil {
 		return nil, err
 	}
+	_ = pty.Setsize(ptmx, &pty.Winsize{Cols: uint16(opts.Cols), Rows: uint16(opts.Rows)})
+	go func() {
+		time.Sleep(15 * time.Millisecond)
+		_ = pty.Setsize(ptmx, &pty.Winsize{Cols: uint16(opts.Cols), Rows: uint16(opts.Rows)})
+	}()
 	return &unixBackend{cmd: cmd, ptmx: ptmx}, nil
 }
 

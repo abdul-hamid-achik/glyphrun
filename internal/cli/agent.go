@@ -28,6 +28,7 @@ func newAgentCommand(opts *globalOptions) *cobra.Command {
 					"glyph spec verify <spec> --format json",
 					"glyph run <spec> --format json",
 					"glyph run <spec> --junit reports/glyph.xml --format md",
+					"glyph snapshot inventory latest --format json",
 					"glyph context latest --format md",
 					"glyph diff <runA> <runB> --format md",
 				},

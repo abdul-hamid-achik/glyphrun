@@ -6,6 +6,17 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+### Added
+
+- Dual-era MCP: `server/discover`, protocol versions `2024-11-05` / `2025-11-25` / `2026-07-28`, `tools/list` query filtering, and `glyph_search_tools` for deferred/infinite tool catalogs.
+- `glyph snapshot inventory` and `glyph_snapshot_inventory` for authoring hints from a recorded screen.
+- `glyph replay --html` and `screens/trace.html` in run packs.
+- `glyph record` captures keystrokes (raw TTY) into `raw/input.raw.log` and scaffolds `press`/`type` steps.
+
+### Changed
+
+- Unix PTY re-applies `winsize` shortly after start (Linux TUI SIGWINCH).
+
 ## [0.16.1] - 2026-07-24
 
 ### Security

@@ -93,5 +93,8 @@ runs:
           if [[ -n "$LATEST" && -f "${LATEST}agent_context.md" ]]; then
             echo "::notice title=Glyphrun agent context::${LATEST}agent_context.md"
           fi
+          if [[ -n "$LATEST" && -f "${LATEST}screens/trace.html" ]]; then
+            echo "::notice title=Glyphrun HTML trace::${LATEST}screens/trace.html"
+          fi
         fi
         exit "$CODE"

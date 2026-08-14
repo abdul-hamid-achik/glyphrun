@@ -15,6 +15,7 @@ import (
 
 func newReplayCommand(opts *globalOptions) *cobra.Command {
 	var useTUI bool
+	var htmlOut bool
 	cmd := &cobra.Command{
 		Use:   "replay <run>",
 		Short: "Replay a run's raw PTY log (or --tui to scrub frames interactively)",
@@ -45,6 +46,19 @@ func newReplayCommand(opts *globalOptions) *cobra.Command {
 			}
 			// --tui launches the interactive frame scrubber. It needs a real
 			// terminal and ignores --format (it is not machine output).
+			if htmlOut {
+				frames, err := loadFrames(filepath.Join(runDir, "frames/frames.ndjson"))
+				if err != nil {
+					return exitError{code: 2, err: err}
+				}
+				final := ""
+				if data, rerr := os.ReadFile(filepath.Join(runDir, "screens/final.txt")); rerr == nil {
+					final = string(data)
+				}
+				html := artifacts.RenderTraceHTML(result.RunID, result.SpecName, frames, final)
+				cmd.Print(html)
+				return nil
+			}
 			if useTUI {
 				if !isTerminalWriter(cmd.OutOrStdout()) {
 					return exitError{code: 2, err: errNotATTY}
@@ -77,6 +91,7 @@ func newReplayCommand(opts *globalOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&useTUI, "tui", false, "scrub the recorded frames interactively (requires a terminal)")
+	cmd.Flags().BoolVar(&htmlOut, "html", false, "print a self-contained HTML frame scrubber")
 	return cmd
 }
 

@@ -34,22 +34,9 @@ the expected UI state for one frame, then the *target itself* shuts down before 
 spec's first `wait` step can observe it. No crash and no `target_exited` from the
 child process — the final frame shows Teak's own shutdown screen.
 
-This is not yet root-caused, but it points at a difference between glyphrun's Linux
-and macOS PTY lifecycle. Candidate hypotheses, in priority order:
+This is not yet fully root-caused on every Bubble Tea app, but Glyphrun now puts the Unix PTY master in raw mode and re-applies `winsize` shortly after start so Linux CI (non-TTY parent stdin) is less likely to look like EOF to the target. Re-test Teak/`tui_agent_*` on `ubuntu-latest` before treating Linux as a known failure.
 
-- **stdin EOF on the Linux PTY.** If the PTY master's stdin side closes or returns
-  EOF early on Linux, Bubbletea's input loop exits and the program shuts down
-  cleanly. macOS uses a different PTY/`term` path that may keep the read side open.
-- **`EIO` on PTY read.** Linux returns `EIO` when the slave side of a PTY is closed;
-  some input loops treat that as clean exit. Check whether glyphrun closes or
-  reopens the PTY slave on Linux during setup.
-- **Resize/`SIGWINCH` handling.** If the initial size is set but no resize event is
-  delivered, some frameworks treat the session as terminated. Compare how glyphrun
-  sets `winsize` on Linux vs macOS.
-
-Where to look in glyphrun: the PTY open/write/close ordering in the Linux runner path
-(`internal/` PTY handling), whether stdin stays open for the target's full lifetime,
-and the raw log (`raw/pty.raw.log`) for an early EOF marker. Repro:
+Where to look if it still happens: the PTY open/write/close ordering in `internal/ptyrunner/backend_unix.go`.
 
 ```bash
 docker run --rm -v $PWD:/glyphrun -v /path/to/teak:/src -w /src golang:1.26-bookworm \

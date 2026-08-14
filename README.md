@@ -178,12 +178,10 @@ glyph record --scaffold specs/glyphrun/app_smoke.yml -- ./bin/app
 
 `record` drives the command in a PTY as usual and, with `--scaffold`, writes a
 draft spec inferred from what it observed: the target command, the terminal
-size, a representative "ready" string taken from the final screen, and a
-`clean_exit` outcome when the process exited on its own. The draft's contract
-hash is stamped so it runs immediately. Because `record` does not capture your
-keystrokes, the *interaction* steps are left for you to fill in — `intent` and
-`outcomes` are the contract, `steps` are repairable hints. After editing the
-contract, re-stamp with `glyph spec verify --stamp`.
+size, a representative "ready" string, captured keystrokes as `press`/`type`
+steps, and a `clean_exit` outcome when the process exited on its own. The draft's
+contract hash is stamped so it runs immediately. After editing intent/outcomes,
+re-stamp with `glyph spec verify --stamp`.
 
 ## CLI Commands
 
@@ -197,10 +195,11 @@ glyph run <spec...>                    Run one or more behavior specs; --progres
 glyph spec verify <spec> [--stamp]     Validate a spec and optionally stamp its contract hash
 glyph spec scaffold [--kind spec|action] Print a starter spec or reusable action
 glyph snapshot update <spec...>        Refresh committed terminal snapshots
+glyph snapshot inventory [run]         List rows, prompts, and hotkeys from a run screen
 glyph diff <runA> <runB>               Compare two run artifact directories
 glyph record -- <command...>           Capture a PTY session as an artifact pack
                                        --scaffold <path> also writes a draft spec from the session
-glyph replay <run>                     Replay or print a recorded PTY log; --tui scrubs frames interactively
+glyph replay <run>                     Replay a recorded PTY log; --tui scrubs frames; --html prints a trace viewer
 glyph render <run|latest>              Render a screen to a deterministic SVG (--screen <name>, --out path|-)
 glyph context <run|latest>             Print agent-focused failure/run context
 glyph repair <spec> [run|latest]       Propose step fixes for a failed run; --write applies them

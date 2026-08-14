@@ -6,7 +6,9 @@ description: glyph mcp starts a stdio MCP server that mirrors the CLI, so coding
 
 Run `glyph mcp` to start the stdio MCP server.
 
-The server exposes `glyph_explain`, `glyph_docs`, `glyph_doctor`, `glyph_list`, `glyph_spec_verify`, `glyph_spec_scaffold`, `glyph_run`, `glyph_snapshot_update`, `glyph_diff`, `glyph_context`, `glyph_render`, `glyph_repair`, `glyph_affected_specs`, and `glyph_clean`. Tools call the same internal paths as the CLI so agents get the same validation, artifact packs, and exit behavior.
+The server is dual-era. Legacy MCP clients handshake with `initialize` (`2024-11-05` and `2025-11-25`). Modern clients (`2026-07-28`) can call `server/discover` to learn supported versions and capabilities (`tools.filtering`). `tools/list` accepts an optional `query` filter. `glyph_search_tools` is the catalog search tool so a host can defer loading every schema and still discover `glyph_run`, repair, inventory, and the rest on demand.
+
+The server exposes `glyph_search_tools`, `glyph_explain`, `glyph_docs`, `glyph_doctor`, `glyph_list`, `glyph_spec_verify`, `glyph_spec_scaffold`, `glyph_run`, `glyph_snapshot_update`, `glyph_snapshot_inventory`, `glyph_diff`, `glyph_context`, `glyph_render`, `glyph_repair`, `glyph_affected_specs`, and `glyph_clean`. Tools call the same internal paths as the CLI so agents get the same validation, artifact packs, and exit behavior.
 
 `glyph_doctor` runs the full prerequisite matrix (platform/PTY/config/artifacts/emulator), not a config smoke test.
 

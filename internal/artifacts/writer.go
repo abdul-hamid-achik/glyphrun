@@ -128,6 +128,11 @@ func (w *Writer) WriteFrames(frames []terminal.Frame) error {
 	})
 }
 
+func (w *Writer) WriteTraceHTML(runID, specName, finalText string, frames []terminal.Frame) error {
+	html := RenderTraceHTML(runID, specName, frames, finalText)
+	return w.WriteText("screens/trace.html", html)
+}
+
 func (w *Writer) WriteSnapshot(name string, snapshot terminal.ScreenSnapshot) error {
 	safe := SafeName(name)
 	if err := w.manager.WriteText("snapshots/"+safe+".txt", snapshot.Text+"\n"); err != nil {
