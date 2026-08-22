@@ -4,6 +4,7 @@ bin/
 examples/apps/hello/hello
 examples/apps/reporter/reporter
 examples/apps/mouseapp/mouseapp
+examples/apps/stories/stories
 reports/
 spec.md
 

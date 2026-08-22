@@ -8,13 +8,15 @@ Run `glyph mcp` to start the stdio MCP server.
 
 The server is dual-era. Legacy MCP clients handshake with `initialize` (`2024-11-05` and `2025-11-25`). Modern clients (`2026-07-28`) can call `server/discover` to learn supported versions and capabilities (`tools.filtering`). `tools/list` accepts an optional `query` filter. `glyph_search_tools` is the catalog search tool so a host can defer loading every schema and still discover `glyph_run`, repair, inventory, and the rest on demand.
 
-The server exposes `glyph_search_tools`, `glyph_explain`, `glyph_docs`, `glyph_doctor`, `glyph_list`, `glyph_spec_verify`, `glyph_spec_scaffold`, `glyph_run`, `glyph_snapshot_update`, `glyph_snapshot_inventory`, `glyph_diff`, `glyph_context`, `glyph_render`, `glyph_repair`, `glyph_affected_specs`, and `glyph_clean`. Tools call the same internal paths as the CLI so agents get the same validation, artifact packs, and exit behavior.
+The server exposes `glyph_search_tools`, `glyph_explain`, `glyph_docs`, `glyph_doctor`, `glyph_list`, `glyph_stories`, `glyph_spec_verify`, `glyph_spec_scaffold`, `glyph_run`, `glyph_snapshot_update`, `glyph_snapshot_inventory`, `glyph_diff`, `glyph_context`, `glyph_render`, `glyph_repair`, `glyph_affected_specs`, and `glyph_clean`. Tools call the same internal paths as the CLI so agents get the same validation, artifact packs, and exit behavior.
 
 `glyph_doctor` runs the full prerequisite matrix (platform/PTY/config/artifacts/emulator), not a config smoke test.
 
 `glyph_list` returns specs under given paths (name, path, coversSymbol).
 
-`glyph_spec_scaffold` accepts `kind: "spec"` or `kind: "action"` so agents can create reusable action snippets without guessing the YAML shape.
+`glyph_spec_scaffold` accepts `kind: "spec"`, `kind: "action"`, or `kind: "story"` so agents can create reusable action snippets or a story spec without guessing the YAML shape.
+
+`glyph_stories` returns the stories catalog (specs, usually tagged `story`, joined to their newest run snapshots). HTML inspect and the terminal catalog are CLI-only (`glyph stories --html`, `glyph stories --tui`).
 
 `glyph_render` returns a deterministic SVG of a run's final screen (or a named snapshot). `glyph_repair` analyzes a spec's failed run and proposes step fixes; with `write: true` it applies them, only ever editing `steps` so the contract hash stays valid. Set `verify: true` for a transactional cold-start verification (SPEC §7.2) before applying.
 

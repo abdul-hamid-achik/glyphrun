@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>glyph stories</title>
+  <style>{{.CSS}}</style>
+</head>
+<body class="h-screen bg-ink text-zinc-200 font-mono text-[13px] leading-snug antialiased"
+      x-data="catalog" x-cloak @keydown.window="onKey($event)">
+  <div class="grid h-full grid-cols-[280px_1fr]">
+    <aside class="overflow-auto border-r border-ink-line bg-ink-panel px-4 py-5">
+      <p class="mb-5 text-[11px] font-semibold uppercase tracking-[0.16em] text-mist">glyph stories</p>
+      <template x-for="g in groups" :key="g.feature">
+        <div>
+          <div class="mb-1.5 mt-4 text-[10px] uppercase tracking-[0.12em] text-mist" x-text="g.feature"></div>
+          <template x-for="item in g.items" :key="item.i">
+            <button type="button"
+                    class="mb-1 w-full rounded-md border px-2.5 py-2 text-left"
+                    :class="si === item.i ? 'border-sky-900/80 bg-slate-800/80 text-sky-300' : 'border-transparent hover:bg-slate-900/80'"
+                    @click="select(item.i, 0)">
+              <div x-text="item.s.name"></div>
+              <div class="mt-0.5 text-[11px] text-mist">
+                <span x-text="item.s.status"></span>
+                <span x-show="item.s.snapshots && item.s.snapshots.length" x-text="' · ' + item.s.snapshots.length + ' snap'"></span>
+              </div>
+            </button>
+          </template>
+        </div>
+      </template>
+    </aside>
+    <main class="grid min-h-0 min-w-0 grid-rows-[auto_1fr_auto]">
+      <nav class="flex flex-wrap items-center gap-2.5 border-b border-ink-line bg-ink-panel px-5 py-3">
+        <div class="flex overflow-hidden rounded-lg border border-ink-line">
+          <template x-for="m in ['plain','grid','spaces']" :key="m">
+            <button type="button" class="px-3 py-1.5"
+                    :class="mode === m ? 'bg-slate-800 text-sky-300' : 'text-mist'"
+                    @click="mode = m" x-text="m"></button>
+          </template>
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          <template x-for="(p, i) in (current && current.snapshots) || []" :key="p.name + i">
+            <button type="button"
+                    class="rounded-full border px-2.5 py-1 text-[12px]"
+                    :class="ni === i ? 'border-sky-400/70 text-zinc-100' : 'border-ink-line bg-slate-900 text-mist'"
+                    @click="ni = i" x-text="p.name"></button>
+          </template>
+        </div>
+      </nav>
+      <div class="flex items-start justify-center overflow-auto p-7">
+        <p class="p-12 text-center text-mist" x-show="emptyMsg" x-text="emptyMsg"></p>
+        <div class="min-w-[min(100%,840px)] overflow-hidden rounded-xl border border-ink-line bg-ink-chrome shadow-2xl shadow-black/50" x-show="!emptyMsg && snap && snap.status === 'ok'">
+          <div class="flex items-center gap-2 border-b border-ink-line px-3.5 py-2.5">
+            <span class="flex gap-1.5">
+              <i class="block h-2.5 w-2.5 rounded-full bg-[#ff5f56]"></i>
+              <i class="block h-2.5 w-2.5 rounded-full bg-[#ffbd2e]"></i>
+              <i class="block h-2.5 w-2.5 rounded-full bg-[#27c93f]"></i>
+            </span>
+            <span class="flex-1 text-center text-xs text-mist" x-text="windowTitle"></span>
+            <span class="rounded-full border border-ink-line px-2 py-0.5 text-[11px] text-mist" x-text="size"></span>
+          </div>
+          <div class="term-svg cursor-crosshair overflow-auto bg-ink-term" @mousemove="hover($event)">
+            <div x-html="svg"></div>
+          </div>
+        </div>
+      </div>
+      <section class="grid grid-cols-6 gap-px border-t border-ink-line bg-ink-line">
+        <template x-for="row in inspectRows" :key="row.k">
+          <div class="bg-ink-panel px-3.5 py-2.5">
+            <div class="mb-1 text-[10px] uppercase tracking-widest text-mist" x-text="row.k"></div>
+            <div x-text="row.v"></div>
+          </div>
+        </template>
+      </section>
+    </main>
+  </div>
+  <script>window.__GLYPH_STORIES__ = {{.Payload}};</script>
+  <script>{{.App}}</script>
+  <script>{{.Alpine}}</script>
+</body>
+</html>

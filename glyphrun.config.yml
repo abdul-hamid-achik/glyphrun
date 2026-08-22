@@ -6,6 +6,11 @@ artifactRoot: .glyphrun/runs
 snapshotRoot: .glyphrun/snapshots
 schemaRoot: schemas
 
+# Stories catalog joins each spec to its newest run. The default keepRuns
+# of 3 would prune a batch of example stories down to the last three.
+retention:
+  keepRuns: 32
+
 environments:
   local:
     vars:

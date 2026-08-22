@@ -16,6 +16,7 @@ import (
 func newRenderCommand(opts *globalOptions) *cobra.Command {
 	var screen string
 	var out string
+	var grid, rulers, spaces bool
 	cmd := &cobra.Command{
 		Use:   "render <run|latest>",
 		Short: "Render a run's terminal screen to a deterministic SVG",
@@ -66,7 +67,11 @@ func newRenderCommand(opts *globalOptions) *cobra.Command {
 				return exitError{code: 2, err: fmt.Errorf("parse screen %q: %w", srcPath, err)}
 			}
 
-			svg := render.SnapshotSVG(snapshot, render.DefaultOptions())
+			ropts := render.DefaultOptions()
+			ropts.ShowGrid = grid
+			ropts.ShowRulers = rulers
+			ropts.ShowSpaces = spaces
+			svg := render.SnapshotSVG(snapshot, ropts)
 
 			// --out - streams the raw SVG to stdout, bypassing the report so
 			// it can be piped into a file or a converter.
@@ -107,5 +112,8 @@ func newRenderCommand(opts *globalOptions) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&screen, "screen", "final", "screen to render: final or a snapshot name")
 	cmd.Flags().StringVar(&out, "out", "", "output SVG path; '-' writes raw SVG to stdout (default: alongside the screen in the run dir)")
+	cmd.Flags().BoolVar(&grid, "grid", false, "draw a cell grid overlay")
+	cmd.Flags().BoolVar(&rulers, "rulers", false, "draw row/column rulers")
+	cmd.Flags().BoolVar(&spaces, "spaces", false, "draw spaces as middle dots so padding is visible")
 	return cmd
 }

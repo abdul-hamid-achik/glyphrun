@@ -111,6 +111,13 @@ tasks:
       - chmod +x ./examples/apps/count_target/run.sh
       - '{{.BIN}} run examples/specs/count_cells.yml --format md'
 
+  example:stories:
+    desc: Run the example TUI stories harness and print the catalog
+    deps: [build]
+    cmds:
+      - '{{.BIN}} run examples/specs/story_list_empty.yml examples/specs/story_list_rows.yml examples/specs/story_list_error.yml examples/specs/story_agent_empty.yml examples/specs/story_agent_messages.yml examples/specs/story_agent_streaming.yml examples/specs/story_agent_tool.yml examples/specs/story_agent_error.yml --format md'
+      - '{{.BIN}} stories examples/specs --format md'
+
   context:
     deps: [build]
     cmds:
