@@ -15,7 +15,7 @@ Glyphrun stories are regular specs, usually tagged `story`, whose `target.cmd` m
 
 `glyph render --grid --rulers --spaces` inspects one snapshot as SVG. Default `screens/final.svg` from `glyph run` does not include overlays, so CI screenshots stay unchanged.
 
-The repo ships a Bubble Tea harness under [`examples/stories/`](../examples/stories/) built from shared components. Feature `list` has empty / rows / error; feature `agent` is a chat session (`empty`, `messages`, `streaming`, `tool`, `error`). Specs live in `examples/specs/story_*.yml`.
+The repo ships a Bubble Tea harness under [`examples/stories/`](https://github.com/abdul-hamid-achik/glyphrun/tree/main/examples/stories) built from shared components. Feature `list` has empty / rows / error; feature `agent` is a chat session (`empty`, `messages`, `streaming`, `tool`, `error`). Specs live in `examples/specs/story_*.yml`.
 
 `glyph stories` joins each spec to its newest run. Raise `retention.keepRuns` so a batch of stories is not pruned down to the last few (this repo uses 32).
 
