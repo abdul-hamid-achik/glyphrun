@@ -1,0 +1,57 @@
+version: 1
+name: story_agent_empty
+metadata:
+    feature: agent
+    tags: [story, empty]
+intent: |
+    the agent story renders an empty inbox-layout session with a focused composer.
+target:
+    cmd: ["./examples/apps/stories/stories", "agent/empty"]
+    cwd: "."
+terminal:
+    cols: 80
+    rows: 24
+    profile: xterm-256color
+    alternateScreen: require
+preconditions:
+    commands:
+        - run: "go build -o ./examples/apps/stories/stories ./examples/stories"
+          timeoutMs: 30000
+steps:
+    - wait:
+        screen:
+            contains: "No turns yet"
+        timeoutMs: 5000
+    - snapshot: agent_empty
+    - press: "q"
+    - wait:
+        process:
+            exitCode: 0
+        timeoutMs: 3000
+outcomes:
+    - id: brand_at_origin
+      description: the brand starts at cell 0,0
+      verify:
+        cell:
+            x: 0
+            y: 0
+            char: "g"
+    - id: empty_copy
+      description: the empty-state title is visible
+      verify:
+        region:
+            x: 0
+            y: 2
+            width: 80
+            height: 3
+            contains: "No turns yet"
+    - id: composer
+      description: the composer prompt sits on the last chrome row
+      verify:
+        region:
+            x: 0
+            y: 22
+            width: 80
+            height: 1
+            contains: "ask about a cell"
+contractHash: sha256:f7f91a749071c9fdf9e2fd613328f8c45bccf1d7fa4d222e55e0a458443767d6

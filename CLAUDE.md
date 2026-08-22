@@ -33,6 +33,9 @@ separate, and keep `internal/cli` free of business logic.
   [README.md](./README.md#exit-codes)). Reuse the right code; don't invent new ones.
 - Don't push directly to `main` — open a PR even for small fixes.
 
+The public VitePress site auto-builds from **`main` only**. Do not `vercel
+promote` it; the CLI ships from tags. See **Docs site (Vercel)** in AGENTS.md.
+
 ## Built-in docs
 
 The `glyph docs` command serves the embedded docs in `internal/docs/docs.go`.

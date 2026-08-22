@@ -75,6 +75,42 @@ glyph list specs/ --feature onboarding --tag smoke --owner payments --format jso
 | `--tag <name>` | Filter to specs whose `metadata.tags` includes the value. |
 | `--owner <name>` | Filter to specs whose `metadata.owner` matches. |
 
+### `glyph stories [path...]`
+
+Catalog TUI stories (specs, usually tagged `story`) joined to their newest run's snapshots. Default path is `.`. If any spec is tagged `story`, untagged specs are omitted unless `--all` is set.
+
+```bash
+glyph stories --format md
+glyph stories specs/ --html --out stories.html
+glyph stories --tui
+glyph stories --format json --all
+glyph stories examples/specs --html --out /tmp/glyph-stories.html
+```
+
+| Flag | Description |
+| --- | --- |
+| `--feature <name>` | Filter to specs whose `metadata.feature` matches. |
+| `--tag <name>` | Filter to specs whose `metadata.tags` includes the value. |
+| `--owner <name>` | Filter to specs whose `metadata.owner` matches. |
+| `--all` | Include specs that are not tagged `story`. |
+| `--html` | Write a self-contained inspect page. Requires `--format md`. |
+| `--tui` | Browse snapshots in the host terminal (requires a TTY). |
+| `--out <path>` | HTML output path. `-` writes raw HTML to stdout. |
+
+`--html` and `--tui` with `--format json|yaml` exit `2`. JSON/YAML never emit HTML or open a TUI.
+
+### `glyph stories init [dir]`
+
+Write a Go Bubble Tea v2 story harness (`stories/`) and a stamped starter spec (`specs/stories/list_empty.yml`). Existing files are skipped.
+
+```bash
+glyph stories init --lang go --format md
+```
+
+### `glyph spec scaffold --kind story`
+
+Print only the starter story YAML to stdout (no harness files).
+
 ## Running specs
 
 ### `glyph run <spec...>`
@@ -187,6 +223,9 @@ glyph render 20260629-001 --screen ready --out -
 | --- | --- |
 | `--screen <name>` | Render a captured snapshot by name instead of the final screen. |
 | `--out <path>` | Output path. Use `-` to stream the raw SVG to stdout. |
+| `--grid` | Draw a cell grid overlay (inspect only; does not change default CI SVGs). |
+| `--rulers` | Draw row/column rulers. |
+| `--spaces` | Draw spaces as middle dots so padding is visible. |
 
 ### `glyph clean`
 

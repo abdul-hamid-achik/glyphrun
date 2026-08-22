@@ -155,3 +155,80 @@ func TestSnapshotSVGCursorOutline(t *testing.T) {
 		t.Errorf("hidden cursor should not render an outline")
 	}
 }
+
+func TestSnapshotSVGDefaultOmitsInspectOverlays(t *testing.T) {
+	s := snap("hi  ", "    ")
+	out := SnapshotSVG(s, DefaultOptions())
+	for _, banned := range []string{"id=\"grid\"", "id=\"rulers\"", "id=\"regions\"", "·"} {
+		if strings.Contains(out, banned) {
+			t.Errorf("default SVG must not contain inspect overlay %q:\n%s", banned, out)
+		}
+	}
+}
+
+func TestSnapshotSVGShowSpacesDrawsMiddleDots(t *testing.T) {
+	s := snap("a b")
+	opts := DefaultOptions()
+	opts.ShowSpaces = true
+	out := SnapshotSVG(s, opts)
+	if !strings.Contains(out, "·") {
+		t.Fatalf("ShowSpaces should draw middle dots for space cells:\n%s", out)
+	}
+	if !strings.Contains(out, "<text") {
+		t.Fatalf("ShowSpaces should still emit <text> for mixed runs:\n%s", out)
+	}
+}
+
+func TestSnapshotSVGShowSpacesPaintsBlankRuns(t *testing.T) {
+	s := snap("   ")
+	opts := DefaultOptions()
+	opts.ShowSpaces = true
+	out := SnapshotSVG(s, opts)
+	if !strings.Contains(out, "<text") {
+		t.Fatalf("ShowSpaces should emit <text> for a blank row:\n%s", out)
+	}
+	if !strings.Contains(out, "···") && !strings.Contains(out, "·") {
+		t.Fatalf("blank row with ShowSpaces should contain middle dots:\n%s", out)
+	}
+}
+
+func TestSnapshotSVGShowGridDeterministic(t *testing.T) {
+	s := snap("ab", "cd")
+	opts := DefaultOptions()
+	opts.ShowGrid = true
+	a := SnapshotSVG(s, opts)
+	b := SnapshotSVG(s, opts)
+	if a != b {
+		t.Fatalf("grid overlay is not deterministic")
+	}
+	if !strings.Contains(a, `id="grid"`) {
+		t.Fatalf("ShowGrid should emit a grid group:\n%s", a)
+	}
+}
+
+func TestSnapshotSVGShowRulers(t *testing.T) {
+	s := snap("hello")
+	opts := DefaultOptions()
+	opts.ShowRulers = true
+	out := SnapshotSVG(s, opts)
+	if !strings.Contains(out, `id="rulers"`) {
+		t.Fatalf("ShowRulers should emit a rulers group:\n%s", out)
+	}
+	plain := SnapshotSVG(s, DefaultOptions())
+	if !(strings.Contains(out, `width="`) && len(out) > len(plain)) {
+		t.Fatalf("rulers should grow the SVG compared to the default render")
+	}
+}
+
+func TestSnapshotSVGRegions(t *testing.T) {
+	s := snap("hello")
+	opts := DefaultOptions()
+	opts.Regions = []RegionHighlight{{X: 1, Y: 0, Width: 3, Height: 1}}
+	out := SnapshotSVG(s, opts)
+	if !strings.Contains(out, `id="regions"`) {
+		t.Fatalf("Regions should emit a regions group:\n%s", out)
+	}
+	if !strings.Contains(out, `data-x="1"`) || !strings.Contains(out, `data-y="0"`) {
+		t.Fatalf("region rect should carry cell coordinates:\n%s", out)
+	}
+}

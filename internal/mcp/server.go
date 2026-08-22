@@ -14,7 +14,9 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/render"
 	"github.com/abdul-hamid-achik/glyphrun/internal/repair"
 	"github.com/abdul-hamid-achik/glyphrun/internal/runner"
+	"github.com/abdul-hamid-achik/glyphrun/internal/scaffold"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
+	"github.com/abdul-hamid-achik/glyphrun/internal/stories"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 	"io"
 	"os"
@@ -136,6 +138,16 @@ func tools() []map[string]any {
 				"owner":   map[string]any{"type": "string"},
 			},
 		}),
+		tool("glyph_stories", "Catalog TUI stories (specs, usually tagged story) joined to their newest run snapshots.", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"paths":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"feature": map[string]any{"type": "string"},
+				"tag":     map[string]any{"type": "string"},
+				"owner":   map[string]any{"type": "string"},
+				"all":     map[string]any{"type": "boolean"},
+			},
+		}),
 		tool("glyph_spec_verify", "Validate a Glyphrun spec.", map[string]any{
 			"type":       "object",
 			"required":   []string{"path"},
@@ -176,7 +188,7 @@ func tools() []map[string]any {
 		tool("glyph_spec_scaffold", "Return a starter Glyphrun spec or reusable action. coversSymbol (spec kind only) binds the stub to the code symbol it exercises, so glyph affected-specs can select it.", map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"kind":         map[string]any{"type": "string", "enum": []string{"spec", "action"}},
+				"kind":         map[string]any{"type": "string", "enum": []string{"spec", "action", "story"}},
 				"coversSymbol": map[string]any{"type": "string"},
 			},
 		}),
@@ -243,7 +255,7 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 			"binary":    "glyph",
 			"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "download", "transform", "monitor", "batch", "when"},
 			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"},
-			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "snapshot inventory", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "clean", "clean --no-archive", "mcp", "replay --html"},
+			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --kind story", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "snapshot inventory", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "stories", "stories --html", "stories --tui", "stories init", "clean", "clean --no-archive", "mcp", "replay --html"},
 			"namedArtifacts": map[string]any{
 				"placeholders": []string{"${artifacts.<name>.path}", "${artifacts.<name>.relativePath}"},
 				"stepKinds":    []string{"download", "transform"},
@@ -273,6 +285,36 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 			"ok":            result.OK,
 			"checks":        result.Checks,
 		})
+	case "glyph_stories":
+		paths := stringSliceArg(params.Arguments, "paths")
+		if len(paths) == 0 {
+			paths = []string{"."}
+		}
+		rt, err := config.LoadRuntime(".", opts.ConfigPath, opts.Environment)
+		if err != nil {
+			return toolError(err)
+		}
+		root := opts.ArtifactRoot
+		if root == "" {
+			root = rt.Config.ArtifactRoot
+		}
+		if !filepath.IsAbs(root) {
+			root = filepath.Join(rt.ProjectRoot, root)
+		}
+		cat, err := stories.Collect(stories.CollectOptions{
+			Paths:        paths,
+			ArtifactRoot: root,
+			ConfigPath:   opts.ConfigPath,
+			Environment:  opts.Environment,
+			Feature:      stringArg(params.Arguments, "feature", ""),
+			Tag:          stringArg(params.Arguments, "tag", ""),
+			Owner:        stringArg(params.Arguments, "owner", ""),
+			All:          boolArg(params.Arguments, "all", false),
+		})
+		if err != nil {
+			return toolError(err)
+		}
+		return toolText(cat)
 	case "glyph_list":
 		paths := stringSliceArg(params.Arguments, "paths")
 		if len(paths) == 0 {
@@ -812,6 +854,9 @@ func writeResponse(out io.Writer, resp response) error {
 }
 
 func scaffoldSpec(kind, coversSymbol string) string {
+	if kind == "story" {
+		return scaffold.StorySpecYAML()
+	}
 	if kind == "action" {
 		return `version: 1
 name: wait_for_ready_and_quit

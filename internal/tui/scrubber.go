@@ -1,12 +1,10 @@
-// Package tui provides an interactive frame scrubber for replaying a recorded
-// PTY session frame by frame.
+// Package tui provides interactive terminal UIs for reviewing captured screens.
 //
 // This is the one place glyphrun takes a TUI dependency (Bubble Tea v2). It is
-// isolated here and reached only through `glyph replay --tui`, so the rest of
-// the binary stays dependency-light. The scrubber reads the deterministic
-// frame snapshots the runner already captures (frames/frames.ndjson) and lets a
-// human time-travel through them — step, jump, and play back — to see exactly
-// when the screen changed.
+// isolated here and reached only through `glyph replay --tui` and
+// `glyph stories --tui`. Both paint the same cell-grid snapshots the runner
+// already captured — the scrubber time-travels one run; the catalog browses
+// stories side by side with that native terminal feel.
 package tui
 
 import (
@@ -158,35 +156,7 @@ func (m model) render() string {
 // renderScreen paints a frame's screen snapshot with per-cell color and
 // attributes, grouping runs of identical style for compactness.
 func renderScreen(snap *terminal.ScreenSnapshot) string {
-	if snap == nil {
-		return dimStyle.Render("(no screen captured for this frame)")
-	}
-	cols, rows := snap.Cols, snap.Rows
-	var b strings.Builder
-	for y := 0; y < rows; y++ {
-		if y > 0 {
-			b.WriteByte('\n')
-		}
-		x := 0
-		for x < cols {
-			st := cellAt(snap, x, y, cols).Style
-			var run strings.Builder
-			for x < cols {
-				c := cellAt(snap, x, y, cols)
-				if c.Style != st {
-					break
-				}
-				run.WriteString(charOf(c))
-				x++
-			}
-			if st == (terminal.Style{}) {
-				b.WriteString(run.String())
-			} else {
-				b.WriteString(cellStyle(st).Render(run.String()))
-			}
-		}
-	}
-	return b.String()
+	return paintScreen(snap, false, false)
 }
 
 func cellAt(snap *terminal.ScreenSnapshot, x, y, cols int) terminal.Cell {

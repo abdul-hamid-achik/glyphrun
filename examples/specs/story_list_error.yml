@@ -1,0 +1,48 @@
+version: 1
+name: story_list_error
+metadata:
+    feature: list
+    tags: [story, error]
+intent: |
+    the list story renders a load failure under the inbox title.
+target:
+    cmd: ["./examples/apps/stories/stories", "list/error"]
+    cwd: "."
+terminal:
+    cols: 80
+    rows: 24
+    profile: xterm-256color
+    alternateScreen: require
+preconditions:
+    commands:
+        - run: "go build -o ./examples/apps/stories/stories ./examples/stories"
+          timeoutMs: 30000
+steps:
+    - wait:
+        screen:
+            contains: "failed to load"
+        timeoutMs: 5000
+    - snapshot: list_error
+    - press: "q"
+    - wait:
+        process:
+            exitCode: 0
+        timeoutMs: 3000
+outcomes:
+    - id: title_at_origin
+      description: the title starts at cell 0,0
+      verify:
+        cell:
+            x: 0
+            y: 0
+            char: "I"
+    - id: error_copy
+      description: the failure copy is visible
+      verify:
+        region:
+            x: 0
+            y: 2
+            width: 80
+            height: 2
+            contains: "failed to load"
+contractHash: sha256:7d288e0cebf5f906fcdffadf608460eee1f64b808b294d5cbab2e19d2b5b8707

@@ -92,7 +92,7 @@ Run ` + "`glyph mcp`" + ` to start the stdio MCP server.
 
 The server is dual-era: legacy clients still handshake with ` + "`initialize`" + ` (` + "`2024-11-05`" + ` / ` + "`2025-11-25`" + `). Modern clients (` + "`2026-07-28`" + `) can call ` + "`server/discover`" + ` first. ` + "`tools/list`" + ` supports a ` + "`query`" + ` filter. ` + "`glyph_search_tools`" + ` is the catalog search tool so hosts can defer loading full schemas and still find ` + "`glyph_run`" + `, repair, inventory, and the rest on demand.
 
-The current server exposes tools for search, explain, docs, doctor, list, spec verification, spec scaffolding, runs, snapshot updates, snapshot inventory, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), step repair with optional ` + "`verify`" + ` (` + "`glyph_repair`" + `), affected-spec selection (` + "`glyph_affected_specs`" + `), and artifact pruning (` + "`glyph_clean`" + `).
+The current server exposes tools for search, explain, docs, doctor, list, stories catalog (` + "`glyph_stories`" + `), spec verification, spec scaffolding (including ` + "`kind: story`" + `), runs, snapshot updates, snapshot inventory, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), step repair with optional ` + "`verify`" + ` (` + "`glyph_repair`" + `), affected-spec selection (` + "`glyph_affected_specs`" + `), and artifact pruning (` + "`glyph_clean`" + `).
 `,
 	"configuration": `# Configuration
 
@@ -531,6 +531,18 @@ outcomes:
         peakCpuPercent: 90
 ` + "```" + `
 `,
+	"stories": `# Stories
+
+Glyphrun stories are regular specs, usually tagged ` + "`story`" + `, whose ` + "`target.cmd`" + ` mounts an isolated TUI state (a story harness binary). Glyphrun stays black-box: it does not import Bubble Tea into the runner.
+
+` + "`glyph stories init --lang go`" + ` writes a Bubble Tea v2 harness under ` + "`stories/`" + ` and a stamped spec under ` + "`specs/stories/`" + `. ` + "`glyph spec scaffold --kind story`" + ` prints only the YAML.
+
+` + "`glyph stories`" + ` lists those specs joined to the newest run. ` + "`glyph stories --html`" + ` is a self-contained inspect page (Alpine.js + Tailwind-shaped utility CSS, no CDN). ` + "`glyph stories --tui`" + ` is a two-pane catalog in the host terminal (sidebar + preview, fills the window). ` + "`glyph render --grid --rulers --spaces`" + ` inspects one snapshot as SVG.
+
+Default ` + "`screens/final.svg`" + ` from ` + "`glyph run`" + ` does not include overlays, so CI screenshots stay unchanged.
+
+The repo ships a Bubble Tea harness under ` + "`examples/stories/`" + ` with shared components. Feature ` + "`list`" + ` has empty / rows / error; feature ` + "`agent`" + ` is a chat session (empty, messages, streaming, tool, error). Specs live in ` + "`examples/specs/story_*.yml`" + `. Run ` + "`task example:stories`" + `, then ` + "`glyph stories examples/specs --html`" + ` or ` + "`--tui`" + `. Raise ` + "`retention.keepRuns`" + ` so a batch of stories is not pruned down to the last few.
+`,
 	"github": `# GitHub Integration
 
 Run specs in CI and surface the results on the pull request:
@@ -591,6 +603,7 @@ Cut a release by pushing a ` + "`v*`" + ` tag: ` + "`.github/workflows/release.y
 - capture-policy
 - count-verifier
 - process-telemetry
+- stories
 - github
 - compat
 - distribution

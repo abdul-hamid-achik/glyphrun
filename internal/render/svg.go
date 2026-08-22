@@ -27,8 +27,20 @@ type Theme struct {
 	Palette    map[string]string
 }
 
+// RegionHighlight marks a cell rectangle on an inspect overlay (spec region
+// or cell verifiers). Coordinates are 0-based cell indices.
+type RegionHighlight struct {
+	X      int
+	Y      int
+	Width  int
+	Height int
+}
+
 // Options controls the geometry of the rendered SVG. The defaults target a
 // readable, compact screenshot; callers rarely need to change them.
+//
+// ShowGrid, ShowRulers, ShowSpaces, and Regions are inspect overlays. They are
+// off in DefaultOptions so screens/final.svg and CI screenshots stay unchanged.
 type Options struct {
 	Theme      Theme
 	CellWidth  int
@@ -37,6 +49,10 @@ type Options struct {
 	Padding    int
 	FontFamily string
 	ShowCursor bool
+	ShowGrid   bool
+	ShowRulers bool
+	ShowSpaces bool
+	Regions    []RegionHighlight
 }
 
 // DefaultTheme is a dark palette close to common terminal defaults.
@@ -75,8 +91,15 @@ func SnapshotSVG(snap terminal.ScreenSnapshot, opts Options) string {
 		rows = 24
 	}
 	cw, ch, pad := opts.CellWidth, opts.CellHeight, opts.Padding
-	width := pad*2 + cols*cw
-	height := pad*2 + rows*ch
+	rulerPadX, rulerPadY := 0, 0
+	if opts.ShowRulers {
+		rulerPadX = 28
+		rulerPadY = 16
+	}
+	originX := pad + rulerPadX
+	originY := pad + rulerPadY
+	width := pad*2 + rulerPadX + cols*cw
+	height := pad*2 + rulerPadY + rows*ch
 	baseline := opts.FontSize // baseline offset within a cell row
 
 	var b strings.Builder
@@ -124,9 +147,9 @@ func SnapshotSVG(snap terminal.ScreenSnapshot, opts Options) string {
 				x++
 			}
 			b.WriteString(`<rect x="`)
-			b.WriteString(strconv.Itoa(pad + start*cw))
+			b.WriteString(strconv.Itoa(originX + start*cw))
 			b.WriteString(`" y="`)
-			b.WriteString(strconv.Itoa(pad + y*ch))
+			b.WriteString(strconv.Itoa(originY + y*ch))
 			b.WriteString(`" width="`)
 			b.WriteString(strconv.Itoa((x - start) * cw))
 			b.WriteString(`" height="`)
@@ -152,18 +175,18 @@ func SnapshotSVG(snap terminal.ScreenSnapshot, opts Options) string {
 				if !next.equalText(st) {
 					break
 				}
-				runChars.WriteString(cellChar(cell))
+				runChars.WriteString(cellChar(cell, opts.ShowSpaces))
 				x++
 			}
 			text := runChars.String()
-			if strings.TrimRight(text, " ") == "" {
+			if !opts.ShowSpaces && strings.TrimRight(text, " ") == "" {
 				continue // blank run: nothing to draw on top of the background
 			}
 			n := x - start
 			b.WriteString(`<text x="`)
-			b.WriteString(strconv.Itoa(pad + start*cw))
+			b.WriteString(strconv.Itoa(originX + start*cw))
 			b.WriteString(`" y="`)
-			b.WriteString(strconv.Itoa(pad + y*ch + baseline))
+			b.WriteString(strconv.Itoa(originY + y*ch + baseline))
 			b.WriteString(`" textLength="`)
 			b.WriteString(strconv.Itoa(n * cw))
 			b.WriteString(`" lengthAdjust="spacingAndGlyphs" xml:space="preserve" fill="`)
@@ -187,14 +210,21 @@ func SnapshotSVG(snap terminal.ScreenSnapshot, opts Options) string {
 		}
 	}
 
+	if opts.ShowGrid {
+		writeGrid(&b, originX, originY, cols, rows, cw, ch, opts.Theme.Foreground)
+	}
+	if opts.ShowRulers {
+		writeRulers(&b, originX, originY, cols, rows, cw, ch, opts.Theme.Foreground)
+	}
+
 	// Cursor: a thin outline so the underlying glyph stays readable.
 	if opts.ShowCursor && snap.Cursor.Visible &&
 		snap.Cursor.X >= 0 && snap.Cursor.X < cols &&
 		snap.Cursor.Y >= 0 && snap.Cursor.Y < rows {
 		b.WriteString(`<rect x="`)
-		b.WriteString(strconv.Itoa(pad + snap.Cursor.X*cw))
+		b.WriteString(strconv.Itoa(originX + snap.Cursor.X*cw))
 		b.WriteString(`" y="`)
-		b.WriteString(strconv.Itoa(pad + snap.Cursor.Y*ch))
+		b.WriteString(strconv.Itoa(originY + snap.Cursor.Y*ch))
 		b.WriteString(`" width="`)
 		b.WriteString(strconv.Itoa(cw))
 		b.WriteString(`" height="`)
@@ -204,8 +234,109 @@ func SnapshotSVG(snap terminal.ScreenSnapshot, opts Options) string {
 		b.WriteString(`" stroke-width="1"/>`)
 	}
 
+	if len(opts.Regions) > 0 {
+		writeRegions(&b, originX, originY, cw, ch, opts.Theme.Cursor, opts.Regions)
+	}
+
 	b.WriteString(`</svg>`)
 	return b.String()
+}
+
+const spaceDot = "·"
+
+func writeGrid(b *strings.Builder, originX, originY, cols, rows, cw, ch int, color string) {
+	b.WriteString(`<g id="grid" fill="none" stroke="`)
+	b.WriteString(color)
+	b.WriteString(`">`)
+	bottom := originY + rows*ch
+	right := originX + cols*cw
+	for x := 0; x <= cols; x++ {
+		opacity := "0.12"
+		if x%10 == 0 {
+			opacity = "0.28"
+		}
+		xx := originX + x*cw
+		b.WriteString(`<line x1="`)
+		b.WriteString(strconv.Itoa(xx))
+		b.WriteString(`" y1="`)
+		b.WriteString(strconv.Itoa(originY))
+		b.WriteString(`" x2="`)
+		b.WriteString(strconv.Itoa(xx))
+		b.WriteString(`" y2="`)
+		b.WriteString(strconv.Itoa(bottom))
+		b.WriteString(`" stroke-width="1" stroke-opacity="`)
+		b.WriteString(opacity)
+		b.WriteString(`"/>`)
+	}
+	for y := 0; y <= rows; y++ {
+		opacity := "0.12"
+		if y%10 == 0 {
+			opacity = "0.28"
+		}
+		yy := originY + y*ch
+		b.WriteString(`<line x1="`)
+		b.WriteString(strconv.Itoa(originX))
+		b.WriteString(`" y1="`)
+		b.WriteString(strconv.Itoa(yy))
+		b.WriteString(`" x2="`)
+		b.WriteString(strconv.Itoa(right))
+		b.WriteString(`" y2="`)
+		b.WriteString(strconv.Itoa(yy))
+		b.WriteString(`" stroke-width="1" stroke-opacity="`)
+		b.WriteString(opacity)
+		b.WriteString(`"/>`)
+	}
+	b.WriteString(`</g>`)
+}
+
+func writeRulers(b *strings.Builder, originX, originY, cols, rows, cw, ch int, color string) {
+	b.WriteString(`<g id="rulers" fill="`)
+	b.WriteString(color)
+	b.WriteString(`" font-size="10">`)
+	for x := 0; x < cols; x += 10 {
+		b.WriteString(`<text x="`)
+		b.WriteString(strconv.Itoa(originX + x*cw))
+		b.WriteString(`" y="`)
+		b.WriteString(strconv.Itoa(originY - 4))
+		b.WriteString(`">`)
+		b.WriteString(strconv.Itoa(x))
+		b.WriteString(`</text>`)
+	}
+	for y := 0; y < rows; y++ {
+		b.WriteString(`<text text-anchor="end" x="`)
+		b.WriteString(strconv.Itoa(originX - 4))
+		b.WriteString(`" y="`)
+		b.WriteString(strconv.Itoa(originY + y*ch + ch - 6))
+		b.WriteString(`">`)
+		b.WriteString(strconv.Itoa(y))
+		b.WriteString(`</text>`)
+	}
+	b.WriteString(`</g>`)
+}
+
+func writeRegions(b *strings.Builder, originX, originY, cw, ch int, color string, regions []RegionHighlight) {
+	b.WriteString(`<g id="regions" fill="none" stroke="`)
+	b.WriteString(color)
+	b.WriteString(`" stroke-width="1">`)
+	for _, r := range regions {
+		if r.Width <= 0 || r.Height <= 0 {
+			continue
+		}
+		b.WriteString(`<rect x="`)
+		b.WriteString(strconv.Itoa(originX + r.X*cw))
+		b.WriteString(`" y="`)
+		b.WriteString(strconv.Itoa(originY + r.Y*ch))
+		b.WriteString(`" width="`)
+		b.WriteString(strconv.Itoa(r.Width * cw))
+		b.WriteString(`" height="`)
+		b.WriteString(strconv.Itoa(r.Height * ch))
+		b.WriteString(`" data-x="`)
+		b.WriteString(strconv.Itoa(r.X))
+		b.WriteString(`" data-y="`)
+		b.WriteString(strconv.Itoa(r.Y))
+		b.WriteString(`"/>`)
+	}
+	b.WriteString(`</g>`)
 }
 
 func withDefaults(opts Options) Options {
@@ -256,11 +387,15 @@ func cellGetter(snap terminal.ScreenSnapshot, cols, rows int) func(x, y int) ter
 	}
 }
 
-func cellChar(c terminal.Cell) string {
-	if c.Char == "" {
-		return " "
+func cellChar(c terminal.Cell, showSpaces bool) string {
+	ch := c.Char
+	if ch == "" {
+		ch = " "
 	}
-	return c.Char
+	if showSpaces && ch == " " {
+		return spaceDot
+	}
+	return ch
 }
 
 // resolvedStyle is the rendering-ready form of a cell's style: colors are

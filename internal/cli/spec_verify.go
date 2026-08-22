@@ -8,6 +8,7 @@ import (
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
+	"github.com/abdul-hamid-achik/glyphrun/internal/scaffold"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/spf13/cobra"
 )
@@ -101,12 +102,18 @@ func newSpecScaffoldCommand() *cobra.Command {
 				}
 				cmd.Print(starterActionTemplate())
 				return nil
+			case "story":
+				if strings.TrimSpace(coversSymbol) != "" {
+					return exitError{code: 2, err: fmt.Errorf("--coversSymbol applies to --kind spec only")}
+				}
+				cmd.Print(scaffold.StorySpecYAML())
+				return nil
 			default:
 				return exitError{code: 2, err: fmt.Errorf("unsupported --kind %q", kind)}
 			}
 		},
 	}
-	cmd.Flags().StringVar(&kind, "kind", "spec", "starter kind: spec, action")
+	cmd.Flags().StringVar(&kind, "kind", "spec", "starter kind: spec, action, story")
 	cmd.Flags().StringVar(&coversSymbol, "coversSymbol", "", "bind the starter spec to the code symbol it exercises (kind=spec only)")
 	return cmd
 }

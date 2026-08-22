@@ -22,6 +22,7 @@ glyph docs <topic> --format md
 ## Commands & integration
 
 - [commands](/commands) — metadata-list, import-export, and rerun-failed are covered here
+- [stories](/stories) — isolated TUI states, inspect overlays, `glyph stories`
 - [github](/github) · [distribution](/distribution) · [mcp](/mcp) · [agents](/agents) · [troubleshooting](/troubleshooting) · [compat](/compat)
 
 Use `glyph agent --format md` for the shortest agent bootstrap guide. Use `glyph explain --format json` for the authoritative list of commands, steps, verifiers, formats, and artifacts the running binary supports.

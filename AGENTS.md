@@ -18,6 +18,13 @@ go test -run <name>   # one test
 
 `task verify` is the gate. CI runs the same checks. Do not skip `go vet` or `gofmt`.
 
+## Docs site (Vercel)
+
+The public VitePress site uses repo-root `vercel.json`. Git auto-builds **`main`
+only**. Feature branches do not create Preview deployments. `ignoreCommand`
+skips non-docs commits. Do not `vercel promote`; `main` is the site release.
+CLI binaries ship from tags / GoReleaser, not from a docs deploy.
+
 ### Architecture
 
 Package boundaries are part of the contract — do not blur them.
@@ -41,6 +48,7 @@ Package boundaries are part of the contract — do not blur them.
 | `internal/mcp` | Stdio MCP server. Thin pass-through to CLI commands. |
 | `internal/config` | Config loading, defaults, schema validation. |
 | `internal/input` | Key name → escape sequence mapping. Pure function. |
+| `internal/stories` | Catalog of specs+snapshots and inspect HTML. No PTY. |
 | `internal/docs` | Built-in documentation text. |
 | `internal/log` | Thin wrapper over charmbracelet/log. Configured once in `cli.Execute`. Shared diagnostic sink (stderr). No runner/artifact/config state. |
 

@@ -109,6 +109,7 @@ func newRootCommand(opts *globalOptions) *cobra.Command {
 	cmd.AddCommand(newDoctorCommand(opts))
 	cmd.AddCommand(newMCPCommand(opts))
 	cmd.AddCommand(newListCommand(opts))
+	cmd.AddCommand(newStoriesCommand(opts))
 	cmd.AddCommand(newAffectedSpecsCommand(opts))
 	cmd.AddCommand(newImportCommand(opts))
 	cmd.AddCommand(newExportCommand(opts))
