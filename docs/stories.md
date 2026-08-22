@@ -11,7 +11,7 @@ Glyphrun stories are regular specs, usually tagged `story`, whose `target.cmd` m
 `glyph stories` lists those specs joined to the newest run.
 
 - `glyph stories --html` is the inspect surface: a self-contained page (Alpine.js + Tailwind-shaped utility CSS, no CDN, no CSS toolchain) with terminal chrome, grid/rulers/spaces overlays, and a cell hover inspector (x, y, char, style).
-- `glyph stories --tui` is the feel surface: the same snapshots painted in your terminal with the replay cell renderer (`j`/`k` stories, `[`/`]` snapshots, `s` spaces).
+- `glyph stories --tui` is the feel surface: a two-pane catalog in the host terminal (feature-grouped sidebar + preview) that fills the window. `j`/`k` stories, `[`/`]` snapshots, `s` spaces. The HTML `grid` overlay is SVG-only.
 
 `glyph render --grid --rulers --spaces` inspects one snapshot as SVG. Default `screens/final.svg` from `glyph run` does not include overlays, so CI screenshots stay unchanged.
 

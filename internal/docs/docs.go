@@ -537,7 +537,7 @@ Glyphrun stories are regular specs, usually tagged ` + "`story`" + `, whose ` + 
 
 ` + "`glyph stories init --lang go`" + ` writes a Bubble Tea v2 harness under ` + "`stories/`" + ` and a stamped spec under ` + "`specs/stories/`" + `. ` + "`glyph spec scaffold --kind story`" + ` prints only the YAML.
 
-` + "`glyph stories`" + ` lists those specs joined to the newest run. ` + "`glyph stories --html`" + ` is a self-contained inspect page (Alpine.js + Tailwind-shaped utility CSS, no CDN). ` + "`glyph stories --tui`" + ` paints the same snapshots in the host terminal. ` + "`glyph render --grid --rulers --spaces`" + ` inspects one snapshot as SVG.
+` + "`glyph stories`" + ` lists those specs joined to the newest run. ` + "`glyph stories --html`" + ` is a self-contained inspect page (Alpine.js + Tailwind-shaped utility CSS, no CDN). ` + "`glyph stories --tui`" + ` is a two-pane catalog in the host terminal (sidebar + preview, fills the window). ` + "`glyph render --grid --rulers --spaces`" + ` inspects one snapshot as SVG.
 
 Default ` + "`screens/final.svg`" + ` from ` + "`glyph run`" + ` does not include overlays, so CI screenshots stay unchanged.
 

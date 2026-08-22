@@ -84,7 +84,7 @@ export default defineConfig({
     nav: [
       { text: 'Guide', link: '/overview', activeMatch: '/overview' },
       { text: 'Authoring', link: '/authoring', activeMatch: '/authoring' },
-      { text: 'Reference', link: '/commands', activeMatch: '/(commands|contract-hash|steps|verifiers|file-script-verifiers|count-verifier|artifacts|artifacts-pipeline|process-telemetry|configuration|redaction-block|distribution|github|mcp|snippets|troubleshooting|cairntrace-comparison|topics)' },
+      { text: 'Reference', link: '/commands', activeMatch: '/(commands|stories|contract-hash|steps|verifiers|file-script-verifiers|count-verifier|artifacts|artifacts-pipeline|process-telemetry|configuration|redaction-block|distribution|github|mcp|snippets|troubleshooting|cairntrace-comparison|topics)' },
       { text: 'Agents', link: '/agents', activeMatch: '/agents' },
     ],
 
@@ -102,6 +102,7 @@ export default defineConfig({
           text: 'Reference',
           items: [
             { text: 'Commands', link: '/commands' },
+            { text: 'Stories', link: '/stories' },
             { text: 'Contract Hash', link: '/contract-hash' },
             { text: 'Steps', link: '/steps' },
             { text: 'Verifiers', link: '/verifiers' },
