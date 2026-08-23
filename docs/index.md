@@ -1,19 +1,19 @@
 ---
 layout: home
 
-title: Glyphrun — Terminal & TUI Testing Framework
+title: Glyphrun - Terminal & TUI Testing Framework
 titleTemplate: false
 description: Black-box behavior tests for terminal apps. Glyphrun drives CLIs and TUIs in a real PTY, asserts against a deterministic terminal emulator, and writes artifact packs built for humans and coding agents.
 
 head:
   - - script
     - type: application/ld+json
-    - '{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is Glyphrun like Playwright, but for terminal apps?","acceptedAnswer":{"@type":"Answer","text":"Conceptually yes — Glyphrun drives a real process in a PTY the way Playwright drives a real browser, and asserts against a deterministic virtual terminal the way Playwright asserts against the DOM."}},{"@type":"Question","name":"Does Glyphrun work with any language?","acceptedAnswer":{"@type":"Answer","text":"Yes. Glyphrun is black-box: if your app runs in a PTY, Glyphrun can drive and assert against it, regardless of implementation language."}},{"@type":"Question","name":"Does Glyphrun support Windows?","acceptedAnswer":{"@type":"Answer","text":"Yes, via ConPTY on Windows 10 1809+, behind the same platform-neutral backend used for macOS and Linux PTYs."}},{"@type":"Question","name":"How is Glyphrun different from expect or tmux scripts?","acceptedAnswer":{"@type":"Answer","text":"Specs are declarative YAML/JSON with a stamped contract hash, not imperative scripts — outcomes are separated from repairable interaction steps, and every run produces a structured artifact pack instead of raw terminal output."}}]}'
+    - '{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Is Glyphrun like Playwright, but for terminal apps?","acceptedAnswer":{"@type":"Answer","text":"Conceptually yes. Glyphrun drives a real process in a PTY the way Playwright drives a real browser, and asserts against a deterministic virtual terminal the way Playwright asserts against the DOM."}},{"@type":"Question","name":"Does Glyphrun work with any language?","acceptedAnswer":{"@type":"Answer","text":"Yes. Glyphrun is black-box: if your app runs in a PTY, Glyphrun can drive and assert against it, regardless of implementation language."}},{"@type":"Question","name":"Does Glyphrun support Windows?","acceptedAnswer":{"@type":"Answer","text":"Yes, via ConPTY on Windows 10 1809+, behind the same platform-neutral backend used for macOS and Linux PTYs."}},{"@type":"Question","name":"How is Glyphrun different from expect or tmux scripts?","acceptedAnswer":{"@type":"Answer","text":"Specs are declarative YAML/JSON with a stamped contract hash, not imperative scripts. Outcomes are separated from repairable interaction steps, and every run produces a structured artifact pack instead of raw terminal output."}}]}'
 
 hero:
   name: glyphrun
   text: Stop eyeballing your terminal app.
-  tagline: Glyphrun runs your CLI or TUI in a real PTY and checks the rendered screen against a deterministic terminal emulator. Any language, no framework bindings — if it runs in a terminal, you can test it.
+  tagline: Specs for CLIs and TUIs. Real PTY, deterministic screen, artifacts an agent can read.
   image:
     src: /hero-terminal.svg
     alt: glyph run output showing 2 of 2 outcomes passed
@@ -24,25 +24,13 @@ hero:
     - theme: alt
       text: View on GitHub
       link: https://github.com/abdul-hamid-achik/glyphrun
-
-features:
-  - title: Test any terminal app
-    details: Glyphrun is black-box — if it runs in a PTY, you can spec it. Go, Rust, Python, Bash, anything. Specs describe user-visible behavior in YAML, not your framework's internals.
-  - title: Same screen, every run
-    details: Input goes through a real pseudo-terminal; assertions run against a built-in deterministic terminal emulator. A spec that passes on your laptop renders byte-for-byte the same in CI or an agent's session.
-  - title: Specs that survive UI drift
-    details: intent and outcomes are stamped with a contract hash — silent edits abort the run. When a banner is renamed or a prompt moves, glyph repair fixes the navigation steps and never touches what "pass" means.
-  - title: Failures your agent can read
-    details: Every run writes a self-contained artifact pack — JSON/YAML/Markdown reports, agent_context.md with suggested next commands, a frame-by-frame timeline, and a deterministic SVG of the final screen. glyph mcp exposes it all to any MCP client.
-  - title: Start from a recording
-    details: Skip blank-page authoring. glyph record --scaffold watches a real session and drafts a runnable spec — target command, terminal size, ready-string, and a clean-exit outcome, hash already stamped.
-  - title: Green means green in CI
-    details: --repeat N probes for flakiness before you trust a suite, --junit feeds any CI dashboard, and glyph comment posts a PR summary with the final screen. A composite GitHub Action ships in the repo.
 ---
 
-## A terminal test in ten lines {#example}
+## A spec is the contract {#example}
 
-Testing terminal applications usually means expect scripts, framework-specific harnesses, or a human keyboard-mashing before every release. A Glyphrun spec replaces all three:
+Testing a TUI usually means expect scripts, a framework harness, or a human at the keyboard. A Glyphrun spec replaces all three: `intent` and `outcomes` are the contract, `steps` are repairable hints.
+
+<SpecFrame file="hello_quits.yml">
 
 ```yaml
 name: hello_quits
@@ -57,50 +45,70 @@ outcomes:
     verify: { process: { exitCode: 0 } }
 ```
 
+</SpecFrame>
+
 ```bash
 glyph run specs/hello.yml --format md
 ```
 
-One command launches the app in a real PTY, evaluates every outcome against the emulated screen, and writes a run directory containing the report in JSON, YAML, and Markdown, the final screen as text and SVG, per-outcome evidence, and `agent_context.md`. Exit 0 means every outcome passed — [exit codes 1–7](/commands) each mean one distinct kind of failure.
+One command launches the app in a real PTY, checks every outcome against the emulated screen, and writes a run directory: JSON/YAML/Markdown reports, the final screen as text and SVG, per-outcome evidence, and `agent_context.md`. Exit 0 means every outcome passed. [Exit codes 1-7](/commands) each mean one distinct kind of failure.
 
-## How Glyphrun tests a TUI {#how-it-works}
+## Drive the PTY. Assert the screen. {#how-it-works}
 
-1. **Declare the contract.** Write `intent` and `outcomes` — the durable definition of correct behavior. `glyph spec verify --stamp` seals them with a [contract hash](/contract-hash).
-2. **Run it for real.** Glyphrun launches your app in a genuine pseudo-terminal, plays the steps, and evaluates each outcome against a deterministic virtual terminal — cells, regions, cursor, colors, even OSC 8 hyperlinks. See the full [step](/steps) and [verifier](/verifiers) vocabulary.
-3. **Read the evidence.** Pass or fail, you get a self-contained [artifact pack](/artifacts). On failure, `glyph context latest` surfaces exactly what went wrong, and `glyph repair` proposes step fixes.
+<ol class="gr-beats">
+<li>
+<span class="n" aria-hidden="true">1</span>
+<div>
+<p><strong>Stamp the contract.</strong> Write <code>intent</code> and <code>outcomes</code>. <code>glyph spec verify --stamp</code> seals them with a <a href="/contract-hash">contract hash</a>. Silent edits abort the run.</p>
+</div>
+</li>
+<li>
+<span class="n" aria-hidden="true">2</span>
+<div>
+<p><strong>Run it in a real PTY.</strong> Glyphrun launches your app, plays the steps, and evaluates each outcome against a deterministic virtual terminal: cells, regions, cursor, colors, OSC 8 hyperlinks. See the <a href="/steps">step</a> and <a href="/verifiers">verifier</a> vocabulary.</p>
+</div>
+</li>
+<li>
+<span class="n" aria-hidden="true">3</span>
+<div>
+<p><strong>Read the evidence.</strong> Pass or fail, you get a self-contained <a href="/artifacts">artifact pack</a>. On failure, <code>glyph context latest</code> shows what happened, and <code>glyph repair</code> proposes step fixes without touching what pass means.</p>
+</div>
+</li>
+</ol>
 
-## Your coding agent's eyes in the terminal {#agents}
+## Agents see what you see {#agents}
 
-Agents can't see a TUI — Glyphrun can. It was designed so agents use the same surface humans do, with no per-agent code paths: `glyph mcp` starts a stdio [MCP server](/mcp) that mirrors the CLI — run specs, verify contracts, read failure context, diff runs. After a failure, `agent_context.md` hands the agent recent events and suggested inspection commands.
+Agents cannot see a TUI. Glyphrun can, on the same CLI humans use. No per-agent code paths: `glyph mcp` starts a stdio [MCP server](/mcp) that mirrors the commands. After a failure, `agent_context.md` hands the agent recent events and inspection commands.
 
-And because the contract hash refuses silent edits to `intent` or `outcomes`, an agent can repair drifted steps all day without ever redefining success behind your back:
+The contract hash refuses silent edits to `intent` or `outcomes`, so an agent can repair drifted steps without redefining success:
 
 ```bash
-glyph run specs/app.yml --format json   # fails: the banner text changed
-glyph context latest --format md        # read what actually happened
-glyph repair specs/app.yml --write      # fix the steps, never the contract
-glyph run specs/app.yml --format json   # green — contract untouched
+glyph run specs/app.yml --format json   # banner changed
+glyph context latest --format md
+glyph repair specs/app.yml --write      # steps only
+glyph run specs/app.yml --format json   # green
 ```
 
-The full loop is documented in the [agent guide](/agents).
+The full loop is in the [agent guide](/agents).
 
-## Coming from expect scripts or BATS? {#migrate}
+## Stories are isolated TUI states {#stories}
 
-Most terminal testing either binds to your app's internals or lives in fragile expect scripts. Glyphrun keeps the app black-box and the assertion deterministic — and it meets you where you are: `glyph import bats` converts an existing BATS file into a spec, and `glyph export bats` goes the other way. Local-first by design: no cloud, no telemetry, one static Go binary on macOS, Linux, and Windows (ConPTY).
+`glyph stories` catalogs specs that mount one TUI state at a time. `--html` inspects cells (grid, rulers, hover). `--tui` is the feel catalog in the host terminal. Same black-box runner, no framework bindings.
+
+The [Stories guide](/stories) covers `glyph stories init`, the inspect overlays, and the example harness.
 
 ## FAQ {#faq}
 
-**Is this like Playwright, but for terminal apps?**
-Conceptually yes — Glyphrun drives a real process (PTY) the same way Playwright drives a real browser, and asserts against a deterministic virtual terminal the way Playwright asserts against the DOM.
-
-**Does it work with any language?**
-Yes. Glyphrun is black-box: if your app runs in a PTY, Glyphrun can drive and assert against it, regardless of implementation language.
-
-**Does it support Windows?**
-Yes, via ConPTY (Windows 10 1809+), behind the same platform-neutral backend used for macOS and Linux PTYs.
-
-**How is this different from `expect` or `tmux` scripts?**
-Specs are declarative YAML/JSON with a stamped contract hash, not imperative scripts — outcomes are separated from the repairable interaction steps, and every run produces a structured artifact pack instead of raw terminal output.
+<dl class="gr-faq">
+<dt>Is this like Playwright, but for terminal apps?</dt>
+<dd>Conceptually yes. Glyphrun drives a real process in a PTY the way Playwright drives a real browser, and asserts against a deterministic virtual terminal the way Playwright asserts against the DOM.</dd>
+<dt>Does it work with any language?</dt>
+<dd>Yes. Glyphrun is black-box: if your app runs in a PTY, Glyphrun can drive and assert against it, regardless of implementation language.</dd>
+<dt>Does it support Windows?</dt>
+<dd>Yes, via ConPTY (Windows 10 1809+), behind the same platform-neutral backend used for macOS and Linux PTYs.</dd>
+<dt>How is this different from expect or tmux scripts?</dt>
+<dd>Specs are declarative YAML/JSON with a stamped contract hash, not imperative scripts. Outcomes are separated from repairable interaction steps, and every run produces a structured artifact pack instead of raw terminal output. <code>glyph import bats</code> converts an existing BATS file; <code>glyph export bats</code> goes the other way.</dd>
+</dl>
 
 ## Install {#install}
 
@@ -110,4 +118,4 @@ brew install abdul-hamid-achik/tap/glyph
 go install github.com/abdul-hamid-achik/glyphrun/cmd/glyph@latest
 ```
 
-MIT licensed. Run `glyph init` in your project and you'll have a passing smoke spec in five minutes — the [Quickstart](/quickstart) walks you through it.
+MIT licensed. `glyph init` writes a passing smoke spec. The [Quickstart](/quickstart) walks through it.

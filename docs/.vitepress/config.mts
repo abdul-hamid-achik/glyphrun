@@ -56,7 +56,7 @@ export default defineConfig({
 
     const description = pageData.frontmatter.description || DEFAULT_DESCRIPTION
     const title = isHome
-      ? pageData.frontmatter.title || 'Glyphrun — Terminal & TUI Testing Framework'
+      ? pageData.frontmatter.title || 'Glyphrun - Terminal & TUI Testing Framework'
       : `${pageData.title} | Glyphrun`
 
     const head: HeadConfig[] = [
