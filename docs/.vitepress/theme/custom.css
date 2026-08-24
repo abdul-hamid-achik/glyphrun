@@ -2,11 +2,13 @@
  * Glyphrun — amber phosphor terminal identity.
  * Palette: amber-700 #B45309 · amber-600 #D97706 · amber-500 #F59E0B ·
  * amber-400 #FBBF24 · amber-200 #FDE68A · ink #241305 · warm paper #FDFAF4.
+ * Home frames use 12px radius. Interactive chrome stays VitePress.
  */
 
 :root {
   --gr-font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas,
     'Liberation Mono', monospace;
+  --gr-radius: 12px;
 
   --vp-c-brand-1: #b45309;
   --vp-c-brand-2: #d97706;
@@ -28,14 +30,10 @@
   --vp-button-brand-active-text: #fdfaf4;
   --vp-button-brand-active-border: transparent;
 
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(120deg, #b45309 20%, #f59e0b);
-  --vp-home-hero-image-background-image: radial-gradient(
-    ellipse 50% 45% at 50% 50%,
-    rgba(251, 191, 36, 0.35),
-    transparent
-  );
-  --vp-home-hero-image-filter: blur(52px);
+  --vp-home-hero-name-color: #b45309;
+  --vp-home-hero-name-background: none;
+  --vp-home-hero-image-background-image: none;
+  --vp-home-hero-image-filter: none;
 }
 
 .dark {
@@ -58,12 +56,7 @@
   --vp-button-brand-active-bg: #d97706;
   --vp-button-brand-active-text: #241305;
 
-  --vp-home-hero-name-background: linear-gradient(120deg, #f59e0b 20%, #fde68a);
-  --vp-home-hero-image-background-image: radial-gradient(
-    ellipse 50% 45% at 50% 50%,
-    rgba(251, 191, 36, 0.22),
-    transparent
-  );
+  --vp-home-hero-name-color: #fbbf24;
 }
 
 /* Wordmark: lowercase mono, in the navbar and the hero. */
@@ -78,6 +71,10 @@
   font-family: var(--gr-font-mono);
   font-weight: 800;
   letter-spacing: -0.05em;
+  padding-right: 0.35em;
+  background: none;
+  -webkit-background-clip: unset;
+  background-clip: unset;
 }
 
 /* Signature: the block cursor, typing the wordmark. */
@@ -98,31 +95,18 @@
   }
 }
 
-/* Landing-page section headings echo the mono display voice. */
-.VPHome .vp-doc h2 {
-  font-family: var(--gr-font-mono);
-  letter-spacing: -0.03em;
+.VPHero .tagline {
+  max-width: 36rem;
 }
 
-/* Feature cards: quiet by default, phosphor edge on hover. */
-.VPFeature {
-  border: 1px solid var(--vp-c-divider);
-  transition: border-color 0.25s, box-shadow 0.25s;
-}
-
-.VPFeature:hover {
-  border-color: var(--vp-c-brand-2);
-  box-shadow: 0 6px 28px -10px rgba(217, 119, 6, 0.35);
-}
-
-/* The hero terminal window: responsive, not VitePress's fixed square chip. */
+/* Product screen is the hero anchor, not a glow blob. */
 .VPHero .image-bg {
-  opacity: 0.9;
+  display: none;
 }
 
 .VPHero .image-container {
   width: 100%;
-  max-width: 440px;
+  max-width: 520px;
   height: auto;
   transform: none;
   margin: 0 auto;
@@ -135,4 +119,141 @@
   max-width: 100%;
   height: auto;
   max-height: none;
+}
+
+@media (min-width: 960px) {
+  .VPHero.has-image .image {
+    margin-top: 0;
+  }
+}
+
+/* Mobile: copy and CTA first, then the run screen. VP defaults to image-first. */
+@media (max-width: 959px) {
+  .VPHero.has-image .main {
+    order: 1 !important;
+  }
+
+  .VPHero.has-image .image {
+    order: 2 !important;
+    margin-top: 1.75rem;
+  }
+}
+
+/* Landing-page section headings echo the mono display voice. */
+.VPHome .vp-doc h2 {
+  font-family: var(--gr-font-mono);
+  letter-spacing: -0.03em;
+  border-top: 0;
+  margin-top: 4rem;
+  padding-top: 0;
+}
+
+.VPHome .vp-doc h2:first-child {
+  margin-top: 2.5rem;
+}
+
+.VPHome .vp-doc.container {
+  max-width: 46rem;
+}
+
+/* Spec YAML is the contract artifact, not a generic code chip. */
+.gr-spec {
+  margin: 1.5rem 0 1.25rem;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: var(--gr-radius);
+  overflow: hidden;
+  background: var(--vp-c-bg-elv);
+}
+
+.gr-spec__bar {
+  margin: 0;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+  font-family: var(--gr-font-mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--vp-c-brand-1);
+}
+
+.gr-spec__body div[class*='language-'] {
+  margin: 0;
+  border-radius: 0;
+  background: var(--vp-c-bg-elv) !important;
+}
+
+.gr-spec__body div[class*='language-'] > .lang {
+  display: none;
+}
+
+.gr-spec__body div[class*='language-'] > pre {
+  padding-top: 1.15rem;
+}
+
+/* How-it-works: a sequence, not a card grid. */
+.gr-beats {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+}
+
+.gr-beats li {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  column-gap: 1rem;
+  padding: 1.15rem 0;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.gr-beats li:last-child {
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.gr-beats .n {
+  font-family: var(--gr-font-mono);
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--vp-c-brand-1);
+}
+
+.gr-beats p {
+  margin: 0;
+}
+
+.gr-faq {
+  margin: 1.25rem 0 0;
+}
+
+.gr-faq dt {
+  font-weight: 700;
+  margin-top: 1.35rem;
+}
+
+.gr-faq dt:first-child {
+  margin-top: 0;
+}
+
+.gr-faq dd {
+  margin: 0.4rem 0 0;
+}
+
+@media (max-width: 767px) {
+  .VPHero .image-container {
+    max-width: 100%;
+  }
+
+  .gr-beats li {
+    grid-template-columns: 1.75rem minmax(0, 1fr);
+    column-gap: 0.75rem;
+    padding: 1rem 0;
+  }
+}
+
+.VPButton:focus-visible,
+.VPLink:focus-visible,
+.gr-beats a:focus-visible,
+.gr-faq a:focus-visible {
+  outline: 2px solid var(--vp-c-brand-1);
+  outline-offset: 2px;
 }
