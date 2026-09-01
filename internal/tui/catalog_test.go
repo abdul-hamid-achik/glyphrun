@@ -228,3 +228,63 @@ func screenGrid(cols, rows int, fills map[[2]int]string) *terminal.ScreenSnapsho
 	}
 	return &terminal.ScreenSnapshot{Cols: cols, Rows: rows, Cells: cells}
 }
+
+func TestCatalogDiffGoldenAndRulerToggles(t *testing.T) {
+	cur := &terminal.ScreenSnapshot{Cols: 3, Rows: 1, Cells: []terminal.Cell{
+		{X: 0, Y: 0, Char: "a", Width: 1}, {X: 1, Y: 0, Char: "X", Width: 1}, {X: 2, Y: 0, Char: "c", Width: 1},
+	}}
+	before := &terminal.ScreenSnapshot{Cols: 3, Rows: 1, Cells: []terminal.Cell{
+		{X: 0, Y: 0, Char: "a", Width: 1}, {X: 1, Y: 0, Char: "b", Width: 1}, {X: 2, Y: 0, Char: "c", Width: 1},
+	}}
+	diff := terminal.DiffSnapshots(*before, *cur)
+	m := newCatalog([]Story{{Name: "list/rows", Feature: "list", Status: "failed", Golden: "changed", Snapshots: []StorySnap{
+		{Name: "rows", Status: "ok", Golden: "changed", Screen: cur, Before: before, Changed: diff.Changed},
+	}}})
+	key := func(text string) tea.KeyPressMsg { return tea.KeyPressMsg{Code: []rune(text)[0], Text: text} }
+	step := func(m catalogModel, k tea.KeyPressMsg) catalogModel {
+		next, _ := m.Update(k)
+		return next.(catalogModel)
+	}
+	out := m.render()
+	if !strings.Contains(out, "±") || !strings.Contains(out, "1 changed") {
+		t.Fatalf("expected golden markers in sidebar/chrome:\n%s", out)
+	}
+	if !m.showDiff {
+		t.Fatal("diff highlight should be on by default")
+	}
+	m = step(m, key("o"))
+	if !m.showGolden || !strings.Contains(m.render(), "· golden") {
+		t.Fatalf("o should show the golden screen:\n%s", m.render())
+	}
+	if !strings.Contains(stripANSI(m.render()), "abc") {
+		t.Fatalf("golden view should paint the committed cells:\n%s", m.render())
+	}
+	m = step(m, key("o"))
+	if !strings.Contains(stripANSI(m.render()), "aXc") {
+		t.Fatalf("current view should paint the captured cells:\n%s", m.render())
+	}
+	m = step(m, key("r"))
+	if !m.showRulers || !strings.Contains(stripANSI(m.render()), "  0 ") {
+		t.Fatalf("r should add row rulers:\n%s", m.render())
+	}
+	m = step(m, key("d"))
+	if m.showDiff {
+		t.Fatal("d should toggle diff off")
+	}
+}
+
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEsc := false
+	for _, r := range s {
+		switch {
+		case r == 0x1b:
+			inEsc = true
+		case inEsc && (r == 'm' || r == 'K' || r == 'H' || r == 'J'):
+			inEsc = false
+		case !inEsc:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}

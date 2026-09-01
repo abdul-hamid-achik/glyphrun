@@ -13,19 +13,26 @@ import (
 // package catalog onto this type so this package stays free of spec/artifact
 // knowledge.
 type Story struct {
-	Name      string
-	Feature   string
-	Status    string
-	RunID     string
-	Snapshots []StorySnap
+	Name       string // display label: story id (+ @variant) or spec name
+	SpecName   string
+	Feature    string
+	Status     string
+	RunID      string
+	Golden     string // match | changed | missing | none
+	Diagnostic string
+	Snapshots  []StorySnap
 }
 
-// StorySnap is a named screen belonging to a story.
+// StorySnap is a named screen belonging to a story. Before is the committed
+// golden when it differs; Changed lists the differing cells.
 type StorySnap struct {
-	Name   string
-	Status string
-	Error  string
-	Screen *terminal.ScreenSnapshot
+	Name    string
+	Status  string
+	Error   string
+	Golden  string
+	Screen  *terminal.ScreenSnapshot
+	Before  *terminal.ScreenSnapshot
+	Changed []terminal.CellDiff
 }
 
 type catalogModel struct {
@@ -33,11 +40,21 @@ type catalogModel struct {
 	idx        int
 	snap       int
 	showSpaces bool
+	showDiff   bool
+	showGolden bool
+	showRulers bool
 	width      int
 	height     int
 }
 
-const catalogSidebarWidth = 28
+const catalogSidebarWidth = 30
+
+var (
+	diffStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#7f1d1d")).Foreground(lipgloss.Color("#ffffff"))
+	changedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#fda4af"))
+	missingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#fcd34d"))
+	okStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#6ee7b7"))
+)
 
 // RunStories launches the catalog browser. It paints snapshots with the same
 // cell renderer as replay --tui, so the preview matches the host terminal.
@@ -50,7 +67,8 @@ func RunStories(items []Story) error {
 }
 
 func newCatalog(items []Story) catalogModel {
-	return catalogModel{items: items}
+	m := catalogModel{items: items, showDiff: true}
+	return m
 }
 
 func (m catalogModel) Init() tea.Cmd { return nil }
@@ -66,21 +84,35 @@ func (m catalogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "j", "down":
 			m.idx = clampIndex(m.idx+1, len(m.items))
 			m.snap = 0
+			m.showGolden = false
 		case "k", "up":
 			m.idx = clampIndex(m.idx-1, len(m.items))
 			m.snap = 0
+			m.showGolden = false
 		case "g", "home":
 			m.idx = 0
 			m.snap = 0
+			m.showGolden = false
 		case "G", "end":
 			m.idx = clampIndex(len(m.items)-1, len(m.items))
 			m.snap = 0
+			m.showGolden = false
 		case "l", "right", "]":
 			m.snap = clampIndex(m.snap+1, len(m.current().Snapshots))
+			m.showGolden = false
 		case "h", "left", "[":
 			m.snap = clampIndex(m.snap-1, len(m.current().Snapshots))
+			m.showGolden = false
 		case "s":
 			m.showSpaces = !m.showSpaces
+		case "d":
+			m.showDiff = !m.showDiff
+		case "o":
+			if snap, ok := m.currentSnap(); ok && snap.Before != nil {
+				m.showGolden = !m.showGolden
+			}
+		case "r":
+			m.showRulers = !m.showRulers
 		}
 	}
 	return m, nil
@@ -143,6 +175,18 @@ func (m catalogModel) render() string {
 	return out
 }
 
+func goldenMark(golden string) string {
+	switch golden {
+	case "changed":
+		return changedStyle.Render("±")
+	case "missing":
+		return missingStyle.Render("?")
+	case "match":
+		return okStyle.Render("✓")
+	}
+	return " "
+}
+
 func (m catalogModel) renderSidebar() string {
 	var b strings.Builder
 	b.WriteString(dimStyle.Bold(true).Render("GLYPH STORIES"))
@@ -165,26 +209,32 @@ func (m catalogModel) renderSidebar() string {
 			name = headerStyle.Render(s.Name)
 		}
 		b.WriteString(mark)
+		b.WriteString(goldenMark(s.Golden))
+		b.WriteByte(' ')
 		b.WriteString(name)
 		b.WriteByte('\n')
 		meta := s.Status
 		if n := len(s.Snapshots); n > 0 {
 			meta += fmt.Sprintf(" · %d snap", n)
 		}
-		b.WriteString(dimStyle.Render("  " + meta))
+		b.WriteString(dimStyle.Render("    " + meta))
 		b.WriteByte('\n')
 	}
 	return b.String()
 }
 
+func (m catalogModel) keysLine() string {
+	return "j/k stories · [/] snapshots · s spaces · d diff · o golden · r rulers · q quit"
+}
+
 func (m catalogModel) renderMain(mainW, h int) string {
 	st := m.current()
 	toolbar := m.renderToolbar()
-	keys := dimStyle.Render("j/k stories · [/] snapshots · s spaces · q quit")
+	keys := dimStyle.Render(m.keysLine())
 	if mainW > 0 {
 		fit := lipgloss.NewStyle().Width(mainW).MaxWidth(mainW)
 		toolbar = fit.Render(toolbar)
-		keys = dimStyle.Width(mainW).MaxWidth(mainW).Render("j/k stories · [/] snapshots · s spaces · q quit")
+		keys = dimStyle.Width(mainW).MaxWidth(mainW).Render(m.keysLine())
 	}
 
 	var chrome, body string
@@ -192,9 +242,13 @@ func (m catalogModel) renderMain(mainW, h int) string {
 	switch {
 	case !ok:
 		if st.Status == "not_run" {
-			body = dimStyle.Render("not run — glyph run " + st.Name)
+			body = dimStyle.Render("not run — glyph stories run --only " + st.Name)
 		} else {
-			body = dimStyle.Render("no snapshot")
+			msg := "no snapshot"
+			if st.Diagnostic != "" {
+				msg += " — " + st.Diagnostic
+			}
+			body = dimStyle.Render(msg)
 		}
 	case snap.Status != "ok" || snap.Screen == nil:
 		msg := snap.Error
@@ -205,7 +259,18 @@ func (m catalogModel) renderMain(mainW, h int) string {
 		body = dimStyle.Render(msg)
 	default:
 		chrome = m.renderChrome(snap, mainW)
-		body = paintScreen(snap.Screen, m.showSpaces, true)
+		screen := snap.Screen
+		if m.showGolden && snap.Before != nil {
+			screen = snap.Before
+		}
+		var changed map[[2]int]bool
+		if m.showDiff && len(snap.Changed) > 0 {
+			changed = make(map[[2]int]bool, len(snap.Changed))
+			for _, c := range snap.Changed {
+				changed[[2]int{c.X, c.Y}] = true
+			}
+		}
+		body = paintScreenOpts(screen, paintOptions{spaces: m.showSpaces, skipBlank: true, rulers: m.showRulers, changed: changed})
 	}
 	if mainW > 0 {
 		body = lipgloss.NewStyle().Width(mainW).MaxWidth(mainW).Render(body)
@@ -241,18 +306,19 @@ func (m catalogModel) renderMain(mainW, h int) string {
 }
 
 func (m catalogModel) renderToolbar() string {
-	plain, spaces := "plain", "spaces"
-	if m.showSpaces {
-		spaces = headerStyle.Render(spaces)
-		plain = dimStyle.Render(plain)
-	} else {
-		plain = headerStyle.Render(plain)
-		spaces = dimStyle.Render(spaces)
+	toggle := func(label string, on bool) string {
+		if on {
+			return headerStyle.Render(label)
+		}
+		return dimStyle.Render(label)
 	}
 	st := m.current()
 	pills := make([]string, 0, len(st.Snapshots))
 	for i, sn := range st.Snapshots {
 		label := sn.Name
+		if sn.Golden == "changed" {
+			label += fmt.Sprintf(" ±%d", len(sn.Changed))
+		}
 		if i == m.snap {
 			label = headerStyle.Render(label)
 		} else {
@@ -260,7 +326,10 @@ func (m catalogModel) renderToolbar() string {
 		}
 		pills = append(pills, label)
 	}
-	line := plain + "  " + spaces
+	line := toggle("plain", !m.showSpaces) + "  " + toggle("spaces", m.showSpaces) + "  " + toggle("diff", m.showDiff) + "  " + toggle("rulers", m.showRulers)
+	if snap, ok := m.currentSnap(); ok && snap.Before != nil {
+		line += "  " + toggle("golden", m.showGolden)
+	}
 	if len(pills) > 0 {
 		line += "    " + strings.Join(pills, "  ")
 	}
@@ -273,9 +342,15 @@ func (m catalogModel) renderChrome(snap StorySnap, width int) string {
 	if st.RunID != "" {
 		title += " · " + st.RunID
 	}
+	if m.showGolden && snap.Before != nil {
+		title += " · golden"
+	}
 	size := ""
 	if snap.Screen != nil {
 		size = fmt.Sprintf("%d×%d", snap.Screen.Cols, snap.Screen.Rows)
+	}
+	if snap.Golden == "changed" {
+		size = changedStyle.Render(fmt.Sprintf("%d changed", len(snap.Changed))) + "  " + size
 	}
 	left := trafficDots() + "  " + dimStyle.Render(title)
 	right := dimStyle.Render(size)
@@ -318,45 +393,99 @@ func trafficDots() string {
 	return r + " " + y + " " + g
 }
 
+// paintOptions control how a screen is painted into the host terminal.
+type paintOptions struct {
+	spaces    bool
+	skipBlank bool
+	rulers    bool
+	changed   map[[2]int]bool
+}
+
 func paintScreen(snap *terminal.ScreenSnapshot, showSpaces, skipBlank bool) string {
+	return paintScreenOpts(snap, paintOptions{spaces: showSpaces, skipBlank: skipBlank})
+}
+
+// paintScreenOpts renders the cell grid with lipgloss styles. Changed cells
+// (a golden diff) are painted with the diff style so a regression stands out
+// in the terminal the same way it does in the HTML overlay; rulers add a
+// column header and row numbers.
+func paintScreenOpts(snap *terminal.ScreenSnapshot, opts paintOptions) string {
 	if snap == nil {
 		return dimStyle.Render("(no screen captured for this frame)")
 	}
 	cols, rows := snap.Cols, snap.Rows
 	var b strings.Builder
 	wrote := false
+	if opts.rulers {
+		b.WriteString(dimStyle.Render("    " + columnRuler(cols)))
+		wrote = true
+	}
 	for y := 0; y < rows; y++ {
-		if skipBlank && !showSpaces && rowEmpty(snap, y, cols) {
+		if opts.skipBlank && !opts.spaces && !opts.rulers && rowEmpty(snap, y, cols) && !rowChanged(opts.changed, y, cols) {
 			continue
 		}
 		if wrote {
 			b.WriteByte('\n')
 		}
 		wrote = true
+		if opts.rulers {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("%3d ", y)))
+		}
 		x := 0
 		for x < cols {
 			st := cellAt(snap, x, y, cols).Style
+			marked := opts.changed[[2]int{x, y}]
 			var run strings.Builder
 			for x < cols {
 				c := cellAt(snap, x, y, cols)
-				if c.Style != st {
+				if c.Style != st || opts.changed[[2]int{x, y}] != marked {
 					break
 				}
 				ch := charOf(c)
-				if showSpaces && ch == " " {
+				if opts.spaces && ch == " " {
 					ch = "·"
 				}
 				run.WriteString(ch)
 				x++
 			}
-			if st == (terminal.Style{}) {
+			switch {
+			case marked:
+				b.WriteString(diffStyle.Render(run.String()))
+			case st == (terminal.Style{}):
 				b.WriteString(run.String())
-			} else {
+			default:
 				b.WriteString(cellStyle(st).Render(run.String()))
 			}
 		}
 	}
 	return b.String()
+}
+
+func columnRuler(cols int) string {
+	var b strings.Builder
+	for x := 0; x < cols; x++ {
+		switch {
+		case x%10 == 0:
+			label := fmt.Sprintf("%d", x)
+			b.WriteString(label)
+			x += len(label) - 1
+		default:
+			b.WriteByte('·')
+		}
+	}
+	return b.String()
+}
+
+func rowChanged(changed map[[2]int]bool, y, cols int) bool {
+	if len(changed) == 0 {
+		return false
+	}
+	for x := 0; x < cols; x++ {
+		if changed[[2]int{x, y}] {
+			return true
+		}
+	}
+	return false
 }
 
 func rowEmpty(snap *terminal.ScreenSnapshot, y, cols int) bool {

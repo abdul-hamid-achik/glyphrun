@@ -1,0 +1,24 @@
+glyph  inbox layout                                                       failed
+────────────────────────────────────────────────────────────────────────────────
+you
+  open the last snapshot
+
+glyph
+  PTY closed before the ready string.
+  Check target.cmd and re-run.
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ask about a cell
+enter send · q quit

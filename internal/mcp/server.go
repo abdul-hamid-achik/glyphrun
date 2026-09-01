@@ -17,6 +17,7 @@ import (
 	"github.com/abdul-hamid-achik/glyphrun/internal/scaffold"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/abdul-hamid-achik/glyphrun/internal/stories"
+	"github.com/abdul-hamid-achik/glyphrun/internal/storyrun"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 	"io"
 	"os"
@@ -138,7 +139,7 @@ func tools() []map[string]any {
 				"owner":   map[string]any{"type": "string"},
 			},
 		}),
-		tool("glyph_stories", "Catalog TUI stories (specs, usually tagged story) joined to their newest run snapshots.", map[string]any{
+		tool("glyph_stories", "Catalog TUI stories (stories.yml manifests and specs tagged story) joined to their newest result and golden status (match / changed / missing).", map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"paths":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
@@ -146,6 +147,16 @@ func tools() []map[string]any {
 				"tag":     map[string]any{"type": "string"},
 				"owner":   map[string]any{"type": "string"},
 				"all":     map[string]any{"type": "boolean"},
+			},
+		}),
+		tool("glyph_stories_run", "Run stories: build each stories.yml harness once, run every story (or the --only selection) through the runner, capture missing goldens, and refresh the stories index. Returns the run report with per-story status and golden state.", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"paths":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "manifests, spec files, or directories (default: [\".\"])"},
+				"only":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "story keys (list/rows, list/rows@wide), spec names, or features to run"},
+				"update":   map[string]any{"type": "boolean", "description": "rewrite every golden with the captured screen"},
+				"strict":   map[string]any{"type": "boolean", "description": "fail stories whose golden is missing instead of creating it"},
+				"parallel": map[string]any{"type": "integer", "minimum": 1, "description": "stories to run concurrently (default 4)"},
 			},
 		}),
 		tool("glyph_spec_verify", "Validate a Glyphrun spec.", map[string]any{
@@ -255,7 +266,7 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 			"binary":    "glyph",
 			"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "download", "transform", "monitor", "batch", "when"},
 			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"},
-			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --kind story", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "snapshot inventory", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "stories", "stories --html", "stories --tui", "stories init", "clean", "clean --no-archive", "mcp", "replay --html"},
+			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --kind story", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "snapshot inventory", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "stories", "stories run", "stories run --watch", "stories run --update", "stories run --only <story>", "stories serve --watch", "stories --html", "stories --tui", "stories init", "clean", "clean --no-archive", "mcp", "replay --html"},
 			"namedArtifacts": map[string]any{
 				"placeholders": []string{"${artifacts.<name>.path}", "${artifacts.<name>.relativePath}"},
 				"stepKinds":    []string{"download", "transform"},
@@ -290,31 +301,47 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 		if len(paths) == 0 {
 			paths = []string{"."}
 		}
-		rt, err := config.LoadRuntime(".", opts.ConfigPath, opts.Environment)
+		collect, err := storyCollectOptions(opts, paths)
 		if err != nil {
 			return toolError(err)
 		}
-		root := opts.ArtifactRoot
-		if root == "" {
-			root = rt.Config.ArtifactRoot
+		collect.Feature = stringArg(params.Arguments, "feature", "")
+		collect.Tag = stringArg(params.Arguments, "tag", "")
+		collect.Owner = stringArg(params.Arguments, "owner", "")
+		collect.All = boolArg(params.Arguments, "all", false)
+		cat, err := stories.Collect(collect)
+		if err != nil {
+			return toolError(err)
 		}
-		if !filepath.IsAbs(root) {
-			root = filepath.Join(rt.ProjectRoot, root)
+		return toolText(map[string]any{
+			"schemaVersion": cat.SchemaVersion,
+			"summary":       cat.Summarize(),
+			"stories":       cat.Stories,
+		})
+	case "glyph_stories_run":
+		paths := stringSliceArg(params.Arguments, "paths")
+		if len(paths) == 0 {
+			paths = []string{"."}
 		}
-		cat, err := stories.Collect(stories.CollectOptions{
+		ropts := storyrun.Options{
 			Paths:        paths,
-			ArtifactRoot: root,
+			Only:         stringSliceArg(params.Arguments, "only"),
 			ConfigPath:   opts.ConfigPath,
 			Environment:  opts.Environment,
-			Feature:      stringArg(params.Arguments, "feature", ""),
-			Tag:          stringArg(params.Arguments, "tag", ""),
-			Owner:        stringArg(params.Arguments, "owner", ""),
-			All:          boolArg(params.Arguments, "all", false),
-		})
+			ArtifactRoot: opts.ArtifactRoot,
+			Parallel:     intArg(params.Arguments, "parallel", 4),
+			Update:       boolArg(params.Arguments, "update", false),
+			Strict:       boolArg(params.Arguments, "strict", false),
+		}
+		plan, err := storyrun.Discover(ropts)
 		if err != nil {
 			return toolError(err)
 		}
-		return toolText(cat)
+		report, runErr := storyrun.Run(ctx, ropts, plan)
+		if runErr != nil {
+			return toolError(runErr)
+		}
+		return toolText(report)
 	case "glyph_list":
 		paths := stringSliceArg(params.Arguments, "paths")
 		if len(paths) == 0 {
@@ -855,7 +882,7 @@ func writeResponse(out io.Writer, resp response) error {
 
 func scaffoldSpec(kind, coversSymbol string) string {
 	if kind == "story" {
-		return scaffold.StorySpecYAML()
+		return scaffold.StoryManifestYAML("go")
 	}
 	if kind == "action" {
 		return `version: 1
@@ -909,4 +936,35 @@ outcomes:
       screen:
         contains: "ready"
 `
+}
+
+// storyCollectOptions resolves the artifact, snapshot, and stories roots for
+// the stories catalog the same way the CLI does.
+func storyCollectOptions(opts ServerOptions, paths []string) (stories.CollectOptions, error) {
+	rt, err := config.LoadRuntime(paths[0], opts.ConfigPath, opts.Environment)
+	if err != nil {
+		return stories.CollectOptions{}, err
+	}
+	abs := func(p, def string) string {
+		if p == "" {
+			p = def
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(rt.ProjectRoot, p)
+		}
+		return p
+	}
+	artifactRoot := opts.ArtifactRoot
+	if artifactRoot == "" {
+		artifactRoot = rt.Config.ArtifactRoot
+	}
+	return stories.CollectOptions{
+		Paths:           paths,
+		ArtifactRoot:    abs(artifactRoot, config.DefaultArtifactRoot),
+		SnapshotRoot:    abs(rt.Config.SnapshotRoot, config.DefaultSnapshotRoot),
+		StoriesRoot:     abs(rt.Config.StoriesRoot, config.DefaultStoriesRoot),
+		ConfigPath:      opts.ConfigPath,
+		Environment:     opts.Environment,
+		DefaultTerminal: rt.SpecParseOptions().DefaultTerminal,
+	}, nil
 }

@@ -1,0 +1,5 @@
+glyphrun stories in plain sh
+
+  hello from a POSIX shell harness
+
+q quit
