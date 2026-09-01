@@ -301,17 +301,29 @@ func Expand(m Manifest, manifestPath string, defaultTerminal spec.Terminal) ([]E
 		return nil, fmt.Errorf("%s: harness.cmd is required", manifestPath)
 	}
 	var out []Expanded
+	// Spec names key run ids, goldens, and the index, so two ids that
+	// sanitize to the same name (list/rows vs list_rows) must be rejected
+	// rather than silently sharing a golden.
+	names := map[string]string{}
 	for _, entry := range m.Stories {
 		base, err := expandOne(m, entry, Variant{}, abs, defaultTerminal)
 		if err != nil {
 			return nil, err
 		}
+		if prev, dup := names[base.Spec.Name]; dup {
+			return nil, fmt.Errorf("%s: stories %q and %q both map to spec name %q", manifestPath, prev, base.Key(), base.Spec.Name)
+		}
+		names[base.Spec.Name] = base.Key()
 		out = append(out, base)
 		for _, v := range entry.Variants {
 			ex, err := expandOne(m, entry, v, abs, defaultTerminal)
 			if err != nil {
 				return nil, err
 			}
+			if prev, dup := names[ex.Spec.Name]; dup {
+				return nil, fmt.Errorf("%s: stories %q and %q both map to spec name %q", manifestPath, prev, ex.Key(), ex.Spec.Name)
+			}
+			names[ex.Spec.Name] = ex.Key()
 			out = append(out, ex)
 		}
 	}

@@ -157,9 +157,13 @@ func Collect(opts CollectOptions) (Catalog, error) {
 	if err != nil {
 		return Catalog{}, err
 	}
+	isManifest := make(map[string]bool, len(manifests))
+	for _, m := range manifests {
+		isManifest[m] = true
+	}
 	specFiles := make([]string, 0, len(files))
 	for _, f := range files {
-		if skipSpecPath(f) || IsManifestPath(f) || UnderRoots(f, opts.ArtifactRoot, opts.SnapshotRoot, opts.StoriesRoot) {
+		if skipSpecPath(f) || isManifest[f] || IsManifestPath(f) || UnderRoots(f, opts.ArtifactRoot, opts.SnapshotRoot, opts.StoriesRoot) {
 			continue
 		}
 		specFiles = append(specFiles, f)

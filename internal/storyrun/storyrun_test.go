@@ -160,12 +160,12 @@ func TestRunBuildsOnceCapturesGoldensAndIndexes(t *testing.T) {
 	if report.Failed != 1 || report.ExitCode != 1 || report.Results[0].Run.Status != artifacts.StatusFailed {
 		t.Fatalf("strict report = %+v", report)
 	}
-	// --update recreates it.
+	// --update recreates it; a golden that did not exist counts as created.
 	update := strict
 	update.Strict = false
 	update.Update = true
 	report, err = Run(context.Background(), update, plan)
-	if err != nil || report.Passed != 1 || report.GoldensUpdate != 1 {
+	if err != nil || report.Passed != 1 || report.GoldensNew != 1 || report.GoldensUpdate != 0 {
 		t.Fatalf("update report = %+v err=%v", report, err)
 	}
 }
@@ -279,5 +279,72 @@ func TestServeCatalogRunAndEvents(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("server did not stop")
+	}
+}
+
+func TestServeGuardsHostAndOrigin(t *testing.T) {
+	dir, cfg := fixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready := make(chan string, 1)
+	go func() {
+		_ = Serve(ctx, ServeOptions{Options: Options{Paths: []string{dir}, ConfigPath: cfg}, Addr: "127.0.0.1:0", Ready: func(u string) { ready <- u }})
+	}()
+	var url string
+	select {
+	case url = <-ready:
+	case <-time.After(10 * time.Second):
+		t.Fatal("server did not become ready")
+	}
+	// DNS rebinding: a foreign Host header is refused even on loopback.
+	req, _ := http.NewRequest(http.MethodGet, url+"/catalog.json", nil)
+	req.Host = "evil.example:80"
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("foreign host = %d, want 403", res.StatusCode)
+	}
+	// CSRF: a simple form POST (text/plain) is refused; a cross-origin JSON
+	// POST is refused; a same-origin JSON POST is accepted.
+	form, _ := http.Post(url+"/run", "text/plain", strings.NewReader(`{"key":""}`))
+	form.Body.Close()
+	if form.StatusCode != http.StatusUnsupportedMediaType {
+		t.Fatalf("text/plain POST = %d, want 415", form.StatusCode)
+	}
+	cross, _ := http.NewRequest(http.MethodPost, url+"/run", strings.NewReader(`{"key":""}`))
+	cross.Header.Set("Content-Type", "application/json")
+	cross.Header.Set("Origin", "http://evil.example")
+	res, _ = http.DefaultClient.Do(cross)
+	res.Body.Close()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin POST = %d, want 403", res.StatusCode)
+	}
+	same, _ := http.NewRequest(http.MethodPost, url+"/run", strings.NewReader(`{"key":""}`))
+	same.Header.Set("Content-Type", "application/json")
+	same.Header.Set("Origin", url)
+	res, _ = http.DefaultClient.Do(same)
+	res.Body.Close()
+	if res.StatusCode != http.StatusAccepted {
+		t.Fatalf("same-origin POST = %d, want 202", res.StatusCode)
+	}
+}
+
+func TestUpdateRewritesExistingGolden(t *testing.T) {
+	dir, cfg := fixture(t)
+	opts := Options{Paths: []string{dir}, ConfigPath: cfg, Only: []string{"list/rows"}}
+	plan, err := Discover(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(context.Background(), opts, plan); err != nil {
+		t.Fatal(err)
+	}
+	opts.Update = true
+	report, err := Run(context.Background(), opts, plan)
+	if err != nil || report.GoldensUpdate != 1 || report.GoldensNew != 0 || report.Passed != 1 {
+		t.Fatalf("update report = %+v err=%v", report, err)
 	}
 }

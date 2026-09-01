@@ -179,3 +179,13 @@ func TestSpecNameForStory(t *testing.T) {
 		}
 	}
 }
+
+func TestExpandRejectsSpecNameCollisions(t *testing.T) {
+	m, err := ParseManifest([]byte("version: 1\nkind: stories\nharness:\n  cmd: [x]\nstories:\n  - id: list/rows\n  - id: list_rows\n"), "stories.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Expand(m, "stories.yml", spec.Terminal{Cols: 80, Rows: 24}); err == nil || !strings.Contains(err.Error(), "story_list_rows") {
+		t.Fatalf("expected spec name collision error, got %v", err)
+	}
+}

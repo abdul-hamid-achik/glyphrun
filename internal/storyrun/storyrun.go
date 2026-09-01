@@ -369,14 +369,14 @@ func Run(ctx context.Context, opts Options, plan *Plan) (Report, error) {
 func runOne(ctx context.Context, opts Options, plan *Plan, job Job) Result {
 	res := Result{Job: job}
 	update := opts.Update
-	if job.GoldenName != "" && !update && !opts.Strict {
-		if _, err := os.Stat(runner.CommittedSnapshotPath(plan.Runtime, job.SpecName, job.GoldenName)); err != nil {
-			update = true
-			res.GoldenCreated = true
-			log.Info("stories: no golden yet, capturing", "story", job.Key, "snapshot", job.GoldenName)
-		}
-	} else if job.GoldenName != "" && update {
-		res.GoldenUpdated = true
+	goldenMissing := false
+	if job.GoldenName != "" {
+		_, err := os.Stat(runner.CommittedSnapshotPath(plan.Runtime, job.SpecName, job.GoldenName))
+		goldenMissing = err != nil
+	}
+	if job.GoldenName != "" && !update && !opts.Strict && goldenMissing {
+		update = true
+		log.Info("stories: no golden yet, capturing", "story", job.Key, "snapshot", job.GoldenName)
 	}
 	ropts := runner.Options{
 		SpecPath:        job.SourcePath,
@@ -395,15 +395,16 @@ func runOne(ctx context.Context, opts Options, plan *Plan, job Job) Result {
 	res.Run = result
 	if err != nil {
 		res.Error = err.Error()
-		if res.GoldenCreated {
-			res.GoldenCreated = false
-		}
 		return res
 	}
-	if result.Status != artifacts.StatusPassed && res.GoldenCreated {
-		// The run failed before the verifier could create the golden.
-		if _, err := os.Stat(runner.CommittedSnapshotPath(plan.Runtime, job.SpecName, job.GoldenName)); err != nil {
-			res.GoldenCreated = false
+	// Report a golden as created/updated only when the verifier actually
+	// wrote it: a run that failed before reaching the snapshot outcome
+	// leaves the golden as it was.
+	if update && job.GoldenName != "" && result.Status == artifacts.StatusPassed {
+		if goldenMissing {
+			res.GoldenCreated = true
+		} else {
+			res.GoldenUpdated = true
 		}
 	}
 	entry := stories.EntryFromRun(job.Key, job.ID, job.Variant, job.Feature, job.Source, job.SourcePath, job.GoldenName, result)

@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/abdul-hamid-achik/glyphrun/internal/config"
 	"github.com/abdul-hamid-achik/glyphrun/internal/log"
 	"github.com/abdul-hamid-achik/glyphrun/internal/stories"
 	"github.com/abdul-hamid-achik/glyphrun/internal/watchfs"
@@ -46,6 +48,10 @@ type Server struct {
 	payload stories.PagePayload
 	clients map[chan string]struct{}
 	queue   chan runRequest
+	roots   []string
+	// hosts are the Host header values the server answers for. Anything
+	// else is refused so a DNS-rebinding page cannot drive the server.
+	hosts map[string]bool
 }
 
 // Serve blocks until ctx is cancelled.
@@ -53,7 +59,7 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	if opts.Addr == "" {
 		opts.Addr = "127.0.0.1:4649"
 	}
-	s := &Server{opts: opts, clients: map[chan string]struct{}{}, queue: make(chan runRequest, 64)}
+	s := &Server{opts: opts, clients: map[chan string]struct{}{}, queue: make(chan runRequest, 64), hosts: map[string]bool{}}
 	if err := s.refresh(); err != nil {
 		return err
 	}
@@ -62,19 +68,28 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 		return err
 	}
 	url := "http://" + ln.Addr().String()
+	s.allowHost(ln.Addr().String())
+	s.allowHost(opts.Addr)
+	if _, port, err := net.SplitHostPort(ln.Addr().String()); err == nil {
+		for _, h := range []string{"localhost", "127.0.0.1", "[::1]"} {
+			s.allowHost(h + ":" + port)
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/catalog.json", s.handleCatalog)
 	mux.HandleFunc("/events", s.handleEvents)
 	mux.HandleFunc("/run", s.handleRun)
 	mux.HandleFunc("/update", s.handleUpdate)
-	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	srv := &http.Server{Handler: s.guard(mux), ReadHeaderTimeout: 5 * time.Second}
 
 	go s.worker(ctx)
 	if opts.RunOnStart {
 		s.queue <- runRequest{}
 	}
 	if opts.Watch {
+		s.refreshRoots()
 		go s.watchLoop(ctx)
 	}
 	if opts.Ready != nil {
@@ -97,18 +112,76 @@ func Serve(ctx context.Context, opts ServeOptions) error {
 	}
 }
 
+func (s *Server) allowHost(h string) {
+	h = strings.ToLower(strings.TrimSpace(h))
+	if h == "" {
+		return
+	}
+	s.hosts[h] = true
+	// A listen address like ":4649" or "0.0.0.0:4649" is reachable under
+	// any interface name; only add the concrete forms we know.
+	if host, port, err := net.SplitHostPort(h); err == nil && (host == "" || host == "0.0.0.0" || host == "::") {
+		delete(s.hosts, h)
+		s.hosts["localhost:"+port] = true
+		s.hosts["127.0.0.1:"+port] = true
+	}
+}
+
+// guard rejects requests that do not target one of the server's own host
+// names (DNS rebinding) and mutations that do not look like they came from
+// the page: JSON content type (forces a CORS preflight, which the server
+// never approves) and, when an Origin header is present, a same-origin one.
+func (s *Server) guard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := strings.ToLower(r.Host)
+		if !s.hosts[host] {
+			http.Error(w, "unexpected host", http.StatusForbidden)
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(strings.ToLower(ct), "application/json") {
+				http.Error(w, "content-type must be application/json", http.StatusUnsupportedMediaType)
+				return
+			}
+			if origin := r.Header.Get("Origin"); origin != "" {
+				if o := strings.ToLower(strings.TrimPrefix(origin, "http://")); !s.hosts[o] {
+					http.Error(w, "cross-origin request refused", http.StatusForbidden)
+					return
+				}
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// collectOptions resolves the roots from config alone so a manifest with a
+// syntax error still shows up in the catalog as a parse_error row instead of
+// taking the whole page down.
+func (s *Server) collectOptions() (stories.CollectOptions, error) {
+	paths := s.opts.Paths
+	if len(paths) == 0 {
+		paths = []string{"."}
+	}
+	rt, err := config.LoadRuntime(paths[0], s.opts.ConfigPath, s.opts.Environment)
+	if err != nil {
+		return stories.CollectOptions{}, err
+	}
+	return stories.CollectOptions{
+		Paths:           paths,
+		ArtifactRoot:    absUnder(rt.ProjectRoot, firstNonEmpty(s.opts.ArtifactRoot, rt.Config.ArtifactRoot)),
+		SnapshotRoot:    absUnder(rt.ProjectRoot, firstNonEmpty(rt.Config.SnapshotRoot, config.DefaultSnapshotRoot)),
+		StoriesRoot:     absUnder(rt.ProjectRoot, firstNonEmpty(rt.Config.StoriesRoot, config.DefaultStoriesRoot)),
+		ConfigPath:      s.opts.ConfigPath,
+		Environment:     s.opts.Environment,
+		DefaultTerminal: rt.SpecParseOptions().DefaultTerminal,
+	}, nil
+}
+
 // refresh rebuilds the payload from disk and broadcasts it.
 func (s *Server) refresh() error {
-	plan, err := Discover(Options{Paths: s.opts.Paths, ConfigPath: s.opts.ConfigPath, Environment: s.opts.Environment, ArtifactRoot: s.opts.ArtifactRoot})
-	if err != nil && !errors.Is(err, ErrNoStories) {
+	collect, err := s.collectOptions()
+	if err != nil {
 		return err
-	}
-	collect := stories.CollectOptions{Paths: s.opts.Paths, ConfigPath: s.opts.ConfigPath, Environment: s.opts.Environment}
-	if plan != nil {
-		collect.ArtifactRoot = plan.ArtifactRoot
-		collect.SnapshotRoot = plan.SnapshotRoot
-		collect.StoriesRoot = plan.StoriesRoot
-		collect.DefaultTerminal = plan.Runtime.SpecParseOptions().DefaultTerminal
 	}
 	cat, err := stories.Collect(collect)
 	if err != nil && !errors.Is(err, stories.ErrNoSpecs) {
@@ -144,14 +217,46 @@ func (s *Server) worker(ctx context.Context) {
 			if err := s.refresh(); err != nil {
 				log.Warn("stories: refresh failed", "err", err)
 			}
+			if s.opts.Watch {
+				s.refreshRoots()
+			}
 			s.broadcast("busy", "false")
 		}
 	}
 }
 
+// refreshRoots recomputes the watch set (manifests, harness.watch paths,
+// story spec directories). It runs after each run rather than on every
+// poll so the watcher does not re-parse every manifest twice a second.
+func (s *Server) refreshRoots() {
+	var roots []string
+	if plan, err := Discover(Options{Paths: s.opts.Paths, ConfigPath: s.opts.ConfigPath, Environment: s.opts.Environment}); err == nil {
+		roots = append(roots, plan.WatchRoots...)
+	} else if collect, cerr := s.collectOptions(); cerr == nil {
+		// A broken manifest still needs watching so the fix re-triggers.
+		if manifests, ferr := stories.FindManifests(collect.Paths); ferr == nil {
+			roots = append(roots, manifests...)
+		}
+	}
+	for _, p := range s.opts.Paths {
+		if abs, err := filepath.Abs(p); err == nil {
+			roots = append(roots, abs)
+		}
+	}
+	roots = append(roots, s.opts.ExtraWatch...)
+	s.mu.Lock()
+	s.roots = watchfs.Roots(roots...)
+	s.mu.Unlock()
+}
+
+func (s *Server) watchRoots() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.roots...)
+}
+
 func (s *Server) watchLoop(ctx context.Context) {
-	roots := s.watchRoots()
-	last := watchfs.Fingerprint(roots)
+	last := watchfs.Fingerprint(s.watchRoots())
 	ticker := time.NewTicker(watchfs.PollInterval)
 	defer ticker.Stop()
 	for {
@@ -159,8 +264,7 @@ func (s *Server) watchLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			roots = s.watchRoots()
-			fp := watchfs.Fingerprint(roots)
+			fp := watchfs.Fingerprint(s.watchRoots())
 			if fp == last {
 				continue
 			}
@@ -172,16 +276,6 @@ func (s *Server) watchLoop(ctx context.Context) {
 			}
 		}
 	}
-}
-
-func (s *Server) watchRoots() []string {
-	plan, err := Discover(Options{Paths: s.opts.Paths, ConfigPath: s.opts.ConfigPath, Environment: s.opts.Environment})
-	var roots []string
-	if err == nil {
-		roots = append(roots, plan.WatchRoots...)
-	}
-	roots = append(roots, s.opts.ExtraWatch...)
-	return watchfs.Roots(roots...)
 }
 
 func (s *Server) broadcast(event, data string) {
