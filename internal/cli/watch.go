@@ -3,30 +3,18 @@ package cli
 import (
 	"context"
 	"fmt"
-	"hash"
-	"hash/fnv"
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sort"
-	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
+	"github.com/abdul-hamid-achik/glyphrun/internal/watchfs"
 	"github.com/spf13/cobra"
 )
 
-const watchPollInterval = 400 * time.Millisecond
-
-// watchExcludedDirs are directory names skipped when fingerprinting a watch
-// root, so the watcher does not trip on its own artifact output or VCS churn.
-var watchExcludedDirs = map[string]bool{
-	".glyphrun":    true,
-	".git":         true,
-	"node_modules": true,
-	"vendor":       true,
-}
+const watchPollInterval = watchfs.PollInterval
 
 // runWatch re-runs the given specs whenever a watched file changes. It is an
 // interactive, human-facing loop: it requires markdown output (the structured
@@ -84,69 +72,19 @@ func runWatch(cmd *cobra.Command, opts *globalOptions, format outputFormat, spec
 // watchRoots is the deduplicated set of directories to watch: the directory of
 // each spec file plus any explicit --watch-path entries.
 func watchRoots(specPaths, extraPaths []string) []string {
-	seen := map[string]bool{}
-	var roots []string
-	add := func(p string) {
-		abs, err := filepath.Abs(p)
-		if err != nil || seen[abs] {
-			return
-		}
-		seen[abs] = true
-		roots = append(roots, abs)
-	}
+	paths := make([]string, 0, len(specPaths)+len(extraPaths))
 	for _, s := range specPaths {
-		add(filepath.Dir(s))
+		paths = append(paths, filepath.Dir(s))
 	}
-	for _, p := range extraPaths {
-		add(p)
-	}
-	sort.Strings(roots)
-	return roots
+	paths = append(paths, extraPaths...)
+	return watchfs.Roots(paths...)
 }
 
-// fingerprint folds the size and modification time of every non-excluded file
-// under the watch roots into a single hash. A change to any watched file
-// changes the hash, which is the signal to re-run.
+// fingerprint is the shared polling change detector (see internal/watchfs).
 func fingerprint(roots []string) uint64 {
-	h := fnv.New64a()
-	for _, root := range roots {
-		info, err := os.Stat(root)
-		if err != nil {
-			continue
-		}
-		if !info.IsDir() {
-			writeFileFingerprint(h, root, info)
-			continue
-		}
-		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() {
-				if watchExcludedDirs[d.Name()] {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if fi, err := d.Info(); err == nil {
-				writeFileFingerprint(h, path, fi)
-			}
-			return nil
-		})
-	}
-	return h.Sum64()
+	return watchfs.Fingerprint(roots)
 }
 
-func writeFileFingerprint(h hash.Hash64, path string, info os.FileInfo) {
-	_, _ = h.Write([]byte(path))
-	_, _ = h.Write([]byte{0})
-	_, _ = h.Write([]byte(strconv.FormatInt(info.Size(), 10)))
-	_, _ = h.Write([]byte{0})
-	_, _ = h.Write([]byte(strconv.FormatInt(info.ModTime().UnixNano(), 10)))
-	_, _ = h.Write([]byte{0})
-}
-
-// renderWatchResults formats a watch iteration's results the same way a normal
 // `glyph run` does (single result or batch summary), with color applied.
 func renderWatchResults(cmd *cobra.Command, opts *globalOptions, results []artifacts.RunResult) string {
 	var value any

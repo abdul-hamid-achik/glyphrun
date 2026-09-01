@@ -8,6 +8,7 @@
     "defaultEnvironment": { "type": "string", "minLength": 1 },
     "artifactRoot": { "type": "string", "minLength": 1 },
     "snapshotRoot": { "type": "string", "minLength": 1 },
+    "storiesRoot": { "type": "string", "minLength": 1 },
     "schemaRoot": { "type": "string", "minLength": 1 },
     "environments": {
       "type": "object",

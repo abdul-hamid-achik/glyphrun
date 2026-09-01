@@ -6,7 +6,11 @@ const (
 	DefaultConfigName   = "glyphrun.config.yml"
 	DefaultArtifactRoot = ".glyphrun/runs"
 	DefaultSnapshotRoot = ".glyphrun/snapshots"
-	DefaultSchemaRoot   = "schemas"
+	// DefaultStoriesRoot holds the stories index: one directory per story
+	// with the newest run's screens copied in, so `glyph stories` survives
+	// retention pruning of the run directories.
+	DefaultStoriesRoot = ".glyphrun/stories"
+	DefaultSchemaRoot  = "schemas"
 
 	// DefaultKeepRuns is the number of newest run directories retained
 	// when the config file omits retention.keepRuns. An explicit 0 in the
@@ -19,6 +23,7 @@ type Config struct {
 	DefaultEnvironment string                 `yaml:"defaultEnvironment" json:"defaultEnvironment"`
 	ArtifactRoot       string                 `yaml:"artifactRoot" json:"artifactRoot"`
 	SnapshotRoot       string                 `yaml:"snapshotRoot" json:"snapshotRoot"`
+	StoriesRoot        string                 `yaml:"storiesRoot,omitempty" json:"storiesRoot,omitempty"`
 	SchemaRoot         string                 `yaml:"schemaRoot" json:"schemaRoot"`
 	Environments       map[string]Environment `yaml:"environments" json:"environments"`
 	Terminal           Terminal               `yaml:"terminal" json:"terminal"`
@@ -178,6 +183,7 @@ func Defaults() Config {
 		DefaultEnvironment: "local",
 		ArtifactRoot:       DefaultArtifactRoot,
 		SnapshotRoot:       DefaultSnapshotRoot,
+		StoriesRoot:        DefaultStoriesRoot,
 		SchemaRoot:         DefaultSchemaRoot,
 		Environments: map[string]Environment{
 			"local": {
