@@ -6,6 +6,30 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+### Added
+
+- `stories.yml` manifest (`kind: stories`): one harness declaration expands into many isolated-state specs, so authoring a story no longer requires a hand-written spec file. Schema at `schemas/glyphrun.stories.v1.schema.json`.
+- `glyph stories run [--watch] [--update] [--strict] [--only <key>] [--parallel N]`: builds each manifest's harness once, runs every story in parallel, captures missing goldens (or fails with `--strict`), and refreshes the stories index.
+- `glyph stories serve [--watch] [--addr] [--no-run]`: a loopback HTTP server hosting the live inspect page, with server-sent-events catalog updates, rerun (one or all), and accept-golden from the browser.
+- Story variants (`stories[].variants[].{name,terminal,env,args}`): re-run a story with overrides layered on top, each with its own spec, golden, and `<id>@<variant>` catalog key.
+- A stories index under `storiesRoot` (new config key, default `.glyphrun/stories`): the newest result plus a copy of its captured screens per story, so the catalog survives `retention.keepRuns` pruning. `.glyphrun/stories/` is gitignored.
+- The HTML inspect page now renders screens client-side as SVG from the captured cell grid instead of server-rendered SVG blobs, with plain/grid/spaces/diff modes (keys `1`-`4`), a `g` golden-toggle in diff mode, a `/` filter shortcut, and in live mode rerun/rerun-all/accept-golden controls (`r`/`a`).
+- `glyph stories --tui` diff highlighting (`d`, on by default), golden-vs-current toggle (`o`), and rulers (`r`); the sidebar marks each story `✓`/`±`/`?` for golden match/changed/missing.
+- `internal/terminal.DiffSnapshots` (cell-level screen diff) and `render.Options.Changed` (SVG diff overlay).
+- `glyph stories init --lang sh`: a POSIX shell story harness that needs no toolchain, alongside the existing `--lang go` Bubble Tea v2 harness.
+- MCP tool `glyph_stories_run` (`paths`, `only`, `update`, `strict`, `parallel`).
+- `internal/storyrun` (schedules stories over the runner: build-once, parallel run, index, watch, serve) and `internal/watchfs` (shared polling change detector, also usable by `run --watch`).
+- `examples/stories.yml` (8 stories, one `wide` variant on `list/rows`) and `examples/stories-sh/` (POSIX shell harness); Taskfile targets `example:stories`, `example:stories:sh`, `example:stories:serve`.
+
+### Changed
+
+- `glyph_stories` (MCP and CLI) now returns manifest-derived stories (joined to their newest result and golden status) alongside specs tagged `story`, keyed `<id>` or `<id>@<variant>`.
+- `glyph spec scaffold --kind story` now prints a starter `stories.yml` manifest instead of a bare spec.
+
+### Removed
+
+- `examples/specs/story_*.yml` — replaced by `examples/stories.yml`, which expands to the same stories via the manifest.
+
 ## [0.18.0] - 2026-08-22
 
 ### Added

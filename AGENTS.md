@@ -48,7 +48,9 @@ Package boundaries are part of the contract — do not blur them.
 | `internal/mcp` | Stdio MCP server. Thin pass-through to CLI commands. |
 | `internal/config` | Config loading, defaults, schema validation. |
 | `internal/input` | Key name → escape sequence mapping. Pure function. |
-| `internal/stories` | Catalog of specs+snapshots and inspect HTML. No PTY. |
+| `internal/stories` | Stories manifest (`stories.yml`) model + expansion into specs, the retention-proof stories index, and the HTML inspect page. No PTY. |
+| `internal/storyrun` | Schedules stories over the runner: discovers manifests/tagged specs, builds each harness once, runs in parallel, writes the index, and owns the `--watch` loop and `stories serve` HTTP server. The runner never imports it. |
+| `internal/watchfs` | Shared polling filesystem change detector (fingerprint + poll interval) used by `run --watch` and `stories run/serve --watch`. |
 | `internal/docs` | Built-in documentation text. |
 | `internal/log` | Thin wrapper over charmbracelet/log. Configured once in `cli.Execute`. Shared diagnostic sink (stderr). No runner/artifact/config state. |
 
@@ -73,6 +75,7 @@ The "no per-agent code paths" rule applies: any surface that touches a coding ag
 - **Add a new artifact field**: extend `artifacts.RunResult` (`internal/artifacts/types.go`), populate in `runner.finish`, and surface in `RenderRunMarkdown` and `RenderAgentContext`. Update `schemas/glyphrun.run.v1.schema.json`.
 - **Add a new redaction pattern**: append to `Defaults().Redaction.Patterns` in `internal/config/config.go`. The redactor compiles them on construction.
 - **Add a secrets provider**: the `secrets` config block (`internal/config/config.go`) currently supports only `tvault`. To add a provider, extend `Secrets.Provider`, add resolution logic in `internal/runner/secrets.go`, and update the schema `anyOf` for provider-specific validation. Resolved values must be added to the per-run redactor via `buildRedactor`.
+- **Add a manifest field**: extend `stories.Manifest`/`Entry` in `internal/stories/manifest.go`, the schema `schemas/glyphrun.stories.v1.schema.json`, `expandOne`, and the docs in `docs/stories.md` + `internal/docs/docs.go`.
 
 ### Things To Avoid
 

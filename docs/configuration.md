@@ -8,6 +8,7 @@ Example:
 version: 1
 artifactRoot: .glyphrun/runs
 snapshotRoot: .glyphrun/snapshots
+storiesRoot: .glyphrun/stories
 
 terminal:
   cols: 120
@@ -27,6 +28,8 @@ artifacts:
 ```
 
 Specs can override target, terminal, artifact, and environment settings locally. Keep secrets out of config and specs; pass them through the environment or setup commands instead.
+
+`storiesRoot` (default `.glyphrun/stories`) is where `glyph stories run`/`serve` write the stories index: one directory per spec name holding `latest.json` plus a copy of its captured screens. It exists so `glyph stories` keeps showing a story's newest result after `retention.keepRuns` prunes its run directory. Unlike `snapshotRoot` (committed goldens), `storiesRoot` is derived output and should be gitignored — see [Stories](/stories).
 
 ## Secrets (tvault env-group integration)
 

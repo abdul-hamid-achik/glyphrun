@@ -205,8 +205,10 @@ glyph context <run|latest>             Print agent-focused failure/run context
 glyph repair <spec> [run|latest]       Propose step fixes for a failed run; --write applies them
 glyph comment [run|latest ...]         Render a PR-comment Markdown summary (--last N, --out path)
 glyph list <dir-or-file>...             Catalog specs with --feature/--tag/--owner filters
-glyph stories [path...]                 Catalog TUI stories + HTML inspect / --tui
-glyph stories init --lang go            Scaffold a Go Bubble Tea story harness
+glyph stories [path...]                 Catalog TUI stories (stories.yml + specs) + HTML inspect / --tui
+glyph stories run [--watch] [--update]  Run stories, capture/refresh goldens, update the stories index
+glyph stories serve [--watch]           Serve the live inspect page (rerun / accept golden from the browser)
+glyph stories init --lang go|sh         Scaffold a story harness (Bubble Tea, or POSIX shell) + stories.yml
 glyph clean --keep N | --all           Prune old run directories; --format json for CI
 glyph import bats <file> [--out path]   Convert a BATS file into a glyphrun spec
 glyph export bats <spec> [--out path]  Emit a BATS file from a glyphrun spec
@@ -509,6 +511,8 @@ internal/mcp/           MCP stdio server
 schemas/                JSON schemas for specs, config, and run output
 docs/                   Built-in documentation topics
 examples/               Runnable terminal apps, specs, and TUI stories
+                        examples/stories.yml (Bubble Tea harness, 8 stories)
+                        examples/stories-sh/ (POSIX shell harness, no toolchain)
 ```
 
 ## Development
@@ -517,6 +521,8 @@ examples/               Runnable terminal apps, specs, and TUI stories
 task verify
 task example
 task example:stories
+task example:stories:sh
+task example:stories:serve
 task context
 task install
 ```
