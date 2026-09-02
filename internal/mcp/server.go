@@ -124,29 +124,29 @@ func tools() []map[string]any {
 				"limit": map[string]any{"type": "integer", "minimum": 1, "description": "max matches (default 8)"},
 			},
 		}),
-		tool("glyph_explain", "Describe Glyphrun commands, steps, verifiers, and artifacts.", map[string]any{"type": "object", "properties": map[string]any{}}),
-		tool("glyph_docs", "Return focused Glyphrun documentation.", map[string]any{
+		tool("glyph_explain", "Return the current Glyphrun vocabulary: CLI commands, step kinds, verifier kinds, screen matchers, output formats, and artifact paths. Call it once before writing or editing a spec so you use names that exist in this build; it takes no arguments and does not touch the filesystem.", map[string]any{"type": "object", "properties": map[string]any{}}),
+		tool("glyph_docs", "Return one embedded documentation topic as Markdown. Topics cover authoring, steps, verifiers, artifacts, configuration, stories, and more; an unknown topic lists the available ones. Read `authoring` before writing a spec and `snippets` before creating reusable actions.", map[string]any{
 			"type":       "object",
-			"properties": map[string]any{"topic": map[string]any{"type": "string"}},
+			"properties": map[string]any{"topic": map[string]any{"type": "string", "description": "topic id, e.g. authoring, steps, verifiers, stories, snippets (default: overview)"}},
 		}),
-		tool("glyph_doctor", "Check local Glyphrun prerequisites (same matrix as `glyph doctor`).", map[string]any{"type": "object", "properties": map[string]any{}}),
-		tool("glyph_list", "List specs under paths with optional feature/tag/owner filters.", map[string]any{
+		tool("glyph_doctor", "Check local Glyphrun prerequisites (same matrix as `glyph doctor`): PTY support, the terminal emulator, schema files, and optional integrations. Returns ok plus one row per check with a detail string; run it when a run errors before its target starts.", map[string]any{"type": "object", "properties": map[string]any{}}),
+		tool("glyph_list", "List the spec files under the given paths with their names and coversSymbol bindings. Filters apply to spec metadata; specs that fail to parse are omitted, so a spec missing from the list may be broken rather than absent (check it with glyph_spec_verify).", map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"paths":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				"feature": map[string]any{"type": "string"},
-				"tag":     map[string]any{"type": "string"},
-				"owner":   map[string]any{"type": "string"},
+				"paths":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "spec files or directories to scan (default: [\".\"])"},
+				"feature": map[string]any{"type": "string", "description": "keep specs whose metadata.feature equals this value"},
+				"tag":     map[string]any{"type": "string", "description": "keep specs whose metadata.tags contains this value"},
+				"owner":   map[string]any{"type": "string", "description": "keep specs whose metadata.owner equals this value"},
 			},
 		}),
 		tool("glyph_stories", "Catalog TUI stories (stories.yml manifests and specs tagged story) joined to their newest result and golden status (match / changed / missing).", map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"paths":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-				"feature": map[string]any{"type": "string"},
-				"tag":     map[string]any{"type": "string"},
-				"owner":   map[string]any{"type": "string"},
-				"all":     map[string]any{"type": "boolean"},
+				"paths":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "manifests, spec files, or directories to scan (default: [\".\"])"},
+				"feature": map[string]any{"type": "string", "description": "keep stories whose feature equals this value"},
+				"tag":     map[string]any{"type": "string", "description": "keep stories whose tags contain this value"},
+				"owner":   map[string]any{"type": "string", "description": "keep stories whose owner equals this value"},
+				"all":     map[string]any{"type": "boolean", "description": "also include spec files that are not tagged story"},
 			},
 		}),
 		tool("glyph_stories_run", "Run stories: build each stories.yml harness once, run every story (or the --only selection) through the runner, capture missing goldens, and refresh the stories index. Returns the run report with per-story status and golden state.", map[string]any{
@@ -159,65 +159,65 @@ func tools() []map[string]any {
 				"parallel": map[string]any{"type": "integer", "minimum": 1, "description": "stories to run concurrently (default 4)"},
 			},
 		}),
-		tool("glyph_spec_verify", "Validate a Glyphrun spec.", map[string]any{
+		tool("glyph_spec_verify", "Parse and validate one spec without running it: schema, step and verifier vocabulary, and the contract hash. Returns the spec's intent and outcomes on success; a stale contractHash is reported as a mismatch (exit 6 semantics) rather than silently accepted. Run it before glyph_run after editing a spec.", map[string]any{
 			"type":       "object",
 			"required":   []string{"path"},
-			"properties": map[string]any{"path": map[string]any{"type": "string"}},
+			"properties": map[string]any{"path": map[string]any{"type": "string", "description": "path to the spec file (.yml or .json)"}},
 		}),
-		tool("glyph_run", "Run a Glyphrun spec. Set monitor to capture process telemetry of the spawned target via the monitor CLI.", map[string]any{
+		tool("glyph_run", "Run one spec in a real PTY and return the run result: status, per-outcome results, exit code, and the artifact directory. A failed or errored run still returns a result with errorKind and diagnostic; read agent_context.md via glyph_context afterwards. Set monitor to capture process telemetry of the spawned target via the monitor CLI.", map[string]any{
 			"type":     "object",
 			"required": []string{"path"},
 			"properties": map[string]any{
-				"path":            map[string]any{"type": "string"},
-				"updateSnapshots": map[string]any{"type": "boolean"},
+				"path":            map[string]any{"type": "string", "description": "path to the spec file to run"},
+				"updateSnapshots": map[string]any{"type": "boolean", "description": "rewrite committed snapshots (goldens) with what this run captures instead of comparing against them"},
 				"monitor":         map[string]any{"type": "string", "description": "path to the monitor binary; enables process-telemetry sampling -> diagnostics/process.{md,json}"},
 				"monitorProfile":  map[string]any{"type": "string", "enum": []string{"heap", "cpu", "goroutine", "sample"}, "description": "capture an end-of-run process profile (use with monitor)"},
 				"monitorInterval": map[string]any{"type": "string", "description": "sample interval as a Go duration, e.g. 250ms (use with monitor)"},
 			},
 		}),
-		tool("glyph_context", "Return agent_context.md for a run or latest.", map[string]any{
+		tool("glyph_context", "Return the agent_context.md of a run: the failure summary, the final screen, the outcomes that failed and why, and suggested next actions. This is the first thing to read after a failed glyph_run.", map[string]any{
 			"type":       "object",
-			"properties": map[string]any{"run": map[string]any{"type": "string"}},
+			"properties": map[string]any{"run": map[string]any{"type": "string", "description": "run id, run directory, or `latest` (default: latest)"}},
 		}),
-		tool("glyph_snapshot_update", "Run a spec and update committed snapshots.", map[string]any{
+		tool("glyph_snapshot_update", "Run a spec with snapshot updating on: every `snapshot` verifier rewrites its committed golden with the captured screen. Equivalent to glyph_run with updateSnapshots=true; use it only after confirming the new screen is the intended one, since it replaces the contract the golden encoded.", map[string]any{
 			"type":       "object",
 			"required":   []string{"path"},
-			"properties": map[string]any{"path": map[string]any{"type": "string"}},
+			"properties": map[string]any{"path": map[string]any{"type": "string", "description": "path to the spec file to run"}},
 		}),
-		tool("glyph_snapshot_inventory", "List rows, prompts, and hotkeys from a run's final screen or named snapshot for spec authoring.", map[string]any{
+		tool("glyph_snapshot_inventory", "List rows, prompts, and hotkeys from a run's final screen or named snapshot for spec authoring: each row with its y coordinate and text, prompt-like lines, and key hints, so region/cell verifiers can be written without guessing coordinates.", map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"run":    map[string]any{"type": "string"},
-				"screen": map[string]any{"type": "string"},
+				"run":    map[string]any{"type": "string", "description": "run id, run directory, or `latest` (default: latest)"},
+				"screen": map[string]any{"type": "string", "description": "`final` for the final screen (default) or the name of a snapshot captured by a `snapshot` step"},
 			},
 		}),
-		tool("glyph_diff", "Compare two Glyphrun artifact packs.", map[string]any{
+		tool("glyph_diff", "Compare two runs of the same spec: which outcomes changed status, which steps changed, and a line diff of the final screens. Reports changed=true when anything differs. Compares run packs, not committed goldens.", map[string]any{
 			"type":       "object",
 			"required":   []string{"runA", "runB"},
-			"properties": map[string]any{"runA": map[string]any{"type": "string"}, "runB": map[string]any{"type": "string"}},
+			"properties": map[string]any{"runA": map[string]any{"type": "string", "description": "older run id, run directory, or `latest`"}, "runB": map[string]any{"type": "string", "description": "newer run id, run directory, or `latest`"}},
 		}),
-		tool("glyph_spec_scaffold", "Return a starter Glyphrun spec or reusable action. coversSymbol (spec kind only) binds the stub to the code symbol it exercises, so glyph affected-specs can select it.", map[string]any{
+		tool("glyph_spec_scaffold", "Return a starter Glyphrun spec, reusable action, or stories manifest as YAML text (nothing is written to disk). coversSymbol (spec kind only) binds the stub to the code symbol it exercises, so glyph_affected_specs can select it.", map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"kind":         map[string]any{"type": "string", "enum": []string{"spec", "action", "story"}},
-				"coversSymbol": map[string]any{"type": "string"},
+				"kind":         map[string]any{"type": "string", "enum": []string{"spec", "action", "story"}, "description": "spec: a starter behavior spec; action: a reusable step library; story: a starter stories.yml manifest"},
+				"coversSymbol": map[string]any{"type": "string", "description": "code symbol the starter spec exercises (spec kind only); lets glyph_affected_specs select it"},
 			},
 		}),
-		tool("glyph_render", "Render a run's final screen to a deterministic SVG and return it.", map[string]any{
+		tool("glyph_render", "Render a captured screen of a run to a deterministic SVG (same cells in, same bytes out) and return the markup. Useful for attaching a picture of the terminal to a report; for cell coordinates prefer glyph_snapshot_inventory.", map[string]any{
 			"type":       "object",
-			"properties": map[string]any{"run": map[string]any{"type": "string"}, "screen": map[string]any{"type": "string"}},
+			"properties": map[string]any{"run": map[string]any{"type": "string", "description": "run id, run directory, or `latest` (default: latest)"}, "screen": map[string]any{"type": "string", "description": "`final` (default) or a snapshot name captured during the run"}},
 		}),
-		tool("glyph_repair", "Propose step repairs for a spec's failed run (never touches the contract). Set verify=true for a transactional cold-start verification (SPEC §7.2).", map[string]any{
+		tool("glyph_repair", "Propose step repairs for a spec from its failed run: rewritten waits, presses, and ready text that reach the same outcomes. It never edits intent, outcomes, or contractHash. With verify=true each proposal is first applied to a temporary copy of the spec and run from a cold start; only proposals that pass are returned.", map[string]any{
 			"type":     "object",
 			"required": []string{"path"},
 			"properties": map[string]any{
-				"path":   map[string]any{"type": "string"},
-				"run":    map[string]any{"type": "string"},
-				"write":  map[string]any{"type": "boolean"},
+				"path":   map[string]any{"type": "string", "description": "path to the spec whose steps drifted"},
+				"run":    map[string]any{"type": "string", "description": "the failed run to analyse: run id, run directory, or `latest` (default: latest)"},
+				"write":  map[string]any{"type": "boolean", "description": "apply the proposals to the spec file; false (default) only returns them"},
 				"verify": map[string]any{"type": "boolean", "description": "cold-start verify proposals on a temp copy before applying"},
 			},
 		}),
-		tool("glyph_affected_specs", "Select the specs a git change can hit: shells out to `codemap review --json`, intersects each spec's coversSymbol against the changed symbols + blast radius, and returns the minimal spec set (run those via glyph_run). One of since/staged selects the diff scope; neither means the working tree.", map[string]any{
+		tool("glyph_affected_specs", "Select the specs a git change can hit: shells out to `codemap review --json`, intersects each spec's coversSymbol against the changed symbols + blast radius, and returns the minimal set of spec paths together with the reason each was matched. One of since/staged selects the diff scope; neither means the working tree. Requires the codemap binary.", map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"paths":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "spec files/dirs to scan (default: [\".\"])"},
@@ -238,13 +238,24 @@ func tools() []map[string]any {
 	}
 }
 
+// mutatingTools are the tools that run a target, write goldens, edit a spec,
+// or delete artifacts. Everything else is read-only for the host's purposes;
+// an explicit set keeps the annotation honest when a tool is added.
+var mutatingTools = map[string]bool{
+	"glyph_run":             true,
+	"glyph_stories_run":     true,
+	"glyph_snapshot_update": true,
+	"glyph_repair":          true,
+	"glyph_clean":           true,
+}
+
 func tool(name string, description string, inputSchema map[string]any) map[string]any {
 	return map[string]any{
 		"name":        name,
 		"title":       strings.ReplaceAll(name, "_", " "),
 		"description": description,
 		"inputSchema": inputSchema,
-		"annotations": map[string]any{"readOnlyHint": !strings.Contains(name, "run") && !strings.Contains(name, "repair") && !strings.Contains(name, "clean") && !strings.Contains(name, "snapshot")},
+		"annotations": map[string]any{"readOnlyHint": !mutatingTools[name]},
 	}
 }
 

@@ -502,3 +502,46 @@ func TestServeRejectsUnknownProtocol(t *testing.T) {
 		t.Fatalf("expected unsupported protocol error: %s", output.String())
 	}
 }
+
+// TestToolAnnotationsMatchMutation guards the readOnlyHint contract: hosts use
+// it to decide whether to ask before calling, so a read-only tool advertised as
+// mutating (or the reverse) is a real defect, not cosmetics.
+func TestToolAnnotationsMatchMutation(t *testing.T) {
+	want := map[string]bool{
+		"glyph_snapshot_inventory": true,
+		"glyph_stories":            true,
+		"glyph_spec_scaffold":      true,
+		"glyph_render":             true,
+		"glyph_run":                false,
+		"glyph_stories_run":        false,
+		"glyph_snapshot_update":    false,
+		"glyph_repair":             false,
+		"glyph_clean":              false,
+	}
+	seen := map[string]bool{}
+	for _, tl := range tools() {
+		name := tl["name"].(string)
+		seen[name] = true
+		desc := tl["description"].(string)
+		if len(desc) < 80 {
+			t.Errorf("%s: description is %d chars; tool descriptions are the contract, describe what it returns and when to use it", name, len(desc))
+		}
+		props, _ := tl["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		for pname, p := range props {
+			if _, ok := p.(map[string]any)["description"]; !ok {
+				t.Errorf("%s.%s has no description", name, pname)
+			}
+		}
+		if wantRO, ok := want[name]; ok {
+			got := tl["annotations"].(map[string]any)["readOnlyHint"].(bool)
+			if got != wantRO {
+				t.Errorf("%s readOnlyHint = %v, want %v", name, got, wantRO)
+			}
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("tool %s missing from catalog", name)
+		}
+	}
+}

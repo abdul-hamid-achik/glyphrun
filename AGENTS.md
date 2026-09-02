@@ -97,19 +97,24 @@ The "no per-agent code paths" rule applies: any surface that touches a coding ag
 
 ## Required Agent Behavior
 
-- Run `glyph agent --format md` when entering a Glyphrun-enabled repository for the first time.
-- Run `glyph explain --format json` before assuming the current CLI/spec surface.
-- Use `glyph docs <topic> --format json` for focused authoring guidance.
-- Use `glyph docs snippets --format md` before creating reusable action files or conditional steps.
-- Use `glyph spec verify <spec> --format json` before running a spec.
-- Use `glyph run <spec> --format json` for acceptance checks.
-- Use `glyph context latest --format md` after a failure.
-- Do not edit `intent` or `outcomes` of an existing spec without surfacing the diff.
-- Do not change `contractHash` manually. Use `glyph spec verify --stamp`.
-- Do not add per-agent code paths.
-- Do not write secrets to artifacts.
-- Keep CLI JSON/YAML paths non-interactive.
-- Keep parser, runner, PTY backend, emulator, verifiers, and artifacts separate.
+The vocabulary changes between releases, so read it from the binary instead of
+memory: `glyph explain --format json` lists the current commands, steps, and
+verifiers, and `glyph docs <topic>` (start with `authoring`, then `snippets`
+for reusable actions) explains them. `glyph spec verify` before `glyph run`
+turns a stale contract hash or a typo into a fast, structured error instead of
+a failed run; after a failure, `glyph context latest --format md` is the
+summary written for you.
+
+A spec's `intent` and `outcomes` are the behavior contract that reviewers
+approved, and `contractHash` is how CI proves nobody changed it quietly. Edit
+them only when the expected behavior really changed, say so in the PR, and
+re-stamp with `glyph spec verify --stamp` rather than hand-editing the hash.
+Artifacts are shared and archived, so nothing secret goes into them; the
+redaction layer is best-effort, not a guarantee. Any agent-facing behavior
+goes through the regular CLI, MCP, and artifact surfaces, because a sidecar
+path is one nobody tests. JSON and YAML output must stay non-interactive
+(agents run those modes without a TTY), and the parser, runner, PTY backend,
+emulator, verifiers, and artifacts stay separate packages.
 
 ## Useful Human Commands
 
