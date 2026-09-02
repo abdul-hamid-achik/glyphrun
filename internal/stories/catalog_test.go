@@ -157,6 +157,22 @@ func TestCollectJoinsLatestRunAndPrefersStoryTag(t *testing.T) {
 	}
 }
 
+func TestCollectRejectsCrossManifestSpecNameCollision(t *testing.T) {
+	dir := t.TempDir()
+	manifest := "version: 1\nkind: stories\nharness:\n  cmd: [\"/bin/echo\"]\nstories:\n  - id: list/rows\n"
+	writeSpec(t, dir, "first.stories.yml", manifest)
+	writeSpec(t, dir, "second.stories.yml", manifest)
+	_, err := Collect(CollectOptions{
+		Paths:        []string{dir},
+		ArtifactRoot: filepath.Join(dir, "runs"),
+		SnapshotRoot: filepath.Join(dir, "goldens"),
+		StoriesRoot:  filepath.Join(dir, "index"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "story_list_rows") || !strings.Contains(err.Error(), "first.stories.yml") || !strings.Contains(err.Error(), "second.stories.yml") {
+		t.Fatalf("expected global story identity collision, got %v", err)
+	}
+}
+
 func TestCollectNoSpecs(t *testing.T) {
 	dir := t.TempDir()
 	_, err := Collect(CollectOptions{Paths: []string{dir}})

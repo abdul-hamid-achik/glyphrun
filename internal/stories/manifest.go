@@ -302,20 +302,18 @@ func Expand(m Manifest, manifestPath string, defaultTerminal spec.Terminal) ([]E
 		if err != nil {
 			return nil, err
 		}
-		if prev, dup := names[base.Spec.Name]; dup {
-			return nil, fmt.Errorf("%s: stories %q and %q both map to spec name %q", manifestPath, prev, base.Key(), base.Spec.Name)
+		if err := RegisterStorySpecName(names, base.Spec.Name, fmt.Sprintf("%q", base.Key())); err != nil {
+			return nil, fmt.Errorf("%s: %w", manifestPath, err)
 		}
-		names[base.Spec.Name] = base.Key()
 		out = append(out, base)
 		for _, v := range entry.Variants {
 			ex, err := expandOne(m, entry, v, abs, defaultTerminal)
 			if err != nil {
 				return nil, err
 			}
-			if prev, dup := names[ex.Spec.Name]; dup {
-				return nil, fmt.Errorf("%s: stories %q and %q both map to spec name %q", manifestPath, prev, ex.Key(), ex.Spec.Name)
+			if err := RegisterStorySpecName(names, ex.Spec.Name, fmt.Sprintf("%q", ex.Key())); err != nil {
+				return nil, fmt.Errorf("%s: %w", manifestPath, err)
 			}
-			names[ex.Spec.Name] = ex.Key()
 			out = append(out, ex)
 		}
 	}
@@ -493,6 +491,17 @@ func expandedKey(id, variant string) string {
 		return id
 	}
 	return id + "@" + variant
+}
+
+// RegisterStorySpecName claims the storage identity used by run ids,
+// goldens, and the stories index. Callers share one map across every source
+// in a discovery pass so collisions cannot silently join another story's run.
+func RegisterStorySpecName(seen map[string]string, specName, identity string) error {
+	if previous, exists := seen[specName]; exists {
+		return fmt.Errorf("stories %s and %s both map to spec name %q", previous, identity, specName)
+	}
+	seen[specName] = identity
+	return nil
 }
 
 // SpecNameForStory maps a story id (and optional variant) to the spec name

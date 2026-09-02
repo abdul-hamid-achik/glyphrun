@@ -142,6 +142,7 @@ func Discover(opts Options) (*Plan, error) {
 	parseOpts := rt.SpecParseOptions()
 	parseOpts.AllowHashMismatch = true
 	watch := map[string]bool{}
+	identities := map[string]string{}
 	for _, mp := range manifests {
 		m, err := stories.LoadManifest(mp, parseOpts)
 		if err != nil {
@@ -154,6 +155,9 @@ func Discover(opts Options) (*Plan, error) {
 		item := ManifestPlan{Path: mp, Manifest: m}
 		for _, ex := range expanded {
 			ex := ex
+			if err := stories.RegisterStorySpecName(identities, ex.Spec.Name, fmt.Sprintf("%q in %s", ex.Key(), mp)); err != nil {
+				return nil, err
+			}
 			job := Job{
 				Key:        ex.Key(),
 				ID:         ex.ID,
@@ -204,6 +208,9 @@ func Discover(opts Options) (*Plan, error) {
 			SourcePath: f,
 			SpecName:   parsed.Spec.Name,
 			SpecPath:   f,
+		}
+		if err := stories.RegisterStorySpecName(identities, job.SpecName, fmt.Sprintf("%q in %s", job.Key, f)); err != nil {
+			return nil, err
 		}
 		job.GoldenName, job.GoldenOutcomeID = stories.GoldenOutcome(parsed.Resolved)
 		plan.Jobs = append(plan.Jobs, job)

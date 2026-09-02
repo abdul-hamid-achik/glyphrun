@@ -11,6 +11,7 @@ package stories
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -200,6 +201,15 @@ func Collect(opts CollectOptions) (Catalog, error) {
 		stories = append(stories, loadSpecStory(path, opts, parseOpts, index, runs))
 	}
 	filtered := filterStories(stories, opts, len(manifests) > 0)
+	identities := map[string]string{}
+	for _, story := range filtered {
+		if story.ParseError != "" {
+			continue
+		}
+		if err := RegisterStorySpecName(identities, story.Name, fmt.Sprintf("%q in %s", story.Key, story.Path)); err != nil {
+			return Catalog{}, err
+		}
+	}
 	sort.SliceStable(filtered, func(i, j int) bool {
 		if filtered[i].Feature != filtered[j].Feature {
 			return filtered[i].Feature < filtered[j].Feature

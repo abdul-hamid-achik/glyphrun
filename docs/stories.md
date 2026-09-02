@@ -92,6 +92,8 @@ stories:
 
 Validate a manifest against the schema directly with the JSON Schema at `schemas/glyphrun.stories.v1.schema.json`, or just run `glyph stories run` — a bad manifest fails fast with a schema error.
 
+Generated spec names must be unique across every discovered manifest and spec-file story because run ids, goldens, and the retention-proof index use that name as their storage identity. Glyphrun rejects cross-file collisions before running or rendering the catalog.
+
 ## What gets generated per story
 
 Each story (times its variants) expands to one spec:

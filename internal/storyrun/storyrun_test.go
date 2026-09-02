@@ -103,6 +103,19 @@ func TestDiscoverExpandsAndFilters(t *testing.T) {
 	}
 }
 
+func TestDiscoverRejectsCrossManifestSpecNameCollision(t *testing.T) {
+	dir, cfg := fixture(t)
+	duplicate := filepath.Join(dir, "duplicate.stories.yml")
+	manifest := "version: 1\nkind: stories\nharness:\n  cmd: [\"/bin/echo\"]\nstories:\n  - id: list/rows\n"
+	if err := os.WriteFile(duplicate, []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Discover(Options{Paths: []string{dir}, ConfigPath: cfg})
+	if err == nil || !strings.Contains(err.Error(), "story_list_rows") || !strings.Contains(err.Error(), "duplicate.stories.yml") || !strings.Contains(err.Error(), "stories.yml") {
+		t.Fatalf("expected global story identity collision, got %v", err)
+	}
+}
+
 func TestRunBuildsOnceCapturesGoldensAndIndexes(t *testing.T) {
 	dir, cfg := fixture(t)
 	opts := Options{Paths: []string{dir}, ConfigPath: cfg, Parallel: 2}
