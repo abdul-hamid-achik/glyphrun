@@ -205,6 +205,9 @@ func TestGoldenModePlumbsIntoTheSnapshotVerifier(t *testing.T) {
 	if got := ex[1].Spec.Outcomes[0].Verify.Snapshot.Mode; got != "json" {
 		t.Fatalf("story goldenMode not applied: %q", got)
 	}
+	if !strings.Contains(ex[1].Spec.Outcomes[0].Description, "cursor") {
+		t.Fatalf("json golden description omits cursor: %q", ex[1].Spec.Outcomes[0].Description)
+	}
 	if _, _, mode := GoldenOutcomeMode(ex[1].Spec); mode != "json" {
 		t.Fatalf("GoldenOutcomeMode = %q", mode)
 	}

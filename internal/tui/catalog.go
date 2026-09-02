@@ -26,13 +26,14 @@ type Story struct {
 // StorySnap is a named screen belonging to a story. Before is the committed
 // golden when it differs; Changed lists the differing cells.
 type StorySnap struct {
-	Name    string
-	Status  string
-	Error   string
-	Golden  string
-	Screen  *terminal.ScreenSnapshot
-	Before  *terminal.ScreenSnapshot
-	Changed []terminal.CellDiff
+	Name          string
+	Status        string
+	Error         string
+	Golden        string
+	CursorChanged bool
+	Screen        *terminal.ScreenSnapshot
+	Before        *terminal.ScreenSnapshot
+	Changed       []terminal.CellDiff
 }
 
 type catalogModel struct {
@@ -317,7 +318,7 @@ func (m catalogModel) renderToolbar() string {
 	for i, sn := range st.Snapshots {
 		label := sn.Name
 		if sn.Golden == "changed" {
-			label += fmt.Sprintf(" ±%d", len(sn.Changed))
+			label += " ±" + snapDelta(sn)
 		}
 		if i == m.snap {
 			label = headerStyle.Render(label)
@@ -350,7 +351,7 @@ func (m catalogModel) renderChrome(snap StorySnap, width int) string {
 		size = fmt.Sprintf("%d×%d", snap.Screen.Cols, snap.Screen.Rows)
 	}
 	if snap.Golden == "changed" {
-		size = changedStyle.Render(fmt.Sprintf("%d changed", len(snap.Changed))) + "  " + size
+		size = changedStyle.Render(snapDelta(snap)+" changed") + "  " + size
 	}
 	left := trafficDots() + "  " + dimStyle.Render(title)
 	right := dimStyle.Render(size)
@@ -368,6 +369,16 @@ func (m catalogModel) renderChrome(snap StorySnap, width int) string {
 		ruleW = 40
 	}
 	return top + "\n" + dimStyle.Render(strings.Repeat("─", ruleW))
+}
+
+func snapDelta(snap StorySnap) string {
+	if snap.CursorChanged {
+		if len(snap.Changed) > 0 {
+			return fmt.Sprintf("%d+cursor", len(snap.Changed))
+		}
+		return "cursor"
+	}
+	return fmt.Sprintf("%d", len(snap.Changed))
 }
 
 func splitBar(left, right string, width int) string {

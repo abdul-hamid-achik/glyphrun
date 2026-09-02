@@ -375,3 +375,40 @@ func TestGoldenModeDecidesWhetherStylesCount(t *testing.T) {
 		}
 	}
 }
+
+func TestGoldenJSONModeCountsCursorChanges(t *testing.T) {
+	dir := t.TempDir()
+	manifest := "version: 1\nkind: stories\nharness:\n  cmd: [\"/bin/echo\"]\ndefaults:\n  goldenMode: json\nstories:\n  - id: list/rows\n"
+	writeSpec(t, dir, "stories.yml", manifest)
+	runs := filepath.Join(dir, "runs")
+	current := twoCells("h", "i")
+	current.Cursor = terminal.Cursor{X: 1, Visible: true}
+	writeRun(t, runs, "story_list_rows", current, "rows")
+	goldenDir := filepath.Join(dir, "goldens", "story_list_rows")
+	if err := os.MkdirAll(goldenDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	golden := twoCells("h", "i")
+	golden.Cursor = terminal.Cursor{X: 0, Visible: true}
+	data, _ := json.Marshal(golden)
+	if err := os.WriteFile(filepath.Join(goldenDir, "rows.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := Collect(CollectOptions{Paths: []string{dir}, ArtifactRoot: runs, SnapshotRoot: filepath.Join(dir, "goldens")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshot Snapshot
+	for _, candidate := range cat.Stories[0].Snapshots {
+		if candidate.Name == "rows" {
+			snapshot = candidate
+		}
+	}
+	if snapshot.Golden != GoldenChanged || !snapshot.CursorChanged || snapshot.Changed != 0 {
+		t.Fatalf("cursor-only JSON golden diff = %+v", snapshot)
+	}
+	payload := BuildPayload(cat, false, "")
+	if !payload.Stories[0].Snapshots[1].CursorChanged || payload.Stories[0].Snapshots[1].GoldenCursor == nil {
+		t.Fatalf("cursor diff missing from page payload: %+v", payload.Stories[0].Snapshots)
+	}
+}

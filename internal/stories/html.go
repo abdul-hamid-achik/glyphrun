@@ -78,22 +78,24 @@ type StoryPayload struct {
 // over cells that carry a non-default style or an OSC 8 link, so a mostly
 // plain 80×24 screen costs a few kilobytes instead of a hundred.
 type SnapshotPayload struct {
-	Name       string                   `json:"name"`
-	Status     string                   `json:"status"`
-	Cols       int                      `json:"cols"`
-	Rows       int                      `json:"rows"`
-	Error      string                   `json:"error,omitempty"`
-	Golden     string                   `json:"golden"`
-	Changed    int                      `json:"changed"`
-	StyleOnly  int                      `json:"styleOnly,omitempty"`
-	Cursor     terminal.Cursor          `json:"cursor"`
-	Grid       [][]string               `json:"grid"`
-	Styles     []StyleRun               `json:"styles,omitempty"`
-	Links      []LinkRun                `json:"links,omitempty"`
-	GoldenGrid [][]string               `json:"goldenGrid,omitempty"`
-	GoldenSt   []StyleRun               `json:"goldenStyles,omitempty"`
-	Regions    []render.RegionHighlight `json:"regions,omitempty"`
-	Diff       []terminal.CellDiff      `json:"diff,omitempty"`
+	Name          string                   `json:"name"`
+	Status        string                   `json:"status"`
+	Cols          int                      `json:"cols"`
+	Rows          int                      `json:"rows"`
+	Error         string                   `json:"error,omitempty"`
+	Golden        string                   `json:"golden"`
+	Changed       int                      `json:"changed"`
+	StyleOnly     int                      `json:"styleOnly,omitempty"`
+	CursorChanged bool                     `json:"cursorChanged,omitempty"`
+	Cursor        terminal.Cursor          `json:"cursor"`
+	GoldenCursor  *terminal.Cursor         `json:"goldenCursor,omitempty"`
+	Grid          [][]string               `json:"grid"`
+	Styles        []StyleRun               `json:"styles,omitempty"`
+	Links         []LinkRun                `json:"links,omitempty"`
+	GoldenGrid    [][]string               `json:"goldenGrid,omitempty"`
+	GoldenSt      []StyleRun               `json:"goldenStyles,omitempty"`
+	Regions       []render.RegionHighlight `json:"regions,omitempty"`
+	Diff          []terminal.CellDiff      `json:"diff,omitempty"`
 }
 
 // StyleRun is a horizontal run of cells sharing one non-default style.
@@ -188,7 +190,7 @@ func BuildPayload(cat Catalog, live bool, generatedAt string) PagePayload {
 		for _, snap := range s.Snapshots {
 			p := SnapshotPayload{
 				Name: snap.Name, Status: snap.Status, Cols: snap.Cols, Rows: snap.Rows, Error: snap.Error,
-				Golden: snap.Golden, Changed: snap.Changed, StyleOnly: snap.StyleOnly, Regions: snap.Regions, Diff: snap.Diff,
+				Golden: snap.Golden, Changed: snap.Changed, StyleOnly: snap.StyleOnly, CursorChanged: snap.CursorChanged, Regions: snap.Regions, Diff: snap.Diff,
 			}
 			if snap.Screen != nil {
 				p.Grid, p.Styles, p.Links = CompactScreen(*snap.Screen)
@@ -196,6 +198,8 @@ func BuildPayload(cat Catalog, live bool, generatedAt string) PagePayload {
 			}
 			if snap.GoldenScreen != nil && (snap.Golden == GoldenChanged || snap.StyleOnly > 0) {
 				p.GoldenGrid, p.GoldenSt, _ = CompactScreen(*snap.GoldenScreen)
+				cursor := snap.GoldenScreen.Cursor
+				p.GoldenCursor = &cursor
 			}
 			if p.Grid == nil {
 				p.Grid = [][]string{}

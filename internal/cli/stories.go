@@ -176,13 +176,14 @@ func storiesToTUI(cat stories.Catalog) []tui.Story {
 		item := tui.Story{Name: label, SpecName: s.Name, Feature: s.Feature, Status: s.Status, RunID: s.RunID, Golden: s.Golden, Diagnostic: s.Diagnostic}
 		for _, snap := range s.Snapshots {
 			item.Snapshots = append(item.Snapshots, tui.StorySnap{
-				Name:    snap.Name,
-				Status:  snap.Status,
-				Error:   snap.Error,
-				Golden:  snap.Golden,
-				Screen:  snap.Screen,
-				Before:  snap.GoldenScreen,
-				Changed: snap.Diff,
+				Name:          snap.Name,
+				Status:        snap.Status,
+				Error:         snap.Error,
+				Golden:        snap.Golden,
+				CursorChanged: snap.CursorChanged,
+				Screen:        snap.Screen,
+				Before:        snap.GoldenScreen,
+				Changed:       snap.Diff,
 			})
 		}
 		out = append(out, item)

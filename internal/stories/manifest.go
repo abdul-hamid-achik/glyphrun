@@ -416,8 +416,11 @@ func expandOne(m Manifest, entry Entry, v Variant, manifestPath string, defaultT
 			goldenMode = strings.ToLower(strings.TrimSpace(m.Defaults.GoldenMode))
 		}
 		desc := "the screen matches the committed golden " + snapName
-		if goldenMode == "cell" || goldenMode == "json" {
-			desc += " (" + goldenMode + " mode: characters and styles)"
+		switch goldenMode {
+		case "cell":
+			desc += " (cell mode: characters and styles)"
+		case "json":
+			desc += " (json mode: characters, styles, and cursor)"
 		}
 		outcomes = append(outcomes, spec.Outcome{
 			ID:          GoldenOutcomeID,

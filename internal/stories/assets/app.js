@@ -282,10 +282,6 @@
         return s.name;
       },
 
-      changedCount(s) {
-        return (s.snapshots || []).reduce((n, p) => n + (p.golden === "changed" ? p.changed : 0), 0);
-      },
-
       dotClass(s) {
         if (s.status === "passed" && s.golden !== "changed") return "bg-[#27c93f]";
         if (s.status === "not_run") return "bg-ink-line";
@@ -330,7 +326,7 @@
 
       get hasDiff() {
         const p = this.snap;
-        return !!(p && p.diff && p.diff.length);
+        return !!(p && ((p.diff && p.diff.length) || p.cursorChanged));
       },
 
       get svg() {
@@ -354,7 +350,7 @@
           opts.diff = p.diff || [];
           if (this.showGolden && goldenCellsOf(p)) {
             screen.cells = goldenCellsOf(p);
-            screen.cursor = null;
+            screen.cursor = p.goldenCursor || null;
           }
         }
         return renderSVG(screen, opts, this.palette);
