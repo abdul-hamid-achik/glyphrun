@@ -6,6 +6,8 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-09-01
+
 ### Added
 
 - `stories.yml` manifest (`kind: stories`): one harness declaration expands into many isolated-state specs, so authoring a story no longer requires a hand-written spec file. Schema at `schemas/glyphrun.stories.v1.schema.json`.
@@ -25,6 +27,12 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 - `glyph_stories` (MCP and CLI) now returns manifest-derived stories (joined to their newest result and golden status) alongside specs tagged `story`, keyed `<id>` or `<id>@<variant>`.
 - `glyph spec scaffold --kind story` now prints a starter `stories.yml` manifest instead of a bare spec.
+- Run ids, committed goldens, and the stories index all derive directory names from one sanitizer (`artifacts.SanitizeRunName`), so the catalog reads goldens exactly where the runner writes them.
+- `glyph stories run` reports a golden as `created` or `updated` from the file on disk, so a run that captured a golden and then failed another outcome still says so.
+
+### Security
+
+- `glyph stories serve` refuses requests whose `Host` is not one of its own loopback names and mutations that are not same-origin JSON, so a web page cannot rerun stories or accept goldens through the local server.
 
 ### Removed
 
@@ -100,7 +108,8 @@ follows Semantic Versioning for its pre-1.0 release line.
 - CI and release workflows reject private employer references in tracked
   release content.
 
-[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.16.0...v0.16.1
