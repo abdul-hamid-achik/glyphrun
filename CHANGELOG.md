@@ -6,6 +6,12 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+### Changed
+
+- MCP tool descriptions now state what each tool returns, when to use it, and what every parameter accepts (`run` takes an id, a directory, or `latest`; `screen` takes `final` or a snapshot name), and `readOnlyHint` comes from an explicit list of mutating tools instead of a name heuristic, so `glyph_snapshot_inventory` is correctly read-only.
+- `glyph explain --format md` renders steps and verifiers from the same lists as the JSON output; it had dropped `monitor` and `metrics`.
+- The "Required Agent Behavior" section of AGENTS.md states the reason behind each rule instead of a list of bare prohibitions.
+
 ## [0.20.0] - 2026-09-01
 
 ### Added

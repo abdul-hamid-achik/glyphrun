@@ -1,6 +1,18 @@
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"strings"
+
+	"github.com/spf13/cobra"
+)
+
+// explainSteps and explainVerifiers are the vocabulary `glyph explain`
+// advertises. Both the JSON envelope and the markdown render read these
+// slices so the two outputs cannot drift apart.
+var (
+	explainSteps     = []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "when", "download", "transform", "monitor", "batch"}
+	explainVerifiers = []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"}
+)
 
 func newExplainCommand(opts *globalOptions) *cobra.Command {
 	return &cobra.Command{
@@ -61,9 +73,9 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph clean --no-archive",
 					"glyph version",
 				},
-				"steps":          []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "when", "download", "transform", "monitor", "batch"},
+				"steps":          explainSteps,
 				"stepFields":     []string{"id", "when"},
-				"verifiers":      []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"},
+				"verifiers":      explainVerifiers,
 				"screenMatchers": []string{"equals", "contains", "notContains", "matches", "regex"},
 				"modes":          []string{"normal", "debug"},
 				"formats":        []string{"json", "yaml", "md"},
@@ -95,8 +107,8 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 - docs: ` + "`glyph docs agents --format md`" + `, ` + "`glyph docs authoring --format md`" + `, ` + "`glyph docs snippets --format md`" + `
 - init: ` + "`glyph init --cmd ./bin/app --ready ready`" + `
 - context: ` + "`glyph context latest --format md`" + `
-- steps: press, type, paste, send, mouse, wait, resize, snapshot, use, when guards, download, transform, batch
-- verifiers: screen, region, cell, cursor, process, snapshot, command, file, script, count, link
+- steps: ` + strings.Join(explainSteps, ", ") + `
+- verifiers: ` + strings.Join(explainVerifiers, ", ") + `
 - formats: json, yaml, md
 - progress: ` + "`glyph run <spec> --progress auto|always|never`" + `
 - artifacts: run summaries, agent context, events, final screen, raw PTY log, frames, snapshots, outcomes, diagnostics
