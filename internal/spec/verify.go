@@ -348,6 +348,11 @@ func validateVerify(v Verify) error {
 		if v.Snapshot.Name == "" {
 			return fmt.Errorf("snapshot.name is required")
 		}
+		switch strings.ToLower(strings.TrimSpace(v.Snapshot.Mode)) {
+		case "", "text", "cell", "json":
+		default:
+			return fmt.Errorf("snapshot.mode must be one of: text, cell, json")
+		}
 	}
 	if v.Command != nil {
 		count++

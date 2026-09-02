@@ -47,6 +47,8 @@ Every step can include a ` + "`when`" + ` guard (full verifier or shorthand stri
 
 Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, ` + "`link`" + `, trusted ` + "`command`" + `, and the process-telemetry ` + "`metrics`" + ` verifier (see ` + "`process-telemetry`" + `). Screen/region matchers: ` + "`equals`" + `, ` + "`contains`" + `, ` + "`notContains`" + `, ` + "`matches`" + ` (preferred), or legacy ` + "`regex`" + `.
 
+` + "`snapshot`" + ` compares a captured screen with its committed golden. ` + "`mode: text`" + ` (default) compares normalized characters; ` + "`mode: cell`" + ` also compares every cell's style against the committed .json grid so a color regression fails the run; ` + "`mode: json`" + ` additionally requires the cursor to match.
+
 Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes (fg, bg, bold, dim, italic, underline, reverse). Process verifiers can check exit state and exit code.
 
 Colors use a canonical form: the 16 base colors are named (` + "`red`" + `, ` + "`brightblue`" + `, …), 256-palette indices 16-255 are their decimal string (` + "`\"201\"`" + `), and truecolor is lowercase hex (` + "`\"#ff8800\"`" + `). The same values color the rendered ` + "`screens/final.svg`" + `.

@@ -71,6 +71,7 @@ stories:
 | `defaults.quit` | string | Key pressed to end the story before the exit-code wait. Default `"q"`; set to `""` to skip the quit/exit steps entirely. |
 | `defaults.exitTimeoutMs` | int | Default 3000. |
 | `defaults.golden` | bool | Default `true` — whether stories get a `golden` outcome. |
+| `defaults.goldenMode` | `text` \| `cell` \| `json` | Snapshot verifier mode for the `golden` outcome. `text` (default) enforces characters only; `cell` also enforces styles, so a color regression fails `glyph stories run`; `json` adds the cursor. |
 | `defaults.tags` / `defaults.owner` | []string / string | Applied to every story's generated spec metadata. |
 | `stories[].id` | string | Required. Passed as the harness argument. `feature/name` shape: the segment before the first `/` becomes the feature (unless `feature` is set), the segment after the last `/` becomes the snapshot name. |
 | `stories[].feature` | string | Overrides the id-derived feature. |
@@ -83,6 +84,7 @@ stories:
 | `stories[].readyTimeoutMs` | int | Overrides `defaults.readyTimeoutMs`. |
 | `stories[].quit` | string | Overrides `defaults.quit`. |
 | `stories[].golden` | bool | Overrides `defaults.golden`. |
+| `stories[].goldenMode` | string | Overrides `defaults.goldenMode` for one story. |
 | `stories[].steps` | []Step | Extra steps run after ready and before the snapshot (e.g. `press`, `wait`). |
 | `stories[].outcomes` | []Outcome | Appended after the generated `golden`/`ready` outcomes. |
 | `stories[].variants[].name` | string | Required. Re-runs the story with overrides layered on top — the terminal-story equivalent of Storybook args. |
@@ -109,6 +111,7 @@ A story with `golden: true` (the default) gets a `golden` outcome comparing its 
 - **`--update`**: rewrites every golden with the current capture, regardless of whether it matched.
 - **From the browser**: `glyph stories serve` renders an "accept golden" action per story that does the equivalent of `--update` for exactly that row (a base story's variants keep their own goldens until you accept them too), then reruns and refreshes the live catalog.
 - **Reporting is file-based**: `created` / `updated` in the run report mean the golden file changed on disk, even when the run then failed on another outcome, so an unreviewed golden never lands silently.
+- **Text vs cell contracts**: the default `text` mode makes goldens portable across terminals (a machine that renders fewer colors still passes), but it means a color-only regression does not fail the run. The catalog and the HTML page still diff every cell: a style-only difference shows as `~N` (amber, informational) next to a `text`-mode golden and as `±N` (a real change) under `goldenMode: cell`. Pick `cell` when the harness controls its own colors (a fixed `TERM`/`COLORTERM` in CI) and you want strict runs to catch them.
 
 `.glyphrun/snapshots` (the committed goldens) should be committed to version control. `.glyphrun/stories` (the derived index — the newest result and a copy of its screens, keyed by spec name, used so the catalog survives `retention.keepRuns` pruning) is derived output and is gitignored.
 

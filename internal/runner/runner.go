@@ -1616,7 +1616,63 @@ func (s *runState) checkSnapshot(cond spec.SnapshotCondition) (bool, string) {
 		}
 		return false, fmt.Sprintf("snapshot %q mismatch\nexpected:\n%s\nactual:\n%s", cond.Name, expectedText, actualText)
 	}
+	// Text matched. In `cell` and `json` mode the golden is also a visual
+	// contract: every cell's character and style (and, for json, the cursor)
+	// must match the committed .json grid, so a color regression fails the
+	// run instead of only showing up in the stories catalog.
+	mode := strings.ToLower(strings.TrimSpace(cond.Mode))
+	if mode == "cell" || mode == "json" {
+		goldenJSON := strings.TrimSuffix(committedPath, ".txt") + ".json"
+		data, err := os.ReadFile(goldenJSON)
+		if err != nil {
+			if s.updateSnapshots {
+				if err := s.writeCommittedSnapshot(cond.Name, current); err != nil {
+					return false, fmt.Sprintf("failed to update snapshot %q: %v", cond.Name, err)
+				}
+				return true, fmt.Sprintf("snapshot %q updated (cell grid was missing)", cond.Name)
+			}
+			return false, fmt.Sprintf("snapshot %q mode %s needs the committed cell grid %s: %v", cond.Name, mode, goldenJSON, err)
+		}
+		var golden terminal.ScreenSnapshot
+		if err := json.Unmarshal(data, &golden); err != nil {
+			return false, fmt.Sprintf("snapshot %q: committed cell grid %s is unreadable: %v", cond.Name, goldenJSON, err)
+		}
+		diff := terminal.DiffSnapshots(golden, current)
+		cursorMoved := mode == "json" && golden.Cursor != current.Cursor
+		if !diff.Equal() || cursorMoved {
+			if s.updateSnapshots {
+				if err := s.writeCommittedSnapshot(cond.Name, current); err != nil {
+					return false, fmt.Sprintf("failed to update snapshot %q: %v", cond.Name, err)
+				}
+				return true, fmt.Sprintf("snapshot %q updated", cond.Name)
+			}
+			return false, describeCellMismatch(cond.Name, mode, diff, cursorMoved, golden.Cursor, current.Cursor)
+		}
+	}
 	return true, fmt.Sprintf("snapshot %q matched", cond.Name)
+}
+
+// describeCellMismatch summarises a cell-mode golden failure: the first few
+// differing cells with their before/after character and style, so the
+// outcome reads like a diff rather than a bare "mismatch".
+func describeCellMismatch(name, mode string, diff terminal.SnapshotDiff, cursorMoved bool, want, got terminal.Cursor) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "snapshot %q mismatch in %s mode: %d cell(s) differ", name, mode, len(diff.Changed))
+	if diff.SizeChanged {
+		b.WriteString(" (screen size changed)")
+	}
+	if cursorMoved {
+		fmt.Fprintf(&b, "; cursor moved from %d,%d to %d,%d", want.X, want.Y, got.X, got.Y)
+	}
+	const limit = 8
+	for i, c := range diff.Changed {
+		if i == limit {
+			fmt.Fprintf(&b, "\n  … %d more", len(diff.Changed)-limit)
+			break
+		}
+		fmt.Fprintf(&b, "\n  %d,%d: %q %v -> %q %v", c.X, c.Y, c.Before.Char, c.Before.Style, c.After.Char, c.After.Style)
+	}
+	return b.String()
 }
 
 func (s *runState) screenText() string {

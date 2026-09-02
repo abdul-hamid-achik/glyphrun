@@ -316,3 +316,46 @@ func TestGoldenTextFallbackWhenJSONMissing(t *testing.T) {
 		t.Fatalf("changed = %d, want 1", changed)
 	}
 }
+
+func TestGoldenModeDecidesWhetherStylesCount(t *testing.T) {
+	for _, tc := range []struct {
+		mode      string
+		wantState string
+		styleOnly int
+	}{
+		{"", GoldenMatch, 1},
+		{"cell", GoldenChanged, 0},
+	} {
+		dir := t.TempDir()
+		manifest := "version: 1\nkind: stories\nharness:\n  cmd: [\"/bin/echo\"]\n"
+		if tc.mode != "" {
+			manifest += "defaults:\n  goldenMode: " + tc.mode + "\n"
+		}
+		manifest += "stories:\n  - id: list/rows\n"
+		writeSpec(t, dir, "stories.yml", manifest)
+		runs := filepath.Join(dir, "runs")
+		current := twoCells("h", "i")
+		current.Cells[1].Style.Bold = true // same text as the golden, bold differs
+		writeRun(t, runs, "story_list_rows", current, "rows")
+		goldenDir := filepath.Join(dir, "goldens", "story_list_rows")
+		if err := os.MkdirAll(goldenDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		golden, _ := json.Marshal(twoCells("h", "i"))
+		if err := os.WriteFile(filepath.Join(goldenDir, "rows.json"), golden, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cat, err := Collect(CollectOptions{Paths: []string{dir}, ArtifactRoot: runs, SnapshotRoot: filepath.Join(dir, "goldens"), DefaultTerminal: spec.Terminal{Cols: 80, Rows: 24}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cat.Stories) != 1 || cat.Stories[0].Golden != tc.wantState {
+			t.Fatalf("mode %q: golden = %+v, want %s", tc.mode, cat.Stories, tc.wantState)
+		}
+		for _, s := range cat.Stories[0].Snapshots {
+			if s.Name == "rows" && (s.StyleOnly != tc.styleOnly || s.Changed != 1) {
+				t.Fatalf("mode %q: snapshot = %+v", tc.mode, s)
+			}
+		}
+	}
+}

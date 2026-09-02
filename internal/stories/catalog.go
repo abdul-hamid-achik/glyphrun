@@ -133,6 +133,10 @@ type Snapshot struct {
 	Error   string `json:"error,omitempty"`
 	Golden  string `json:"golden"`
 	Changed int    `json:"changed"`
+	// StyleOnly counts changed cells whose character is unchanged (color or
+	// attribute only). In text mode they do not fail the golden, so the UI
+	// shows them as informational rather than as a regression.
+	StyleOnly int `json:"styleOnly,omitempty"`
 	// Off the JSON envelope: the grids and overlays the HTML/TUI views paint.
 	Screen       *terminal.ScreenSnapshot `json:"-"`
 	GoldenScreen *terminal.ScreenSnapshot `json:"-"`
@@ -276,8 +280,8 @@ func loadManifestStories(path string, opts CollectOptions, parseOpts spec.ParseO
 			row.Owner = ex.Spec.Metadata.Owner
 			row.Tags = append([]string(nil), ex.Spec.Metadata.Tags...)
 		}
-		goldenName, goldenID := GoldenOutcome(ex.Spec)
-		joinResult(&row, ex.Spec, goldenName, goldenID, opts, index, runs)
+		goldenName, goldenID, goldenMode := GoldenOutcomeMode(ex.Spec)
+		joinResult(&row, ex.Spec, goldenName, goldenID, goldenMode, opts, index, runs)
 		out = append(out, row)
 	}
 	return out
@@ -300,14 +304,14 @@ func loadSpecStory(path string, opts CollectOptions, parseOpts spec.ParseOptions
 		row.Owner = parsed.Spec.Metadata.Owner
 		row.Tags = append([]string(nil), parsed.Spec.Metadata.Tags...)
 	}
-	goldenName, goldenID := GoldenOutcome(parsed.Resolved)
-	joinResult(&row, parsed.Resolved, goldenName, goldenID, opts, index, runs)
+	goldenName, goldenID, goldenMode := GoldenOutcomeMode(parsed.Resolved)
+	joinResult(&row, parsed.Resolved, goldenName, goldenID, goldenMode, opts, index, runs)
 	return row
 }
 
 // joinResult fills the run-side fields of a row from the stories index or,
 // failing that, the newest matching run directory.
-func joinResult(row *Story, s spec.Spec, goldenName, goldenID string, opts CollectOptions, index map[string]IndexEntry, runs map[string]artifacts.RunResult) {
+func joinResult(row *Story, s spec.Spec, goldenName, goldenID, goldenMode string, opts CollectOptions, index map[string]IndexEntry, runs map[string]artifacts.RunResult) {
 	regions := regionsFromSpec(s)
 	if entry, ok := index[s.Name]; ok {
 		row.RunID = entry.RunID
@@ -315,7 +319,7 @@ func joinResult(row *Story, s spec.Spec, goldenName, goldenID string, opts Colle
 		row.Diagnostic = entry.Diagnostic
 		row.Passed, row.Failed = countOutcomes(entry.Outcomes)
 		dir := IndexDir(opts.StoriesRoot, s.Name)
-		row.Snapshots = loadSnapshots(dir, s.Name, goldenName, regions, opts.SnapshotRoot)
+		row.Snapshots = loadSnapshots(dir, s.Name, goldenName, goldenMode, regions, opts.SnapshotRoot)
 		row.Golden = aggregateGolden(row.Snapshots, goldenName)
 		reconcileGoldenWithOutcomes(row, goldenName, goldenID, entry.Outcomes)
 		return
@@ -328,7 +332,7 @@ func joinResult(row *Story, s spec.Spec, goldenName, goldenID string, opts Colle
 		}
 		row.Diagnostic = run.Diagnostic
 		row.Passed, row.Failed = countOutcomes(run.Outcomes)
-		row.Snapshots = loadSnapshots(run.RunDir, s.Name, goldenName, regions, opts.SnapshotRoot)
+		row.Snapshots = loadSnapshots(run.RunDir, s.Name, goldenName, goldenMode, regions, opts.SnapshotRoot)
 		row.Golden = aggregateGolden(row.Snapshots, goldenName)
 		reconcileGoldenWithOutcomes(row, goldenName, goldenID, run.Outcomes)
 		return
@@ -465,7 +469,10 @@ func indexRuns(root string) map[string]artifacts.RunResult {
 // loadSnapshots reads screens/final.json and snapshots/*.json under dir (a
 // run directory or a stories index entry) and compares the golden-named one
 // against the committed golden.
-func loadSnapshots(dir, specName, goldenName string, regions []render.RegionHighlight, snapshotRoot string) []Snapshot {
+// goldenMode decides what counts against the golden: in "text" mode (the
+// runner default) only character changes do, and style-only changes are
+// reported as StyleOnly so the catalog agrees with `stories run --strict`.
+func loadSnapshots(dir, specName, goldenName, goldenMode string, regions []render.RegionHighlight, snapshotRoot string) []Snapshot {
 	var snaps []Snapshot
 	finalPath := filepath.Join(dir, "screens", "final.json")
 	if snap, ok := snapshotFromFile("final", finalPath, regions); ok {
@@ -505,7 +512,17 @@ func loadSnapshots(dir, specName, goldenName string, regions []render.RegionHigh
 		snaps[i].GoldenScreen = &golden
 		snaps[i].Diff = diff.Changed
 		snaps[i].Changed = len(diff.Changed)
-		if diff.Equal() {
+		enforced := len(diff.Changed)
+		if goldenMode == "" || goldenMode == "text" {
+			enforced = 0
+			for _, c := range diff.Changed {
+				if c.Before.Char != c.After.Char {
+					enforced++
+				}
+			}
+			snaps[i].StyleOnly = len(diff.Changed) - enforced
+		}
+		if enforced == 0 && !diff.SizeChanged {
 			snaps[i].Golden = GoldenMatch
 		} else {
 			snaps[i].Golden = GoldenChanged

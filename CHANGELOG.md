@@ -6,6 +6,19 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+### Added
+
+- The `snapshot` verifier now implements the `mode` the schema already declared: `text` (default), `cell` (characters and styles against the committed `.json` grid), and `json` (cells plus cursor). Stories select it with `defaults.goldenMode` / `stories[].goldenMode`.
+- The stories catalog and HTML page report style-only differences (`styleOnly`, shown as `~N`) separately from enforced changes, so `glyph stories run --strict` and the catalog agree on what a changed golden is.
+
+### Changed
+
+- `goreleaser-action` bumped to v7.2.3 (Node 24 runtime).
+
+### Fixed
+
+- `glyph stories serve` returns 400 for a malformed JSON body on `POST /run` / `/update` instead of treating it as "rerun everything".
+
 ## [0.19.0] - 2026-09-01
 
 ### Added
