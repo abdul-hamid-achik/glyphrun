@@ -398,3 +398,95 @@ func TestGoldenWrittenByFailedRunIsReported(t *testing.T) {
 		t.Fatalf("markdown = %s", RenderReportMarkdown(report))
 	}
 }
+
+func TestCellGoldenModeFailsOnStyleChange(t *testing.T) {
+	dir, cfg := fixture(t)
+	data, _ := os.ReadFile(filepath.Join(dir, "stories.yml"))
+	cellMode := strings.Replace(string(data), "  quit: \"\"\n", "  quit: \"\"\n  goldenMode: cell\n", 1)
+	if err := os.WriteFile(filepath.Join(dir, "stories.yml"), []byte(cellMode), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{Paths: []string{dir}, ConfigPath: cfg, Only: []string{"list/rows"}}
+	plan, err := Discover(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(context.Background(), opts, plan); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Run(context.Background(), opts, plan)
+	if err != nil || report.Passed != 1 {
+		t.Fatalf("second run should match in cell mode: %+v err=%v", report, err)
+	}
+	// Flip one cell's style in the committed grid: same text, different look.
+	goldenJSON := filepath.Join(dir, "goldens", "story_list_rows", "rows.json")
+	raw, err := os.ReadFile(goldenJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var golden struct {
+		Cols   int              `json:"cols"`
+		Rows   int              `json:"rows"`
+		Cursor json.RawMessage  `json:"cursor"`
+		Cells  []map[string]any `json:"cells"`
+		Text   string           `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &golden); err != nil {
+		t.Fatal(err)
+	}
+	golden.Cells[0]["style"] = map[string]any{"bold": true}
+	edited, _ := json.Marshal(golden)
+	if err := os.WriteFile(goldenJSON, edited, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	strict := opts
+	strict.Strict = true
+	report, err = Run(context.Background(), strict, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Failed != 1 || report.ExitCode != 1 {
+		t.Fatalf("cell mode must fail on a style-only change: %+v", report)
+	}
+	var msg string
+	for _, o := range report.Results[0].Run.Outcomes {
+		if o.ID == stories.GoldenOutcomeID {
+			msg = o.Message
+		}
+	}
+	if !strings.Contains(msg, "cell mode") || !strings.Contains(msg, "1 cell(s) differ") {
+		t.Fatalf("golden outcome message = %q", msg)
+	}
+}
+
+func TestServeRejectsMalformedRunBody(t *testing.T) {
+	dir, cfg := fixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready := make(chan string, 1)
+	go func() {
+		_ = Serve(ctx, ServeOptions{Options: Options{Paths: []string{dir}, ConfigPath: cfg}, Addr: "127.0.0.1:0", Ready: func(u string) { ready <- u }})
+	}()
+	var url string
+	select {
+	case url = <-ready:
+	case <-time.After(10 * time.Second):
+		t.Fatal("server did not become ready")
+	}
+	res, err := http.Post(url+"/run", "application/json", strings.NewReader("{"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("malformed body = %d, want 400", res.StatusCode)
+	}
+	empty, err := http.Post(url+"/run", "application/json", strings.NewReader(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty.Body.Close()
+	if empty.StatusCode != http.StatusAccepted {
+		t.Fatalf("empty body is an explicit rerun-all: %d, want 202", empty.StatusCode)
+	}
+}

@@ -62,6 +62,7 @@
         "quit": { "type": "string" },
         "exitTimeoutMs": { "type": "integer", "minimum": 1 },
         "golden": { "type": "boolean" },
+        "goldenMode": { "enum": ["text", "cell", "json"] },
         "tags": { "type": "array", "items": { "type": "string" } },
         "owner": { "type": "string" }
       },
@@ -93,6 +94,7 @@
         "readyTimeoutMs": { "type": "integer", "minimum": 1 },
         "quit": { "type": "string" },
         "golden": { "type": "boolean" },
+        "goldenMode": { "enum": ["text", "cell", "json"] },
         "steps": { "type": "array", "items": { "type": "object" } },
         "outcomes": { "type": "array", "items": { "type": "object" } },
         "variants": { "type": "array", "items": { "$ref": "#/$defs/variant" } }

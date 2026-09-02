@@ -85,6 +85,7 @@ type SnapshotPayload struct {
 	Error      string                   `json:"error,omitempty"`
 	Golden     string                   `json:"golden"`
 	Changed    int                      `json:"changed"`
+	StyleOnly  int                      `json:"styleOnly,omitempty"`
 	Cursor     terminal.Cursor          `json:"cursor"`
 	Grid       [][]string               `json:"grid"`
 	Styles     []StyleRun               `json:"styles,omitempty"`
@@ -187,13 +188,13 @@ func BuildPayload(cat Catalog, live bool, generatedAt string) PagePayload {
 		for _, snap := range s.Snapshots {
 			p := SnapshotPayload{
 				Name: snap.Name, Status: snap.Status, Cols: snap.Cols, Rows: snap.Rows, Error: snap.Error,
-				Golden: snap.Golden, Changed: snap.Changed, Regions: snap.Regions, Diff: snap.Diff,
+				Golden: snap.Golden, Changed: snap.Changed, StyleOnly: snap.StyleOnly, Regions: snap.Regions, Diff: snap.Diff,
 			}
 			if snap.Screen != nil {
 				p.Grid, p.Styles, p.Links = CompactScreen(*snap.Screen)
 				p.Cursor = snap.Screen.Cursor
 			}
-			if snap.GoldenScreen != nil && snap.Golden == GoldenChanged {
+			if snap.GoldenScreen != nil && (snap.Golden == GoldenChanged || snap.StyleOnly > 0) {
 				p.GoldenGrid, p.GoldenSt, _ = CompactScreen(*snap.GoldenScreen)
 			}
 			if p.Grid == nil {

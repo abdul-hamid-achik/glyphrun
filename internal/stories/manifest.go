@@ -51,8 +51,12 @@ type Defaults struct {
 	Quit           *string       `yaml:"quit,omitempty" json:"quit,omitempty"`
 	ExitTimeoutMS  int           `yaml:"exitTimeoutMs,omitempty" json:"exitTimeoutMs,omitempty"`
 	Golden         *bool         `yaml:"golden,omitempty" json:"golden,omitempty"`
-	Tags           []string      `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Owner          string        `yaml:"owner,omitempty" json:"owner,omitempty"`
+	// GoldenMode is the snapshot verifier mode: "text" (default; normalized
+	// characters, portable across terminals), "cell" (characters and styles,
+	// so a color regression fails the run), or "json" (cells plus cursor).
+	GoldenMode string   `yaml:"goldenMode,omitempty" json:"goldenMode,omitempty"`
+	Tags       []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Owner      string   `yaml:"owner,omitempty" json:"owner,omitempty"`
 }
 
 // Entry is one story: an id the harness understands plus optional
@@ -72,6 +76,7 @@ type Entry struct {
 	ReadyTimeoutMS int                   `yaml:"readyTimeoutMs,omitempty" json:"readyTimeoutMs,omitempty"`
 	Quit           *string               `yaml:"quit,omitempty" json:"quit,omitempty"`
 	Golden         *bool                 `yaml:"golden,omitempty" json:"golden,omitempty"`
+	GoldenMode     string                `yaml:"goldenMode,omitempty" json:"goldenMode,omitempty"`
 	Steps          []spec.Step           `yaml:"steps,omitempty" json:"steps,omitempty"`
 	Outcomes       []spec.Outcome        `yaml:"outcomes,omitempty" json:"outcomes,omitempty"`
 	Variants       []Variant             `yaml:"variants,omitempty" json:"variants,omitempty"`
@@ -107,12 +112,24 @@ const GoldenOutcomeID = "golden"
 // verifier in a spec ("" when there is none). It is the single place that
 // decides which outcome a story's golden state is read from.
 func GoldenOutcome(s spec.Spec) (snapshotName, outcomeID string) {
+	name, id, _ := GoldenOutcomeMode(s)
+	return name, id
+}
+
+// GoldenOutcomeMode is GoldenOutcome plus the verifier mode ("text" when
+// unset). The catalog uses the mode to decide whether a style-only change
+// counts against the golden or is only reported.
+func GoldenOutcomeMode(s spec.Spec) (snapshotName, outcomeID, mode string) {
 	for _, o := range s.Outcomes {
 		if o.Verify.Snapshot != nil {
-			return o.Verify.Snapshot.Name, o.ID
+			mode := strings.ToLower(strings.TrimSpace(o.Verify.Snapshot.Mode))
+			if mode == "" {
+				mode = "text"
+			}
+			return o.Verify.Snapshot.Name, o.ID, mode
 		}
 	}
-	return "", ""
+	return "", "", ""
 }
 
 // Key is the catalog identity: `list/rows` or `list/rows@wide`.
@@ -396,10 +413,18 @@ func expandOne(m Manifest, entry Entry, v Variant, manifestPath string, defaultT
 
 	var outcomes []spec.Outcome
 	if golden {
+		goldenMode := strings.ToLower(strings.TrimSpace(entry.GoldenMode))
+		if goldenMode == "" {
+			goldenMode = strings.ToLower(strings.TrimSpace(m.Defaults.GoldenMode))
+		}
+		desc := "the screen matches the committed golden " + snapName
+		if goldenMode == "cell" || goldenMode == "json" {
+			desc += " (" + goldenMode + " mode: characters and styles)"
+		}
 		outcomes = append(outcomes, spec.Outcome{
 			ID:          GoldenOutcomeID,
-			Description: "the screen matches the committed golden " + snapName,
-			Verify:      spec.Verify{Snapshot: &spec.SnapshotCondition{Name: snapName}},
+			Description: desc,
+			Verify:      spec.Verify{Snapshot: &spec.SnapshotCondition{Name: snapName, Mode: goldenMode}},
 		})
 	}
 	if entry.Ready != nil {

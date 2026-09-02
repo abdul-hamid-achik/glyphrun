@@ -189,3 +189,26 @@ func TestExpandRejectsSpecNameCollisions(t *testing.T) {
 		t.Fatalf("expected spec name collision error, got %v", err)
 	}
 }
+
+func TestGoldenModePlumbsIntoTheSnapshotVerifier(t *testing.T) {
+	m, err := ParseManifest([]byte("version: 1\nkind: stories\nharness:\n  cmd: [x]\ndefaults:\n  goldenMode: cell\nstories:\n  - id: a/b\n  - id: a/c\n    goldenMode: json\n"), "stories.yml", spec.ParseOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex, err := Expand(m, "stories.yml", spec.Terminal{Cols: 80, Rows: 24})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ex[0].Spec.Outcomes[0].Verify.Snapshot.Mode; got != "cell" {
+		t.Fatalf("defaults.goldenMode not applied: %q", got)
+	}
+	if got := ex[1].Spec.Outcomes[0].Verify.Snapshot.Mode; got != "json" {
+		t.Fatalf("story goldenMode not applied: %q", got)
+	}
+	if _, _, mode := GoldenOutcomeMode(ex[1].Spec); mode != "json" {
+		t.Fatalf("GoldenOutcomeMode = %q", mode)
+	}
+	if _, err := ParseManifest([]byte("version: 1\nkind: stories\nharness:\n  cmd: [x]\ndefaults:\n  goldenMode: pixels\nstories:\n  - id: a\n"), "stories.yml", spec.ParseOptions{}); err == nil {
+		t.Fatal("schema should reject an unknown goldenMode")
+	}
+}

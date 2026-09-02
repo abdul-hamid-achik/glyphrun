@@ -64,7 +64,8 @@
                     @click="ni = i">
               <span x-text="p.name"></span>
               <span x-show="p.golden === 'changed'" class="text-rose-300" x-text="' ±' + p.changed"></span>
-              <span x-show="p.golden === 'match'" class="text-emerald-300"> ✓</span>
+              <span x-show="p.golden === 'match' && !p.styleOnly" class="text-emerald-300"> ✓</span>
+              <span x-show="p.golden === 'match' && p.styleOnly" class="text-amber-300" :title="'styles differ in ' + p.styleOnly + ' cell(s); not enforced in text mode'" x-text="' ~' + p.styleOnly"></span>
             </button>
           </template>
         </div>
@@ -96,6 +97,7 @@
             <button type="button" class="rounded-md border px-2 py-0.5" :class="!showGolden ? 'border-sky-400/70 text-zinc-100' : 'border-ink-line text-mist'" @click="showGolden = false">current</button>
             <button type="button" class="rounded-md border px-2 py-0.5" :class="showGolden ? 'border-sky-400/70 text-zinc-100' : 'border-ink-line text-mist'" @click="showGolden = true">golden</button>
             <span class="text-rose-300" x-text="snap ? snap.changed + ' changed cell(s)' : ''"></span>
+            <span class="text-amber-300" x-show="snap && snap.styleOnly" x-text="snap ? '(' + snap.styleOnly + ' style-only; not enforced in text mode)' : ''"></span>
           </div>
           <div class="term-svg cursor-crosshair overflow-auto bg-ink-term" @mousemove="hover($event)">
             <div x-html="svg"></div>

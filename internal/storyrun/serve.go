@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -389,7 +390,11 @@ func (s *Server) enqueue(w http.ResponseWriter, r *http.Request, update bool) {
 	var body struct {
 		Key string `json:"key"`
 	}
-	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		// A malformed body must not silently become "rerun everything".
+		http.Error(w, "malformed JSON body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	if update && strings.TrimSpace(body.Key) == "" {
 		http.Error(w, "update requires a story key", http.StatusBadRequest)
 		return

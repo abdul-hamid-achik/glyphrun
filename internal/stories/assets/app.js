@@ -330,7 +330,7 @@
 
       get hasDiff() {
         const p = this.snap;
-        return !!(p && p.golden === "changed" && p.diff && p.diff.length);
+        return !!(p && p.diff && p.diff.length);
       },
 
       get svg() {

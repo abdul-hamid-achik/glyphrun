@@ -6,6 +6,8 @@ description: The Glyphrun verifier vocabulary — screen, region, cell, cursor, 
 
 The v1 verifier vocabulary is `screen`, `region`, `cell`, `cursor`, `process`, `snapshot`, trusted `command`, `file`, `script`, `count`, `link`, and the process-telemetry `metrics` verifier (see [Process Telemetry](/process-telemetry) and `glyph docs process-telemetry --format md`).
 
+The `snapshot` verifier compares a captured screen with its committed golden under `snapshotRoot`. `mode` selects the contract: `text` (default) compares the normalized characters, so a golden stays portable across terminals that color differently; `cell` also compares every cell's style (color, bold, dim, italic, underline, reverse) against the committed `.json` grid, so a color regression fails the run; `json` additionally requires the cursor to match. Stories pick the mode with `goldenMode` (see [Stories](/stories)).
+
 Examples:
 
 ```yaml
