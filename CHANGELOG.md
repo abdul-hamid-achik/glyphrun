@@ -6,6 +6,8 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-01
+
 ### Added
 
 - The `snapshot` verifier now implements the `mode` the schema already declared: `text` (default), `cell` (characters and styles against the committed `.json` grid), and `json` (cells plus cursor). Stories select it with `defaults.goldenMode` / `stories[].goldenMode`.
@@ -121,7 +123,8 @@ follows Semantic Versioning for its pre-1.0 release line.
 - CI and release workflows reject private employer references in tracked
   release content.
 
-[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.16.1...v0.17.0
