@@ -17,6 +17,16 @@ func baseTime() time.Time {
 	return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 }
 
+func makeCompletedRunDir(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "run.json"), []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestPruneRuns_KeepsNewest is the canonical smoke test for the
 // retention engine. We stage 5 fake run directories with descending
 // modification times, ask the pruner to keep 2, and verify the 3
@@ -28,9 +38,7 @@ func TestPruneRuns_KeepsNewest(t *testing.T) {
 		// so the test is deterministic regardless of clock skew.
 		name := "2026-01-01T00-00-0" + strconv.Itoa(i) + "Z-r" + strconv.Itoa(i)
 		path := filepath.Join(dir, name)
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		makeCompletedRunDir(t, path)
 		// Newest = i=4, oldest = i=0. Set modtime accordingly.
 		mt := baseTime().Add(time.Duration(i) * time.Second)
 		if err := os.Chtimes(path, mt, mt); err != nil {
@@ -66,9 +74,7 @@ func TestPruneRuns_NoOpWhenUnderLimit(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 3; i++ {
 		path := filepath.Join(dir, "2026-01-01T00-00-0"+strconv.Itoa(i)+"Z-r")
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		makeCompletedRunDir(t, path)
 	}
 	report, err := PruneRuns(dir, 10, ArchiveConfig{})
 	if err != nil {
@@ -79,6 +85,34 @@ func TestPruneRuns_NoOpWhenUnderLimit(t *testing.T) {
 	}
 	if report.Kept != 3 {
 		t.Errorf("expected kept=3, got %d", report.Kept)
+	}
+}
+
+func TestPruneRunsPreservesIncompleteRun(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 4; i++ {
+		path := filepath.Join(dir, "2026-01-01T00-00-0"+strconv.Itoa(i)+"Z-r")
+		if i == 0 {
+			if err := os.MkdirAll(path, 0o755); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			makeCompletedRunDir(t, path)
+		}
+		mt := baseTime().Add(time.Duration(i) * time.Second)
+		if err := os.Chtimes(path, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report, err := PruneRuns(dir, 2, ArchiveConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Pruned != 1 {
+		t.Fatalf("pruned = %d, want only the completed run outside the window", report.Pruned)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "2026-01-01T00-00-00Z-r")); err != nil {
+		t.Fatalf("incomplete run was removed: %v", err)
 	}
 }
 
@@ -172,9 +206,7 @@ func stageRunDirsForArchive(t *testing.T, root string, n int) {
 	for i := 0; i < n; i++ {
 		name := "2026-01-01T00-00-0" + strconv.Itoa(i) + "Z-r" + strconv.Itoa(i)
 		path := filepath.Join(root, name)
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			t.Fatal(err)
-		}
+		makeCompletedRunDir(t, path)
 		mt := baseTime().Add(time.Duration(i) * time.Second)
 		if err := os.Chtimes(path, mt, mt); err != nil {
 			t.Fatal(err)

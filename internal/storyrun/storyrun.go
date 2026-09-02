@@ -358,6 +358,19 @@ func Run(ctx context.Context, opts Options, plan *Plan) (Report, error) {
 	}
 	close(jobs)
 	wg.Wait()
+	if retention, pruneErr := runner.PruneRetention(plan.ArtifactRoot, plan.Runtime.Config.Retention); pruneErr != nil {
+		log.Warn("stories: retention prune failed", "err", pruneErr)
+	} else {
+		if retention.Pruned > 0 {
+			log.Debug("stories: retention pruned", "pruned", retention.Pruned, "kept", retention.Kept)
+		}
+		if retention.Archived > 0 {
+			log.Info("stories: retention archived", "archived", retention.Archived, "command", plan.Runtime.Config.Retention.Archive.Command)
+		}
+		for _, message := range retention.ArchiveErrors {
+			log.Warn("stories: retention archive error", "message", message)
+		}
+	}
 
 	report.Results = results
 	for _, r := range results {
@@ -423,6 +436,7 @@ func runOne(ctx context.Context, opts Options, plan *Plan, job Job) Result {
 		Environment:     opts.Environment,
 		ArtifactRoot:    opts.ArtifactRoot,
 		UpdateSnapshots: update,
+		DeferRetention:  true,
 		Listener:        opts.Listener,
 	}
 	if job.Parsed != nil {

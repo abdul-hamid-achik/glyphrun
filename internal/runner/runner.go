@@ -113,7 +113,10 @@ type Options struct {
 	Environment     string
 	ArtifactRoot    string
 	UpdateSnapshots bool
-	Listener        ProgressListener
+	// DeferRetention leaves pruning to an orchestrator that still needs the
+	// completed run directory, such as storyrun while it copies its index.
+	DeferRetention bool
+	Listener       ProgressListener
 	// Procmon enables opt-in process telemetry of the spawned target via the
 	// `monitor` CLI. When nil, no sampling runs and no process artifacts are
 	// written — the feature is zero-cost for runs that don't opt in.
@@ -150,6 +153,9 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	runtime, err := config.LoadRuntime(opts.SpecPath, opts.ConfigPath, opts.Environment)
 	if err != nil {
 		return parseErrorResult(opts.SpecPath, err), err
+	}
+	if opts.DeferRetention {
+		runtime.Config.Retention.KeepRuns = 0
 	}
 	var parse spec.ParseResult
 	if opts.Parsed != nil {
@@ -2110,6 +2116,15 @@ func archiveConfigFromConfig(c config.ArchiveConfig) artifacts.ArchiveConfig {
 	return out
 }
 
+// PruneRetention applies a resolved retention configuration to an artifact
+// root. Batch orchestrators call it after consuming every completed run.
+func PruneRetention(artifactRoot string, retention config.Retention) (artifacts.CleanReport, error) {
+	if retention.KeepRuns <= 0 || strings.TrimSpace(artifactRoot) == "" {
+		return artifacts.CleanReport{}, nil
+	}
+	return artifacts.PruneRuns(artifactRoot, retention.KeepRuns, archiveConfigFromConfig(retention.Archive))
+}
+
 func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcomes []artifacts.OutcomeResult, diagnostic string, errorKind artifacts.ErrorKind, exitCodeOverride ...int) artifacts.RunResult {
 	diagnostic = s.redactor.Text(diagnostic)
 	if outcomes == nil {
@@ -2269,9 +2284,8 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	if s.writer != nil {
 		artifactRoot = filepath.Dir(s.writer.RunDir)
 	}
-	if keepRuns := s.runtime.Config.Retention.KeepRuns; keepRuns > 0 && artifactRoot != "" {
-		archive := archiveConfigFromConfig(s.runtime.Config.Retention.Archive)
-		if report, pruneErr := artifacts.PruneRuns(artifactRoot, keepRuns, archive); pruneErr != nil {
+	if s.runtime.Config.Retention.KeepRuns > 0 && artifactRoot != "" {
+		if report, pruneErr := PruneRetention(artifactRoot, s.runtime.Config.Retention); pruneErr != nil {
 			_ = s.writer.AppendEvent(event("retention.error", "", pruneErr.Error()))
 			log.Warn("retention prune failed", "err", pruneErr)
 		} else {
@@ -2280,8 +2294,9 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 				log.Debug("retention pruned", "pruned", report.Pruned, "kept", report.Kept)
 			}
 			if report.Archived > 0 {
-				_ = s.writer.AppendEvent(event("retention.archived", "", fmt.Sprintf("archived %d run dir(s) to %s", report.Archived, archive.Command)))
-				log.Info("retention archived", "archived", report.Archived, "command", archive.Command)
+				command := s.runtime.Config.Retention.Archive.Command
+				_ = s.writer.AppendEvent(event("retention.archived", "", fmt.Sprintf("archived %d run dir(s) to %s", report.Archived, command)))
+				log.Info("retention archived", "archived", report.Archived, "command", command)
 			}
 			for _, m := range report.ArchiveErrors {
 				_ = s.writer.AppendEvent(event("retention.archive.error", "", m))

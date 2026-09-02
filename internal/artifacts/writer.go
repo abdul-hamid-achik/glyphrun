@@ -66,13 +66,14 @@ func (w *Writer) ResolvePath(rel string) (string, error) {
 }
 
 func (w *Writer) WriteRun(result RunResult) error {
-	if err := w.manager.WriteJSON("run.json", result); err != nil {
-		return err
-	}
 	if err := w.manager.WriteYAML("run.yaml", result); err != nil {
 		return err
 	}
-	return w.manager.WriteText("run.md", RenderRunMarkdown(result))
+	if err := w.manager.WriteText("run.md", RenderRunMarkdown(result)); err != nil {
+		return err
+	}
+	// PruneRuns treats run.json as the completion marker, so publish it last.
+	return w.manager.WriteJSON("run.json", result)
 }
 
 // WriteReplay writes the exact-replay manifest (SPEC §7.3) as replay.json,

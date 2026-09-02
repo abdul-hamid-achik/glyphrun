@@ -183,6 +183,48 @@ func TestRunBuildsOnceCapturesGoldensAndIndexes(t *testing.T) {
 	}
 }
 
+func TestRunDefersRetentionUntilEveryStoryIsIndexed(t *testing.T) {
+	dir, cfg := fixture(t)
+	configData, err := os.ReadFile(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configData = append(configData, []byte("retention:\n  keepRuns: 1\n")...)
+	if err := os.WriteFile(cfg, configData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{Paths: []string{dir}, ConfigPath: cfg, Parallel: 3}
+	plan, err := Discover(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Run(context.Background(), opts, plan); err != nil {
+		t.Fatal(err)
+	}
+	index := stories.ReadIndex(plan.StoriesRoot)
+	if len(index) != 3 {
+		t.Fatalf("indexed stories = %d, want 3", len(index))
+	}
+	for name, entry := range index {
+		if len(entry.Screens) != 2 {
+			t.Fatalf("%s screens = %v, want final and golden snapshot", name, entry.Screens)
+		}
+	}
+	entries, err := os.ReadDir(plan.ArtifactRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runDirs int
+	for _, entry := range entries {
+		if entry.IsDir() {
+			runDirs++
+		}
+	}
+	if runDirs != 1 {
+		t.Fatalf("retained run dirs = %d, want 1", runDirs)
+	}
+}
+
 func TestBuildFailureSurfacesOutput(t *testing.T) {
 	dir, cfg := fixture(t)
 	data, _ := os.ReadFile(filepath.Join(dir, "stories.yml"))
