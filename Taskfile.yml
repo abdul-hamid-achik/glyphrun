@@ -112,11 +112,23 @@ tasks:
       - '{{.BIN}} run examples/specs/count_cells.yml --format md'
 
   example:stories:
-    desc: Run the example TUI stories harness and print the catalog
+    desc: Build the example harness once, run every story, and print the catalog
     deps: [build]
     cmds:
-      - '{{.BIN}} run examples/specs/story_list_empty.yml examples/specs/story_list_rows.yml examples/specs/story_list_error.yml examples/specs/story_agent_empty.yml examples/specs/story_agent_messages.yml examples/specs/story_agent_streaming.yml examples/specs/story_agent_tool.yml examples/specs/story_agent_error.yml --format md'
-      - '{{.BIN}} stories examples/specs --format md'
+      - '{{.BIN}} stories run examples/stories.yml --format md'
+      - '{{.BIN}} stories examples --format md'
+
+  example:stories:sh:
+    desc: Run the POSIX shell story harness (no Go toolchain needed by the harness)
+    deps: [build]
+    cmds:
+      - '{{.BIN}} stories run examples/stories-sh --format md'
+
+  example:stories:serve:
+    desc: Serve the live stories catalog with watch mode
+    deps: [build]
+    cmds:
+      - '{{.BIN}} stories serve examples --watch'
 
   context:
     deps: [build]

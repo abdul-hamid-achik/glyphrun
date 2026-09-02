@@ -1,0 +1,5 @@
+glyphrun stories in plain sh
+
+  warning: no toolchain was harmed
+
+q quit

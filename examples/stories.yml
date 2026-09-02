@@ -1,0 +1,86 @@
+# Example stories manifest: one Bubble Tea harness, eight isolated states.
+#   task example:stories                 build + run + catalog
+#   ./bin/glyph stories serve --watch    live catalog on http://127.0.0.1:4649
+version: 1
+kind: stories
+name: examples
+
+harness:
+  cmd: ["./examples/apps/stories/stories"]
+  cwd: "."
+  build: "go build -o ./examples/apps/stories/stories ./examples/stories"
+  buildTimeoutMs: 60000
+  watch: ["examples/stories"]
+
+defaults:
+  terminal:
+    cols: 80
+    rows: 24
+    profile: xterm-256color
+    alternateScreen: require
+  readyTimeoutMs: 5000
+  quit: "q"
+  golden: true
+
+stories:
+  - id: list/empty
+    intent: the list story renders an empty inbox with the title at the origin.
+    tags: [empty]
+    ready: { contains: "Inbox" }
+    outcomes:
+      - id: title_at_origin
+        description: the title starts at cell 0,0
+        verify:
+          cell: { x: 0, y: 0, char: "I" }
+      - id: empty_copy
+        description: the empty state copy is visible
+        verify:
+          region: { x: 0, y: 2, width: 80, height: 3, contains: "(empty)" }
+
+  - id: list/rows
+    intent: the list story renders three inbox rows with the first item selected.
+    tags: [rows]
+    ready: { contains: "hello" }
+    outcomes:
+      - id: selected_marker
+        description: the first row is marked selected
+        verify:
+          region: { x: 0, y: 2, width: 20, height: 1, contains: "> hello" }
+    variants:
+      - name: wide
+        terminal: { cols: 120, rows: 40 }
+
+  - id: list/error
+    intent: the list story shows a load failure with a retry hint.
+    tags: [error]
+    ready: { contains: "failed to load" }
+
+  - id: agent/empty
+    intent: the agent story renders an empty inbox-layout session with a focused composer.
+    tags: [empty]
+    ready: { contains: "No turns yet" }
+
+  - id: agent/messages
+    intent: the agent story renders a user turn and a glyph reply that names a cell.
+    tags: [messages]
+    ready: { contains: "Cell 0,0" }
+
+  - id: agent/streaming
+    intent: the agent story renders a partial glyph reply while tokens are in flight.
+    tags: [streaming]
+    ready: { contains: "20 wide" }
+    outcomes:
+      - id: streaming_status
+        description: the header status word is streaming
+        verify:
+          region: { x: 60, y: 0, width: 20, height: 1, contains: "streaming" }
+
+  - id: agent/tool
+    intent: the agent story shows a glyph run tool call in flight.
+    tags: [tool]
+    ready: { contains: "glyph run" }
+
+  - id: agent/error
+    intent: the agent story surfaces a PTY failure with a retry hint.
+    tags: [error]
+    ready: { contains: "PTY closed" }

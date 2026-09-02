@@ -1,0 +1,24 @@
+glyph  inbox layout                                                      running
+────────────────────────────────────────────────────────────────────────────────
+you
+  run the empty inbox story
+
+tool  glyph run                                                          running
+  examples/specs/story_list_empty.yml
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+waiting on glyph run
+esc cancel · q quit

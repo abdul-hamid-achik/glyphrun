@@ -102,7 +102,13 @@ func (e targetExitedError) Error() string {
 }
 
 type Options struct {
-	SpecPath        string
+	// SpecPath is the spec file to run. When Parsed is set it only anchors
+	// config discovery and relative-path resolution (e.g. a stories manifest).
+	SpecPath string
+	// Parsed is an already-parsed spec to run instead of reading SpecPath.
+	// Stories manifests expand to specs in memory and run them this way; the
+	// runner itself stays free of manifest knowledge.
+	Parsed          *spec.ParseResult
 	ConfigPath      string
 	Environment     string
 	ArtifactRoot    string
@@ -145,9 +151,20 @@ func RunSpec(ctx context.Context, opts Options) (artifacts.RunResult, error) {
 	if err != nil {
 		return parseErrorResult(opts.SpecPath, err), err
 	}
-	parse, err := spec.ParseFile(opts.SpecPath, runtime.SpecParseOptions())
-	if err != nil {
-		return parseErrorResult(opts.SpecPath, err), err
+	var parse spec.ParseResult
+	if opts.Parsed != nil {
+		// A caller (stories manifest expansion) already produced the spec in
+		// memory. The runner treats it exactly like a parsed file: Path is
+		// the source document relative paths resolve against.
+		parse = *opts.Parsed
+		if parse.Path == "" {
+			parse.Path, _ = filepath.Abs(opts.SpecPath)
+		}
+	} else {
+		parse, err = spec.ParseFile(opts.SpecPath, runtime.SpecParseOptions())
+		if err != nil {
+			return parseErrorResult(opts.SpecPath, err), err
+		}
 	}
 	runtime.SpecPath = parse.Path
 	resolved := parse.Resolved
@@ -1753,14 +1770,19 @@ func (s *runState) writeCommittedSnapshot(name string, snapshot terminal.ScreenS
 }
 
 func (s *runState) committedSnapshotTextPath(name string) string {
-	root := s.runtime.Config.SnapshotRoot
+	return CommittedSnapshotPath(s.runtime, s.spec.Name, name)
+}
+
+// CommittedSnapshotPath is the golden text file the `snapshot` verifier
+// compares against for the named snapshot of a spec. The JSON sibling (same
+// path with .json) holds the full cell grid. Exposed so callers that schedule
+// runs (stories) can tell whether a golden exists before deciding to create it.
+func CommittedSnapshotPath(rt config.Runtime, specName, snapshotName string) string {
+	root := rt.Config.SnapshotRoot
 	if root == "" {
 		root = config.DefaultSnapshotRoot
 	}
-	if !filepath.IsAbs(root) {
-		root = filepath.Join(s.runtime.ProjectRoot, root)
-	}
-	return filepath.Join(root, sanitize(s.spec.Name), sanitize(name)+".txt")
+	return artifacts.CommittedSnapshotPath(rt.ProjectRoot, root, specName, snapshotName)
 }
 
 func (s *runState) runShellCommand(ctx context.Context, command string, cwd string, timeoutMS int) error {
@@ -2695,21 +2717,4 @@ func makeRunID(t time.Time, name string) string {
 	return t.UTC().Format("2006-01-02T15-04-05Z") + "-" + strconv.FormatInt(t.UnixNano()%1e9, 36) + "-" + sanitize(name)
 }
 
-func sanitize(name string) string {
-	name = strings.TrimSpace(strings.ToLower(name))
-	if name == "" {
-		return "run"
-	}
-	var b strings.Builder
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '-', r == '_', r == '.':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('-')
-		}
-	}
-	return strings.Trim(b.String(), "-")
-}
+func sanitize(name string) string { return artifacts.SanitizeRunName(name) }

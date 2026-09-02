@@ -92,7 +92,7 @@ Run ` + "`glyph mcp`" + ` to start the stdio MCP server.
 
 The server is dual-era: legacy clients still handshake with ` + "`initialize`" + ` (` + "`2024-11-05`" + ` / ` + "`2025-11-25`" + `). Modern clients (` + "`2026-07-28`" + `) can call ` + "`server/discover`" + ` first. ` + "`tools/list`" + ` supports a ` + "`query`" + ` filter. ` + "`glyph_search_tools`" + ` is the catalog search tool so hosts can defer loading full schemas and still find ` + "`glyph_run`" + `, repair, inventory, and the rest on demand.
 
-The current server exposes tools for search, explain, docs, doctor, list, stories catalog (` + "`glyph_stories`" + `), spec verification, spec scaffolding (including ` + "`kind: story`" + `), runs, snapshot updates, snapshot inventory, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), step repair with optional ` + "`verify`" + ` (` + "`glyph_repair`" + `), affected-spec selection (` + "`glyph_affected_specs`" + `), and artifact pruning (` + "`glyph_clean`" + `).
+The current server exposes tools for search, explain, docs, doctor, list, stories catalog (` + "`glyph_stories`" + `) and stories run (` + "`glyph_stories_run`" + `), spec verification, spec scaffolding (including ` + "`kind: story`" + `, which now prints a manifest), runs, snapshot updates, snapshot inventory, diffs, context lookup, screen rendering (` + "`glyph_render`" + `), step repair with optional ` + "`verify`" + ` (` + "`glyph_repair`" + `), affected-spec selection (` + "`glyph_affected_specs`" + `), and artifact pruning (` + "`glyph_clean`" + `).
 `,
 	"configuration": `# Configuration
 
@@ -533,15 +533,19 @@ outcomes:
 `,
 	"stories": `# Stories
 
-Glyphrun stories are regular specs, usually tagged ` + "`story`" + `, whose ` + "`target.cmd`" + ` mounts an isolated TUI state (a story harness binary). Glyphrun stays black-box: it does not import Bubble Tea into the runner.
+Stories are Storybook for the terminal: one harness binary, many isolated TUI states, black-box (no Bubble Tea or other TUI kit import in Glyphrun). A ` + "`stories.yml`" + ` manifest (` + "`kind: stories`" + `) declares ` + "`harness.{cmd,cwd,env,build,buildTimeoutMs,watch}`" + ` and a list of ` + "`stories`" + `; ` + "`glyph stories run`" + ` expands each story (times its ` + "`variants`" + `) into a regular spec in memory, so the runner, verifiers, goldens, and artifacts stay identical to a hand-written spec.
 
-` + "`glyph stories init --lang go`" + ` writes a Bubble Tea v2 harness under ` + "`stories/`" + ` and a stamped spec under ` + "`specs/stories/`" + `. ` + "`glyph spec scaffold --kind story`" + ` prints only the YAML.
+Per story: ` + "`id`" + ` (feature = segment before the first ` + "`/`" + `, snapshot name = segment after the last ` + "`/`" + `), plus optional ` + "`feature, intent, tags, args, env, terminal, ready, readyTimeoutMs, quit, golden, steps, outcomes, variants`" + `. Generated spec name ` + "`story_<id with / -> _>`" + ` (` + "`__<variant>`" + ` suffix for a variant). Generated steps: wait ` + "`ready`" + ` (or 300ms idle) -> the story's own ` + "`steps`" + ` -> ` + "`snapshot`" + ` -> press ` + "`quit`" + ` -> wait exit 0. Generated outcomes: ` + "`golden`" + ` (snapshot match) when golden is true, ` + "`ready`" + ` (screen match) when set, then the story's own ` + "`outcomes`" + `, else a fallback ` + "`mounted`" + ` process outcome. Tags always include ` + "`story`" + ` and ` + "`variant:<name>`" + ` for variants.
 
-` + "`glyph stories`" + ` lists those specs joined to the newest run. ` + "`glyph stories --html`" + ` is a self-contained inspect page (Alpine.js + Tailwind-shaped utility CSS, no CDN). ` + "`glyph stories --tui`" + ` is a two-pane catalog in the host terminal (sidebar + preview, fills the window). ` + "`glyph render --grid --rulers --spaces`" + ` inspects one snapshot as SVG.
+` + "`glyph stories init --lang go|sh`" + ` scaffolds a harness (Bubble Tea v2, or a POSIX shell script needing no toolchain) plus a starter ` + "`stories.yml`" + `. ` + "`glyph spec scaffold --kind story`" + ` prints a starter manifest.
 
-Default ` + "`screens/final.svg`" + ` from ` + "`glyph run`" + ` does not include overlays, so CI screenshots stay unchanged.
+` + "`glyph stories run [--watch] [--update] [--strict] [--only <key>] [--parallel N]`" + ` builds each manifest's harness once, runs every story in parallel, and records the newest result under ` + "`storiesRoot`" + ` (default ` + "`.glyphrun/stories`" + `) so the catalog survives ` + "`retention.keepRuns`" + ` pruning. A missing golden is captured on the first run; ` + "`--strict`" + ` fails instead. ` + "`glyph stories serve [--watch] [--addr] [--no-run]`" + ` serves the live inspect page with SSE updates, rerun, and accept-golden from the browser.
 
-The repo ships a Bubble Tea harness under ` + "`examples/stories/`" + ` with shared components. Feature ` + "`list`" + ` has empty / rows / error; feature ` + "`agent`" + ` is a chat session (empty, messages, streaming, tool, error). Specs live in ` + "`examples/specs/story_*.yml`" + `. Run ` + "`task example:stories`" + `, then ` + "`glyph stories examples/specs --html`" + ` or ` + "`--tui`" + `. Raise ` + "`retention.keepRuns`" + ` so a batch of stories is not pruned down to the last few.
+` + "`glyph stories`" + ` (no subcommand) lists manifest stories and specs tagged ` + "`story`" + ` joined to their newest result and golden status (match/changed/missing). ` + "`glyph stories --html`" + ` renders SVGs client-side from the cell grid, with modes plain/grid/spaces/diff (keys 1-4), ` + "`g`" + ` toggles golden vs current in diff mode, ` + "`/`" + ` focuses the filter box; live mode adds rerun/accept buttons (` + "`r`" + `/` + "`a`" + `). ` + "`glyph stories --tui`" + ` is a two-pane terminal catalog: ` + "`j`" + `/` + "`k`" + ` stories, ` + "`[`" + `/` + "`]`" + ` snapshots, ` + "`s`" + ` spaces, ` + "`d`" + ` diff highlight, ` + "`o`" + ` golden view, ` + "`r`" + ` rulers, ` + "`q`" + ` quit; sidebar marks ✓/±/? for match/changed/missing.
+
+Spec files tagged ` + "`story`" + ` are still picked up directly by all three subcommands, no manifest required.
+
+The repo ships ` + "`examples/stories.yml`" + ` (a Bubble Tea harness, 8 stories, one ` + "`wide`" + ` variant) and ` + "`examples/stories-sh/`" + ` (a POSIX shell harness). Run ` + "`task example:stories`" + ` or ` + "`task example:stories:sh`" + `, then ` + "`glyph stories examples --html`" + `, ` + "`--tui`" + `, or ` + "`task example:stories:serve`" + `. Raise ` + "`retention.keepRuns`" + ` so a batch of stories is not pruned down to the last few.
 `,
 	"github": `# GitHub Integration
 

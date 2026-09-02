@@ -1,0 +1,30 @@
+# Stories from a POSIX shell harness: no Go, no Bubble Tea, just escape codes.
+version: 1
+kind: stories
+name: sh
+
+harness:
+  cmd: ["sh", "./examples/stories-sh/story.sh"]
+  cwd: "."
+  watch: ["examples/stories-sh"]
+
+defaults:
+  terminal:
+    cols: 60
+    rows: 10
+    profile: xterm-256color
+    alternateScreen: require
+  quit: "q"
+
+stories:
+  - id: banner/hello
+    intent: the shell harness paints a bold title and a plain greeting.
+    ready: { contains: "hello from a POSIX shell harness" }
+    outcomes:
+      - id: bold_title
+        description: the title cell is bold
+        verify:
+          cell: { x: 0, y: 0, char: "g", style: { bold: true } }
+  - id: banner/warn
+    intent: the shell harness paints a yellow warning line.
+    ready: { contains: "warning:" }

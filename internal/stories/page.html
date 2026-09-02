@@ -2,39 +2,58 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>glyph stories</title>
   <style>{{.CSS}}</style>
 </head>
 <body class="h-screen bg-ink text-zinc-200 font-mono text-[13px] leading-snug antialiased"
       x-data="catalog" x-cloak @keydown.window="onKey($event)">
   <div class="grid h-full grid-cols-[280px_1fr]">
-    <aside class="overflow-auto border-r border-ink-line bg-ink-panel px-4 py-5">
-      <p class="mb-5 text-[11px] font-semibold uppercase tracking-[0.16em] text-mist">glyph stories</p>
-      <template x-for="g in groups" :key="g.feature">
-        <div>
-          <div class="mb-1.5 mt-4 text-[10px] uppercase tracking-[0.12em] text-mist" x-text="g.feature"></div>
-          <template x-for="item in g.items" :key="item.i">
-            <button type="button"
-                    class="mb-1 w-full rounded-md border px-2.5 py-2 text-left"
-                    :class="si === item.i ? 'border-sky-900/80 bg-slate-800/80 text-sky-300' : 'border-transparent hover:bg-slate-900/80'"
-                    @click="select(item.i, 0)">
-              <div x-text="item.s.name"></div>
-              <div class="mt-0.5 text-[11px] text-mist">
-                <span x-text="item.s.status"></span>
-                <span x-show="item.s.snapshots && item.s.snapshots.length" x-text="' · ' + item.s.snapshots.length + ' snap'"></span>
-              </div>
-            </button>
-          </template>
-        </div>
-      </template>
+    <aside class="flex min-h-0 flex-col border-r border-ink-line bg-ink-panel">
+      <div class="border-b border-ink-line px-4 py-4">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-mist">glyph stories</p>
+        <p class="mt-1.5 text-[11px] text-mist" x-text="summaryLine"></p>
+        <span class="mt-1.5 inline-block rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-widest"
+              :class="live ? (connected ? 'border-emerald-700 text-emerald-300' : 'border-amber-700 text-amber-300') : 'border-ink-line text-mist'"
+              x-text="live ? (connected ? 'live' : 'reconnecting') : 'static'"></span>
+      </div>
+      <div class="px-4 py-2">
+        <input type="search" placeholder="filter stories…" class="w-full rounded-md border border-ink-line bg-ink px-2.5 py-1.5 text-[12px] text-zinc-200"
+               x-model="query" @keydown.stop>
+      </div>
+      <div class="min-h-0 flex-1 overflow-auto px-4 pb-5">
+        <template x-for="g in groups" :key="g.feature">
+          <div>
+            <div class="mb-1.5 mt-4 text-[10px] uppercase tracking-[0.12em] text-mist" x-text="g.feature"></div>
+            <template x-for="item in g.items" :key="item.s.key">
+              <button type="button"
+                      class="mb-1 w-full rounded-md border px-2.5 py-2 text-left"
+                      :class="si === item.i ? 'border-sky-900/80 bg-slate-800/80 text-sky-300' : 'border-transparent hover:bg-slate-900/80'"
+                      @click="select(item.i, 0)">
+                <div class="flex items-center gap-2">
+                  <i class="block h-2 w-2 rounded-full" :class="dotClass(item.s)"></i>
+                  <span class="min-w-0 flex-1 truncate" x-text="label(item.s)"></span>
+                </div>
+                <div class="mt-0.5 flex items-center gap-1.5 text-[11px] text-mist">
+                  <span x-text="item.s.status"></span>
+                  <span x-show="item.s.golden === 'changed'" class="text-rose-300" x-text="'· ' + changedCount(item.s) + ' cells'"></span>
+                  <span x-show="item.s.golden === 'missing'" class="text-amber-300">· no golden</span>
+                </div>
+              </button>
+            </template>
+          </div>
+        </template>
+        <p class="mt-6 text-[11px] text-mist" x-show="!groups.length">no stories match</p>
+      </div>
     </aside>
     <main class="grid min-h-0 min-w-0 grid-rows-[auto_1fr_auto]">
       <nav class="flex flex-wrap items-center gap-2.5 border-b border-ink-line bg-ink-panel px-5 py-3">
         <div class="flex overflow-hidden rounded-lg border border-ink-line">
-          <template x-for="m in ['plain','grid','spaces']" :key="m">
+          <template x-for="m in modes" :key="m.id">
             <button type="button" class="px-3 py-1.5"
-                    :class="mode === m ? 'bg-slate-800 text-sky-300' : 'text-mist'"
-                    @click="mode = m" x-text="m"></button>
+                    :class="mode === m.id ? 'bg-slate-800 text-sky-300' : 'text-mist'"
+                    :disabled="m.id === 'diff' && !hasDiff"
+                    @click="mode = m.id" x-text="m.label"></button>
           </template>
         </div>
         <div class="flex flex-wrap gap-1.5">
@@ -42,8 +61,22 @@
             <button type="button"
                     class="rounded-full border px-2.5 py-1 text-[12px]"
                     :class="ni === i ? 'border-sky-400/70 text-zinc-100' : 'border-ink-line bg-slate-900 text-mist'"
-                    @click="ni = i" x-text="p.name"></button>
+                    @click="ni = i">
+              <span x-text="p.name"></span>
+              <span x-show="p.golden === 'changed'" class="text-rose-300" x-text="' ±' + p.changed"></span>
+              <span x-show="p.golden === 'match'" class="text-emerald-300"> ✓</span>
+            </button>
           </template>
+        </div>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-1.5" x-show="live">
+          <button type="button" class="rounded-md border border-ink-line px-2.5 py-1 text-[12px] text-mist hover:bg-slate-900/80"
+                  :disabled="busy" @click="rerun(current && current.key)">rerun</button>
+          <button type="button" class="rounded-md border border-ink-line px-2.5 py-1 text-[12px] text-mist hover:bg-slate-900/80"
+                  :disabled="busy" @click="rerun('')">rerun all</button>
+          <button type="button" class="rounded-md border border-amber-700 px-2.5 py-1 text-[12px] text-amber-300 hover:bg-slate-900/80"
+                  x-show="current && (current.golden === 'changed' || current.golden === 'missing')"
+                  :disabled="busy" @click="accept(current && current.key)">accept golden</button>
         </div>
       </nav>
       <div class="flex items-start justify-center overflow-auto p-7">
@@ -58,6 +91,12 @@
             <span class="flex-1 text-center text-xs text-mist" x-text="windowTitle"></span>
             <span class="rounded-full border border-ink-line px-2 py-0.5 text-[11px] text-mist" x-text="size"></span>
           </div>
+          <div class="flex items-center gap-2 border-b border-ink-line px-3.5 py-1.5 text-[11px]" x-show="mode === 'diff'">
+            <span class="text-mist">showing</span>
+            <button type="button" class="rounded-md border px-2 py-0.5" :class="!showGolden ? 'border-sky-400/70 text-zinc-100' : 'border-ink-line text-mist'" @click="showGolden = false">current</button>
+            <button type="button" class="rounded-md border px-2 py-0.5" :class="showGolden ? 'border-sky-400/70 text-zinc-100' : 'border-ink-line text-mist'" @click="showGolden = true">golden</button>
+            <span class="text-rose-300" x-text="snap ? snap.changed + ' changed cell(s)' : ''"></span>
+          </div>
           <div class="term-svg cursor-crosshair overflow-auto bg-ink-term" @mousemove="hover($event)">
             <div x-html="svg"></div>
           </div>
@@ -67,7 +106,7 @@
         <template x-for="row in inspectRows" :key="row.k">
           <div class="bg-ink-panel px-3.5 py-2.5">
             <div class="mb-1 text-[10px] uppercase tracking-widest text-mist" x-text="row.k"></div>
-            <div x-text="row.v"></div>
+            <div class="truncate" x-text="row.v" :title="row.v"></div>
           </div>
         </template>
       </section>

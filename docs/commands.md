@@ -77,39 +77,76 @@ glyph list specs/ --feature onboarding --tag smoke --owner payments --format jso
 
 ### `glyph stories [path...]`
 
-Catalog TUI stories (specs, usually tagged `story`) joined to their newest run's snapshots. Default path is `.`. If any spec is tagged `story`, untagged specs are omitted unless `--all` is set.
+Catalog TUI stories — stories.yml manifests (expanded times their variants) and specs tagged `story` — joined to their newest result and golden status (`match`/`changed`/`missing`/`none`). Default path is `.`. If any manifest or tagged spec is found, untagged specs are omitted unless `--all` is set.
 
 ```bash
 glyph stories --format md
-glyph stories specs/ --html --out stories.html
+glyph stories examples --html --out /tmp/glyph-stories.html
 glyph stories --tui
 glyph stories --format json --all
-glyph stories examples/specs --html --out /tmp/glyph-stories.html
 ```
 
 | Flag | Description |
 | --- | --- |
-| `--feature <name>` | Filter to specs whose `metadata.feature` matches. |
-| `--tag <name>` | Filter to specs whose `metadata.tags` includes the value. |
-| `--owner <name>` | Filter to specs whose `metadata.owner` matches. |
+| `--feature <name>` | Filter to stories whose feature matches. |
+| `--tag <name>` | Filter to stories whose tags include the value. |
+| `--owner <name>` | Filter to stories whose owner matches. |
 | `--all` | Include specs that are not tagged `story`. |
-| `--html` | Write a self-contained inspect page. Requires `--format md`. |
-| `--tui` | Browse snapshots in the host terminal (requires a TTY). |
-| `--out <path>` | HTML output path. `-` writes raw HTML to stdout. |
+| `--html` | Write a self-contained inspect page (client-side SVG rendering, modes plain/grid/spaces/diff, keys `1`-`4`). Requires `--format md`. |
+| `--tui` | Browse the catalog in the host terminal (requires a TTY). `j`/`k` stories, `[`/`]` snapshots, `s` spaces, `d` diff highlight, `o` golden view, `r` rulers, `q` quit. |
+| `--out <path>` | HTML output path (default `<storiesRoot>/stories.html`). `-` writes raw HTML to stdout. |
 
 `--html` and `--tui` with `--format json|yaml` exit `2`. JSON/YAML never emit HTML or open a TUI.
 
+### `glyph stories run [path...]`
+
+Discover manifests (`stories.yml`, `stories.yaml`, `*.stories.yml`/`.yaml`, or an explicit file with `kind: stories`) plus specs tagged `story`, build each manifest's `harness.build` exactly once, run every story in parallel, and record the newest result under `storiesRoot` (default `.glyphrun/stories`) so the catalog survives `retention.keepRuns` pruning. A story whose golden is missing captures it on this run; `--strict` fails instead. `--watch` re-runs on manifest, `harness.watch`, and story-spec-directory changes.
+
+```bash
+glyph stories run
+glyph stories run --only list/rows --only agent/
+glyph stories run --strict --format json
+glyph stories run --watch
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--parallel <N>` | `4` | Stories to run concurrently. |
+| `--update` | off | Rewrite every golden with the captured screen. |
+| `--strict` | off | Fail stories whose golden is missing instead of creating it. |
+| `--watch` | off | Re-run on manifest/harness/spec changes (interactive; `--format md` only). |
+| `--watch-path <path>` | none | Additional file or directory to watch (repeatable); implies `--watch`. |
+| `--only <selector>` | none | Run only matching stories: key (`list/rows`, `list/rows@wide`), spec name, or feature (repeatable; a trailing `/` selects a feature prefix). |
+| `--progress <auto\|always\|never>` | `auto` | Live progress to stderr. |
+
+### `glyph stories serve [path...]`
+
+Serve the live inspect page on a loopback address: the catalog refreshes over server-sent events after every run, and the page can rerun one story, rerun all, or accept a golden. Stories run once on start unless `--no-run` is set.
+
+```bash
+glyph stories serve --watch
+```
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--addr <host:port>` | `127.0.0.1:4649` | Listen address (loopback by default). |
+| `--watch` | off | Re-run stories when manifests, harness sources, or story specs change. |
+| `--watch-path <path>` | none | Additional file or directory to watch (repeatable); implies `--watch`. |
+| `--parallel <N>` | `4` | Stories to run concurrently. |
+| `--no-run` | off | Serve the existing index without running stories on start. |
+
 ### `glyph stories init [dir]`
 
-Write a Go Bubble Tea v2 story harness (`stories/`) and a stamped starter spec (`specs/stories/list_empty.yml`). Existing files are skipped.
+Scaffold a story harness and a `stories.yml` manifest. `--lang go` writes a Bubble Tea v2 harness; `--lang sh` writes a POSIX shell harness that needs no toolchain. Existing files are skipped.
 
 ```bash
 glyph stories init --lang go --format md
+glyph stories init --lang sh
 ```
 
 ### `glyph spec scaffold --kind story`
 
-Print only the starter story YAML to stdout (no harness files).
+Print a starter `stories.yml` manifest to stdout (not a bare spec) — see [Stories](/stories).
 
 ## Running specs
 

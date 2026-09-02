@@ -1,0 +1,24 @@
+glyph  inbox layout                                                         idle
+────────────────────────────────────────────────────────────────────────────────
+you
+  where is the Inbox title?
+
+glyph
+  Cell 0,0 is I. The empty copy sits
+  on row 2.
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> ask about a cell
+enter send · q quit

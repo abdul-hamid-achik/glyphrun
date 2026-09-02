@@ -53,6 +53,10 @@ type Options struct {
 	ShowRulers bool
 	ShowSpaces bool
 	Regions    []RegionHighlight
+	// Changed marks cells that differ from a reference screen (a golden or a
+	// previous run). Each is outlined and tinted so a visual regression is
+	// visible at a glance; the SVG stays deterministic for identical input.
+	Changed []terminal.CellDiff
 }
 
 // DefaultTheme is a dark palette close to common terminal defaults.
@@ -237,6 +241,9 @@ func SnapshotSVG(snap terminal.ScreenSnapshot, opts Options) string {
 	if len(opts.Regions) > 0 {
 		writeRegions(&b, originX, originY, cw, ch, opts.Theme.Cursor, opts.Regions)
 	}
+	if len(opts.Changed) > 0 {
+		writeChanged(&b, originX, originY, cw, ch, opts.Changed)
+	}
 
 	b.WriteString(`</svg>`)
 	return b.String()
@@ -334,6 +341,27 @@ func writeRegions(b *strings.Builder, originX, originY, cw, ch int, color string
 		b.WriteString(strconv.Itoa(r.X))
 		b.WriteString(`" data-y="`)
 		b.WriteString(strconv.Itoa(r.Y))
+		b.WriteString(`"/>`)
+	}
+	b.WriteString(`</g>`)
+}
+
+// DiffColor is the tint used for changed cells in a diff overlay.
+const DiffColor = "#ff5f56"
+
+// writeChanged draws one translucent rect per changed cell inside a
+// <g id="diff"> group so tooling (and tests) can find the overlay.
+func writeChanged(b *strings.Builder, originX, originY, cw, ch int, changed []terminal.CellDiff) {
+	b.WriteString(`<g id="diff" fill="` + DiffColor + `" fill-opacity="0.28" stroke="` + DiffColor + `" stroke-width="1">`)
+	for _, c := range changed {
+		b.WriteString(`<rect x="`)
+		b.WriteString(strconv.Itoa(originX + c.X*cw))
+		b.WriteString(`" y="`)
+		b.WriteString(strconv.Itoa(originY + c.Y*ch))
+		b.WriteString(`" width="`)
+		b.WriteString(strconv.Itoa(cw))
+		b.WriteString(`" height="`)
+		b.WriteString(strconv.Itoa(ch))
 		b.WriteString(`"/>`)
 	}
 	b.WriteString(`</g>`)

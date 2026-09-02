@@ -38,6 +38,13 @@ func ParseFile(path string, opts ParseOptions) (ParseResult, error) {
 	if err != nil {
 		return ParseResult{}, err
 	}
+	switch kind := DocumentKind(source); kind {
+	case "":
+	case "stories":
+		return ParseResult{}, fmt.Errorf("%s is a stories manifest, not a spec; run it with `glyph stories run`", path)
+	default:
+		return ParseResult{}, fmt.Errorf("%s: unsupported document kind %q (specs carry no kind field)", path, kind)
+	}
 	if err := ValidateSourceSchema(source, abs, opts); err != nil {
 		return ParseResult{}, err
 	}
@@ -71,6 +78,20 @@ func ParseFile(path string, opts ParseOptions) (ParseResult, error) {
 		ContractHash:      hash,
 		ContractHashValid: valid,
 	}, nil
+}
+
+// DocumentKind peeks at a YAML/JSON document's top-level `kind` field without
+// decoding the rest. Specs omit it (or say "spec"); a stories manifest says
+// "stories". An unreadable document yields "" so the normal parser reports
+// the real error.
+func DocumentKind(source []byte) string {
+	var head struct {
+		Kind string `yaml:"kind" json:"kind"`
+	}
+	if err := yaml.Unmarshal(source, &head); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(head.Kind)
 }
 
 func ParseActionFile(path string, opts ParseOptions) (ReusableAction, error) {
@@ -126,6 +147,11 @@ func decodeKnown(data []byte, target any) error {
 	}
 	return nil
 }
+
+// ApplyDefaults fills the target cwd and terminal fields a spec left unset
+// from the project default terminal. ParseFile applies it to every file;
+// callers that build specs in memory (stories) apply it before Validate.
+func ApplyDefaults(s *Spec, terminal Terminal) { applyDefaults(s, terminal) }
 
 func applyDefaults(s *Spec, terminal Terminal) {
 	if s.Target.Cwd == "" {

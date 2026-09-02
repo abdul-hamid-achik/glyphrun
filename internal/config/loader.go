@@ -236,6 +236,9 @@ func mergeConfig(base Config, overlay Config) Config {
 	if overlay.SnapshotRoot != "" {
 		base.SnapshotRoot = overlay.SnapshotRoot
 	}
+	if overlay.StoriesRoot != "" {
+		base.StoriesRoot = overlay.StoriesRoot
+	}
 	if overlay.SchemaRoot != "" {
 		base.SchemaRoot = overlay.SchemaRoot
 	}

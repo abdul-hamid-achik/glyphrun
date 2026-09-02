@@ -106,7 +106,7 @@ func newSpecScaffoldCommand() *cobra.Command {
 				if strings.TrimSpace(coversSymbol) != "" {
 					return exitError{code: 2, err: fmt.Errorf("--coversSymbol applies to --kind spec only")}
 				}
-				cmd.Print(scaffold.StorySpecYAML())
+				cmd.Print(scaffold.StoryManifestYAML("go"))
 				return nil
 			default:
 				return exitError{code: 2, err: fmt.Errorf("unsupported --kind %q", kind)}

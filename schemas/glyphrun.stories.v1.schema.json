@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://glyphrun.dev/schemas/glyphrun.stories.v1.schema.json",
+  "title": "Glyphrun Stories Manifest v1",
+  "description": "A stories manifest declares one harness binary and the isolated TUI states (stories) it can mount. glyph stories run expands each story (times its variants) into a regular spec in memory, so the runner, verifiers, and artifacts are the same as for a hand-written spec.",
+  "type": "object",
+  "required": ["version", "kind", "harness", "stories"],
+  "properties": {
+    "version": { "const": 1 },
+    "kind": { "const": "stories" },
+    "name": { "type": "string", "minLength": 1 },
+    "harness": { "$ref": "#/$defs/harness" },
+    "defaults": { "$ref": "#/$defs/defaults" },
+    "stories": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/story" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "harness": {
+      "type": "object",
+      "required": ["cmd"],
+      "properties": {
+        "cmd": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "cwd": { "type": "string" },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "build": { "type": "string" },
+        "buildTimeoutMs": { "type": "integer", "minimum": 1 },
+        "watch": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "terminal": {
+      "type": "object",
+      "properties": {
+        "cols": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 },
+        "profile": { "enum": ["xterm-256color", "vt100", "ansi"] },
+        "color": { "enum": ["auto", "always", "never"] },
+        "alternateScreen": { "enum": ["auto", "require", "forbid"] }
+      },
+      "additionalProperties": false
+    },
+    "ready": {
+      "type": "object",
+      "properties": {
+        "equals": { "type": "string" },
+        "contains": { "type": "string" },
+        "notContains": { "type": "string" },
+        "matches": { "type": "string" },
+        "regex": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "terminal": { "$ref": "#/$defs/terminal" },
+        "readyTimeoutMs": { "type": "integer", "minimum": 1 },
+        "quit": { "type": "string" },
+        "exitTimeoutMs": { "type": "integer", "minimum": 1 },
+        "golden": { "type": "boolean" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "owner": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "variant": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "terminal": { "$ref": "#/$defs/terminal" },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "args": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    },
+    "story": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "feature": { "type": "string" },
+        "intent": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "terminal": { "$ref": "#/$defs/terminal" },
+        "ready": { "$ref": "#/$defs/ready" },
+        "readyTimeoutMs": { "type": "integer", "minimum": 1 },
+        "quit": { "type": "string" },
+        "golden": { "type": "boolean" },
+        "steps": { "type": "array", "items": { "type": "object" } },
+        "outcomes": { "type": "array", "items": { "type": "object" } },
+        "variants": { "type": "array", "items": { "$ref": "#/$defs/variant" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

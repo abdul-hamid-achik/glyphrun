@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
+	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
 	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 )
 
@@ -49,10 +51,13 @@ outcomes:
 `
 }
 
-func writeRun(t *testing.T, root, specName string, snap terminal.ScreenSnapshot) {
+func writeRun(t *testing.T, root, specName string, snap terminal.ScreenSnapshot, snapshotName string) string {
 	t.Helper()
 	dir := filepath.Join(root, "run-"+specName)
 	if err := os.MkdirAll(filepath.Join(dir, "screens"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "snapshots"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	result := map[string]any{
@@ -65,7 +70,7 @@ func writeRun(t *testing.T, root, specName string, snap terminal.ScreenSnapshot)
 		"durationMs":    1,
 		"target":        map[string]any{"cmd": []string{"/bin/echo"}},
 		"terminal":      map[string]any{"cols": snap.Cols, "rows": snap.Rows},
-		"outcomes":      []any{},
+		"outcomes":      []any{map[string]any{"id": "ok", "status": "passed"}},
 		"artifacts":     map[string]string{},
 		"runDir":        dir,
 		"exitCode":      0,
@@ -84,6 +89,20 @@ func writeRun(t *testing.T, root, specName string, snap terminal.ScreenSnapshot)
 	if err := os.WriteFile(filepath.Join(dir, "screens", "final.json"), screen, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if snapshotName != "" {
+		if err := os.WriteFile(filepath.Join(dir, "snapshots", snapshotName+".json"), screen, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func twoCells(a, b string) terminal.ScreenSnapshot {
+	return terminal.ScreenSnapshot{
+		Cols: 2, Rows: 1,
+		Cells: []terminal.Cell{{X: 0, Y: 0, Char: a, Width: 1}, {X: 1, Y: 0, Char: b, Width: 1}},
+		Text:  a + b,
+	}
 }
 
 func TestCollectJoinsLatestRunAndPrefersStoryTag(t *testing.T) {
@@ -91,12 +110,7 @@ func TestCollectJoinsLatestRunAndPrefersStoryTag(t *testing.T) {
 	writeSpec(t, dir, "alpha.yml", sampleSpec("alpha", "list", "[story]"))
 	writeSpec(t, dir, "beta.yml", sampleSpec("beta", "other", "[smoke]"))
 	runs := filepath.Join(dir, "runs")
-	snap := terminal.ScreenSnapshot{
-		Cols: 2, Rows: 1,
-		Cells: []terminal.Cell{{X: 0, Y: 0, Char: "h", Width: 1}, {X: 1, Y: 0, Char: "i", Width: 1}},
-		Text:  "hi",
-	}
-	writeRun(t, runs, "alpha", snap)
+	writeRun(t, runs, "alpha", twoCells("h", "i"), "")
 
 	cat, err := Collect(CollectOptions{Paths: []string{dir}, ArtifactRoot: runs})
 	if err != nil {
@@ -106,19 +120,22 @@ func TestCollectJoinsLatestRunAndPrefersStoryTag(t *testing.T) {
 		t.Fatalf("prefer story tag: got %d stories, want 1", len(cat.Stories))
 	}
 	st := cat.Stories[0]
-	if st.Name != "alpha" || st.Status != "passed" || st.RunID != "run-alpha" {
+	if st.Name != "alpha" || st.Status != "passed" || st.RunID != "run-alpha" || st.Source != SourceSpec || st.Key != "alpha" {
 		t.Fatalf("story = %+v", st)
+	}
+	if st.Passed != 1 || st.Golden != GoldenNone {
+		t.Fatalf("outcome/golden summary = %+v", st)
 	}
 	if len(st.Snapshots) != 1 || st.Snapshots[0].Name != "final" || st.Snapshots[0].Status != "ok" {
 		t.Fatalf("snapshots = %+v", st.Snapshots)
 	}
-	if st.Snapshots[0].SVGPlain == "" || st.Snapshots[0].SVGGrid == "" || st.Snapshots[0].SVGSpaces == "" {
-		t.Fatalf("expected inspect SVGs to be populated")
-	}
 	if st.Snapshots[0].Screen == nil || st.Snapshots[0].Screen.Cols != 2 {
-		t.Fatalf("expected Screen snapshot for TUI preview")
+		t.Fatalf("expected Screen snapshot for previews")
 	}
-	if !strings.Contains(st.Snapshots[0].SVGGrid, `id="grid"`) {
+	if len(st.Snapshots[0].Regions) != 1 {
+		t.Fatalf("expected the cell outcome to become a region highlight, got %+v", st.Snapshots[0].Regions)
+	}
+	if !strings.Contains(st.Snapshots[0].SVG(true, true, false, false), `id="grid"`) {
 		t.Fatalf("grid SVG missing overlay")
 	}
 
@@ -145,5 +162,157 @@ func TestCollectNoSpecs(t *testing.T) {
 	_, err := Collect(CollectOptions{Paths: []string{dir}})
 	if err != ErrNoSpecs {
 		t.Fatalf("err = %v, want ErrNoSpecs", err)
+	}
+}
+
+func TestCollectManifestJoinsIndexAndGoldenDiff(t *testing.T) {
+	dir := t.TempDir()
+	manifest := `version: 1
+kind: stories
+harness:
+  cmd: ["/bin/echo"]
+stories:
+  - id: list/rows
+    ready: { contains: "hi" }
+    variants:
+      - name: wide
+        terminal: { cols: 120, rows: 40 }
+  - id: list/empty
+`
+	writeSpec(t, dir, "stories.yml", manifest)
+	runs := filepath.Join(dir, "runs")
+	storiesRoot := filepath.Join(dir, "stories-index")
+	snapshotRoot := filepath.Join(dir, "goldens")
+
+	// list/rows ran and was indexed; its golden differs in one cell.
+	runDir := writeRun(t, runs, "story_list_rows", twoCells("h", "i"), "rows")
+	result, err := artifacts.LoadRunResult(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.RunDir = runDir
+	entry := EntryFromRun("list/rows", "list/rows", "", "list", SourceManifest, filepath.Join(dir, "stories.yml"), "rows", result)
+	if err := WriteIndexEntry(storiesRoot, entry, runDir); err != nil {
+		t.Fatal(err)
+	}
+	// Prune the run dir: the catalog must still resolve through the index.
+	if err := os.RemoveAll(runDir); err != nil {
+		t.Fatal(err)
+	}
+	goldenDir := filepath.Join(snapshotRoot, "story_list_rows")
+	if err := os.MkdirAll(goldenDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	golden, _ := json.Marshal(twoCells("h", "o"))
+	if err := os.WriteFile(filepath.Join(goldenDir, "rows.json"), golden, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cat, err := Collect(CollectOptions{
+		Paths:           []string{dir},
+		ArtifactRoot:    runs,
+		SnapshotRoot:    snapshotRoot,
+		StoriesRoot:     storiesRoot,
+		DefaultTerminal: spec.Terminal{Cols: 100, Rows: 30, Profile: "xterm-256color"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Stories) != 3 {
+		t.Fatalf("expected 3 rows (empty, rows, rows@wide), got %d: %+v", len(cat.Stories), cat.Stories)
+	}
+	byKey := map[string]Story{}
+	for _, s := range cat.Stories {
+		byKey[s.Key] = s
+	}
+	rows := byKey["list/rows"]
+	if rows.Source != SourceManifest || rows.Name != "story_list_rows" || rows.Status != "passed" || rows.RunID != "run-story_list_rows" {
+		t.Fatalf("rows = %+v", rows)
+	}
+	if rows.Golden != GoldenChanged {
+		t.Fatalf("golden = %q, want changed", rows.Golden)
+	}
+	var snap *Snapshot
+	for i := range rows.Snapshots {
+		if rows.Snapshots[i].Name == "rows" {
+			snap = &rows.Snapshots[i]
+		}
+	}
+	if snap == nil || snap.Golden != GoldenChanged || snap.Changed != 1 || len(snap.Diff) != 1 || snap.GoldenScreen == nil {
+		t.Fatalf("rows snapshot = %+v", snap)
+	}
+	if snap.Diff[0].X != 1 || snap.Diff[0].Before.Char != "o" || snap.Diff[0].After.Char != "i" {
+		t.Fatalf("diff = %+v", snap.Diff)
+	}
+	if !strings.Contains(snap.SVG(false, false, false, true), `id="diff"`) {
+		t.Fatal("diff SVG should carry the diff overlay")
+	}
+	wide := byKey["list/rows@wide"]
+	if wide.Variant != "wide" || wide.Status != "not_run" || wide.Cols != 120 || wide.Golden != GoldenMissing {
+		t.Fatalf("wide = %+v", wide)
+	}
+	empty := byKey["list/empty"]
+	if empty.Status != "not_run" || empty.Cols != 100 || empty.Feature != "list" {
+		t.Fatalf("empty = %+v", empty)
+	}
+	sum := cat.Summarize()
+	if sum.Stories != 3 || sum.Passed != 1 || sum.NotRun != 2 || sum.Changed != 1 || sum.Missing != 2 {
+		t.Fatalf("summary = %+v", sum)
+	}
+
+	// The JSON envelope carries golden state but no cell grids.
+	data, err := json.Marshal(cat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"golden":"changed"`) || strings.Contains(string(data), `"cells"`) {
+		t.Fatalf("json envelope = %s", data)
+	}
+}
+
+func TestReadIndexSkipsBrokenEntries(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "broken"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "broken", IndexFile), []byte("{"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteIndexEntry(root, IndexEntry{Key: "a", SpecName: "story_a", Status: "passed"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	idx := ReadIndex(root)
+	if len(idx) != 1 || idx["story_a"].Key != "a" || idx["story_a"].SchemaVersion != 1 {
+		t.Fatalf("index = %+v", idx)
+	}
+}
+
+func TestGoldenTextFallbackWhenJSONMissing(t *testing.T) {
+	dir := t.TempDir()
+	writeSpec(t, dir, "stories.yml", "version: 1\nkind: stories\nharness:\n  cmd: [\"/bin/echo\"]\nstories:\n  - id: list/rows\n")
+	runs := filepath.Join(dir, "runs")
+	writeRun(t, runs, "story_list_rows", twoCells("h", "i"), "rows")
+	goldenDir := filepath.Join(dir, "goldens", "story_list_rows")
+	if err := os.MkdirAll(goldenDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(goldenDir, "rows.txt"), []byte("hx\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cat, err := Collect(CollectOptions{Paths: []string{dir}, ArtifactRoot: runs, SnapshotRoot: filepath.Join(dir, "goldens"), DefaultTerminal: spec.Terminal{Cols: 80, Rows: 24}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cat.Stories) != 1 || cat.Stories[0].Golden != GoldenChanged {
+		t.Fatalf("text-only golden should still diff: %+v", cat.Stories)
+	}
+	var changed int
+	for _, s := range cat.Stories[0].Snapshots {
+		if s.Name == "rows" {
+			changed = s.Changed
+		}
+	}
+	if changed != 1 {
+		t.Fatalf("changed = %d, want 1", changed)
 	}
 }

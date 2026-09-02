@@ -14,3 +14,7 @@ dist/
 
 # VitePress docs site deps
 node_modules/
+
+# stories index (derived from runs; goldens live in .glyphrun/snapshots)
+.glyphrun/stories/
+**/.glyphrun/stories/

@@ -7,30 +7,42 @@ it does not import this package.
 ```
 examples/stories/                 harness source (components + story states)
 examples/apps/stories/stories     built binary (gitignored)
-examples/specs/story_*.yml        specs tagged `story`
+examples/stories.yml              manifest: harness + 8 stories (kind: stories)
 ```
 
-| story id          | spec                          | screen                                      |
-|-------------------|-------------------------------|---------------------------------------------|
-| `list/empty`      | `story_list_empty.yml`        | Inbox, no rows                              |
-| `list/rows`       | `story_list_rows.yml`         | hello / drafts / sent                       |
-| `list/error`      | `story_list_error.yml`        | failed to load                              |
-| `agent/empty`     | `story_agent_empty.yml`       | empty session, focused composer             |
-| `agent/messages`  | `story_agent_messages.yml`    | you / glyph measuring a cell                |
-| `agent/streaming` | `story_agent_streaming.yml`   | partial reply, status streaming             |
-| `agent/tool`      | `story_agent_tool.yml`        | glyph run in flight                         |
-| `agent/error`     | `story_agent_error.yml`       | PTY closed before ready                     |
+The stories are entries in [`examples/stories.yml`](../stories.yml), not
+individual spec files — `glyph stories run` expands each one into a spec in
+memory.
+
+| story id          | feature | screen                                      |
+|-------------------|---------|----------------------------------------------|
+| `list/empty`      | list    | Inbox, no rows                              |
+| `list/rows`       | list    | hello / drafts / sent (variant: `wide`)     |
+| `list/error`      | list    | failed to load                              |
+| `agent/empty`     | agent   | empty session, focused composer             |
+| `agent/messages`  | agent   | you / glyph measuring a cell                |
+| `agent/streaming` | agent   | partial reply, status streaming             |
+| `agent/tool`      | agent   | glyph run in flight                         |
+| `agent/error`     | agent   | PTY closed before ready                     |
 
 From the repo root:
 
 ```bash
 task example:stories
 
-./bin/glyph stories examples/specs --html --out /tmp/glyph-stories.html
-./bin/glyph stories examples/specs --tui
+./bin/glyph stories run examples
+./bin/glyph stories examples --html --out /tmp/glyph-stories.html
+./bin/glyph stories examples --tui
+./bin/glyph stories serve examples --watch
 ```
 
-`task example:stories` builds `./bin/glyph`, runs every story spec (each spec
-rebuilds the harness as a precondition), and prints the catalog. Open the HTML
-file to inspect cells, regions, and spacing; `--tui` paints the same snapshots
-in the terminal (`j`/`k` stories, `[`/`]` snapshots, `s` spaces).
+`task example:stories` builds `./bin/glyph`, runs `glyph stories run
+examples/stories.yml` (which builds the harness once as a precondition and
+runs every story), and prints the catalog. Open the HTML file to inspect
+cells, regions, and spacing; `--tui` paints the same snapshots in the
+terminal (`j`/`k` stories, `[`/`]` snapshots, `s` spaces, `d` diff, `o`
+golden, `r` rulers); `stories serve --watch` serves the same catalog live and
+rebuilds/reruns on source changes.
+
+See also [`examples/stories-sh/`](../stories-sh/) for a POSIX-shell harness
+that needs no Go toolchain (`task example:stories:sh`).

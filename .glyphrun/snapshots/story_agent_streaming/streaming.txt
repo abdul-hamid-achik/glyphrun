@@ -1,0 +1,24 @@
+glyph  inbox layout                                                    streaming
+────────────────────────────────────────────────────────────────────────────────
+you
+  how wide is the selected row?
+
+glyph
+  Region (0,1) is 20 wide
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+waiting on tokens
+esc cancel · q quit
