@@ -40,6 +40,8 @@ type CleanReport struct {
 // Returns a CleanReport even when the prune was a no-op; the caller
 // can decide whether to surface the report (e.g. emit a
 // "retention.kept" event in agent_context.md).
+// Directories without run.json are still being written (or incomplete) and
+// are preserved until a later prune sees their completion marker.
 func PruneRuns(artifactRoot string, keepRuns int, archive ArchiveConfig) (CleanReport, error) {
 	if keepRuns <= 0 {
 		return CleanReport{}, nil
@@ -55,8 +57,9 @@ func PruneRuns(artifactRoot string, keepRuns int, archive ArchiveConfig) (CleanR
 	// lexical sort matches chronological sort. Filter to actual
 	// directories and sort newest-first.
 	type runEntry struct {
-		name    string
-		modTime int64
+		name     string
+		modTime  int64
+		complete bool
 	}
 	var runs []runEntry
 	for _, e := range entries {
@@ -67,7 +70,8 @@ func PruneRuns(artifactRoot string, keepRuns int, archive ArchiveConfig) (CleanR
 		if err != nil {
 			continue
 		}
-		runs = append(runs, runEntry{name: e.Name(), modTime: info.ModTime().UnixNano()})
+		_, markerErr := os.Stat(filepath.Join(artifactRoot, e.Name(), "run.json"))
+		runs = append(runs, runEntry{name: e.Name(), modTime: info.ModTime().UnixNano(), complete: markerErr == nil})
 	}
 	sort.Slice(runs, func(i, j int) bool {
 		return runs[i].modTime > runs[j].modTime
@@ -80,6 +84,12 @@ func PruneRuns(artifactRoot string, keepRuns int, archive ArchiveConfig) (CleanR
 	var prunedPaths []string
 	for _, r := range runs[keepRuns:] {
 		path := filepath.Join(artifactRoot, r.name)
+		// A concurrent runner has not published run.json yet. Preserve it even
+		// when it currently falls outside the keep window; a later prune can
+		// remove it after the run is complete.
+		if !r.complete {
+			continue
+		}
 		if archive.archiveEnabled() {
 			res, archiveErr := ArchiveRun(archive, path)
 			if archiveErr != nil || !res.OK {

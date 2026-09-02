@@ -218,6 +218,9 @@ func stageRuns(t *testing.T, root string, n int) []string {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(dir, "run.json"), []byte("{}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 		mt := base.Add(time.Duration(i) * time.Second)
 		if err := os.Chtimes(dir, mt, mt); err != nil {
 			t.Fatal(err)

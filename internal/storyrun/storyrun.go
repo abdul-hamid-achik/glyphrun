@@ -142,6 +142,7 @@ func Discover(opts Options) (*Plan, error) {
 	parseOpts := rt.SpecParseOptions()
 	parseOpts.AllowHashMismatch = true
 	watch := map[string]bool{}
+	identities := map[string]string{}
 	for _, mp := range manifests {
 		m, err := stories.LoadManifest(mp, parseOpts)
 		if err != nil {
@@ -154,6 +155,9 @@ func Discover(opts Options) (*Plan, error) {
 		item := ManifestPlan{Path: mp, Manifest: m}
 		for _, ex := range expanded {
 			ex := ex
+			if err := stories.RegisterStorySpecName(identities, ex.Spec.Name, fmt.Sprintf("%q in %s", ex.Key(), mp)); err != nil {
+				return nil, err
+			}
 			job := Job{
 				Key:        ex.Key(),
 				ID:         ex.ID,
@@ -204,6 +208,9 @@ func Discover(opts Options) (*Plan, error) {
 			SourcePath: f,
 			SpecName:   parsed.Spec.Name,
 			SpecPath:   f,
+		}
+		if err := stories.RegisterStorySpecName(identities, job.SpecName, fmt.Sprintf("%q in %s", job.Key, f)); err != nil {
+			return nil, err
 		}
 		job.GoldenName, job.GoldenOutcomeID = stories.GoldenOutcome(parsed.Resolved)
 		plan.Jobs = append(plan.Jobs, job)
@@ -351,6 +358,19 @@ func Run(ctx context.Context, opts Options, plan *Plan) (Report, error) {
 	}
 	close(jobs)
 	wg.Wait()
+	if retention, pruneErr := runner.PruneRetention(plan.ArtifactRoot, plan.Runtime.Config.Retention); pruneErr != nil {
+		log.Warn("stories: retention prune failed", "err", pruneErr)
+	} else {
+		if retention.Pruned > 0 {
+			log.Debug("stories: retention pruned", "pruned", retention.Pruned, "kept", retention.Kept)
+		}
+		if retention.Archived > 0 {
+			log.Info("stories: retention archived", "archived", retention.Archived, "command", plan.Runtime.Config.Retention.Archive.Command)
+		}
+		for _, message := range retention.ArchiveErrors {
+			log.Warn("stories: retention archive error", "message", message)
+		}
+	}
 
 	report.Results = results
 	for _, r := range results {
@@ -416,6 +436,7 @@ func runOne(ctx context.Context, opts Options, plan *Plan, job Job) Result {
 		Environment:     opts.Environment,
 		ArtifactRoot:    opts.ArtifactRoot,
 		UpdateSnapshots: update,
+		DeferRetention:  true,
 		Listener:        opts.Listener,
 	}
 	if job.Parsed != nil {

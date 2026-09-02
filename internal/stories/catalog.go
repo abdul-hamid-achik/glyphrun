@@ -11,6 +11,7 @@ package stories
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -126,13 +127,14 @@ func (c Catalog) Summarize() Summary {
 // Snapshot is a named screen from a story's newest run, compared to its
 // committed golden when one applies.
 type Snapshot struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"`
-	Cols    int    `json:"cols,omitempty"`
-	Rows    int    `json:"rows,omitempty"`
-	Error   string `json:"error,omitempty"`
-	Golden  string `json:"golden"`
-	Changed int    `json:"changed"`
+	Name          string `json:"name"`
+	Status        string `json:"status"`
+	Cols          int    `json:"cols,omitempty"`
+	Rows          int    `json:"rows,omitempty"`
+	Error         string `json:"error,omitempty"`
+	Golden        string `json:"golden"`
+	Changed       int    `json:"changed"`
+	CursorChanged bool   `json:"cursorChanged,omitempty"`
 	// StyleOnly counts changed cells whose character is unchanged (color or
 	// attribute only). In text mode they do not fail the golden, so the UI
 	// shows them as informational rather than as a regression.
@@ -200,6 +202,15 @@ func Collect(opts CollectOptions) (Catalog, error) {
 		stories = append(stories, loadSpecStory(path, opts, parseOpts, index, runs))
 	}
 	filtered := filterStories(stories, opts, len(manifests) > 0)
+	identities := map[string]string{}
+	for _, story := range filtered {
+		if story.ParseError != "" {
+			continue
+		}
+		if err := RegisterStorySpecName(identities, story.Name, fmt.Sprintf("%q in %s", story.Key, story.Path)); err != nil {
+			return Catalog{}, err
+		}
+	}
 	sort.SliceStable(filtered, func(i, j int) bool {
 		if filtered[i].Feature != filtered[j].Feature {
 			return filtered[i].Feature < filtered[j].Feature
@@ -512,6 +523,7 @@ func loadSnapshots(dir, specName, goldenName, goldenMode string, regions []rende
 		snaps[i].GoldenScreen = &golden
 		snaps[i].Diff = diff.Changed
 		snaps[i].Changed = len(diff.Changed)
+		snaps[i].CursorChanged = goldenMode == "json" && golden.Cursor != snaps[i].Screen.Cursor
 		enforced := len(diff.Changed)
 		if goldenMode == "" || goldenMode == "text" {
 			enforced = 0
@@ -522,7 +534,7 @@ func loadSnapshots(dir, specName, goldenName, goldenMode string, regions []rende
 			}
 			snaps[i].StyleOnly = len(diff.Changed) - enforced
 		}
-		if enforced == 0 && !diff.SizeChanged {
+		if enforced == 0 && !diff.SizeChanged && !snaps[i].CursorChanged {
 			snaps[i].Golden = GoldenMatch
 		} else {
 			snaps[i].Golden = GoldenChanged
