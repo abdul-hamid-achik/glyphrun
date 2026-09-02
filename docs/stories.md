@@ -61,11 +61,11 @@ stories:
 | `kind` | string | Must be `stories`. |
 | `name` | string | Manifest name; used as the fallback `feature` for a story whose `id` has no `/`. Defaults to the manifest's parent directory name. |
 | `harness.cmd` | []string | Argv prefix. The story's `id` (or its `args`) is appended to build the full command. |
-| `harness.cwd` | string | Working directory for both the build command and the harness process. |
+| `harness.cwd` | string | Working directory for both the build command and the harness process, relative to the project root (where `glyphrun.config.yml` lives), like a spec's `target.cwd`. |
 | `harness.env` | map | Base environment, merged under a story's and variant's `env`. |
 | `harness.build` | string | Shell command run once per `glyph stories run` invocation (not once per story), before any story executes. |
 | `harness.buildTimeoutMs` | int | Build timeout, default 60000. |
-| `harness.watch` | []string | Extra paths `--watch`/`serve --watch` polls (typically the harness source directory) in addition to the manifest and any story spec directories. |
+| `harness.watch` | []string | Extra paths `--watch`/`serve --watch` polls (typically the harness source directory) in addition to the manifest and any story spec directories. Relative entries resolve against the project root, like `cwd`. The artifact, golden, and stories roots are never watched, so a run's own output cannot re-trigger it. |
 | `defaults.terminal` | Terminal | `cols`/`rows`/`profile`/`color`/`alternateScreen` applied to every story unless overridden. |
 | `defaults.readyTimeoutMs` | int | Default 5000. |
 | `defaults.quit` | string | Key pressed to end the story before the exit-code wait. Default `"q"`; set to `""` to skip the quit/exit steps entirely. |
@@ -107,7 +107,8 @@ A story with `golden: true` (the default) gets a `golden` outcome comparing its 
 - **First run**: a missing golden is captured automatically (`glyph stories run` reports it as `created`), not treated as a failure.
 - **`--strict`**: fails a story instead of capturing a missing golden — use this in CI so a forgotten golden shows up as a real failure.
 - **`--update`**: rewrites every golden with the current capture, regardless of whether it matched.
-- **From the browser**: `glyph stories serve` renders an "accept golden" action per story that does the equivalent of `--update` for just that one story, then reruns and refreshes the live catalog.
+- **From the browser**: `glyph stories serve` renders an "accept golden" action per story that does the equivalent of `--update` for exactly that row (a base story's variants keep their own goldens until you accept them too), then reruns and refreshes the live catalog.
+- **Reporting is file-based**: `created` / `updated` in the run report mean the golden file changed on disk, even when the run then failed on another outcome, so an unreviewed golden never lands silently.
 
 `.glyphrun/snapshots` (the committed goldens) should be committed to version control. `.glyphrun/stories` (the derived index — the newest result and a copy of its screens, keyed by spec name, used so the catalog survives `retention.keepRuns` pruning) is derived output and is gitignored.
 

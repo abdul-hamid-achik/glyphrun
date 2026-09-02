@@ -38,8 +38,12 @@ func ParseFile(path string, opts ParseOptions) (ParseResult, error) {
 	if err != nil {
 		return ParseResult{}, err
 	}
-	if kind := DocumentKind(source); kind != "" && kind != "spec" {
-		return ParseResult{}, fmt.Errorf("%s is a %q document, not a spec; run it with `glyph stories run`", path, kind)
+	switch kind := DocumentKind(source); kind {
+	case "":
+	case "stories":
+		return ParseResult{}, fmt.Errorf("%s is a stories manifest, not a spec; run it with `glyph stories run`", path)
+	default:
+		return ParseResult{}, fmt.Errorf("%s: unsupported document kind %q (specs carry no kind field)", path, kind)
 	}
 	if err := ValidateSourceSchema(source, abs, opts); err != nil {
 		return ParseResult{}, err

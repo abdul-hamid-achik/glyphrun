@@ -41,6 +41,7 @@ if [ -t 0 ]; then
   stty -echo -icanon min 1 time 0 2>/dev/null || true
 fi
 while :; do
-  key=$(dd bs=1 count=1 2>/dev/null || true)
+  key=$(dd bs=1 count=1 2>/dev/null) || break
+  [ -z "$key" ] && break   # stdin closed: leave instead of spinning
   [ "$key" = "q" ] && break
 done

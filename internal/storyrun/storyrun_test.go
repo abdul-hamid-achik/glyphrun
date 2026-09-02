@@ -86,7 +86,7 @@ func TestDiscoverExpandsAndFilters(t *testing.T) {
 		t.Fatalf("harness.watch missing from roots: %v", plan.WatchRoots)
 	}
 
-	plan.Filter([]string{"list/empty@narrow"})
+	plan.Filter([]string{"list/empty@narrow"}, false)
 	if len(plan.Jobs) != 1 || plan.Jobs[0].Variant != "narrow" {
 		t.Fatalf("filter by variant key = %+v", plan.Jobs)
 	}
@@ -346,5 +346,55 @@ func TestUpdateRewritesExistingGolden(t *testing.T) {
 	report, err := Run(context.Background(), opts, plan)
 	if err != nil || report.GoldensUpdate != 1 || report.GoldensNew != 0 || report.Passed != 1 {
 		t.Fatalf("update report = %+v err=%v", report, err)
+	}
+}
+
+func TestFilterFeaturePrefixAndExact(t *testing.T) {
+	dir, cfg := fixture(t)
+	data, _ := os.ReadFile(filepath.Join(dir, "stories.yml"))
+	// Give list/rows an overridden feature so `shared/` must match by feature.
+	withFeature := strings.Replace(string(data), "  - id: list/rows\n", "  - id: list/rows\n    feature: shared\n", 1)
+	if err := os.WriteFile(filepath.Join(dir, "stories.yml"), []byte(withFeature), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := Discover(Options{Paths: []string{dir}, ConfigPath: cfg, Only: []string{"shared/"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Jobs) != 1 || plan.Jobs[0].Key != "list/rows" {
+		t.Fatalf("feature prefix selection = %+v", plan.Jobs)
+	}
+	plan, err = Discover(Options{Paths: []string{dir}, ConfigPath: cfg, Only: []string{"list/empty"}, Exact: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Jobs) != 1 || plan.Jobs[0].Variant != "" {
+		t.Fatalf("exact selection must not fan out to variants: %+v", plan.Jobs)
+	}
+}
+
+func TestGoldenWrittenByFailedRunIsReported(t *testing.T) {
+	dir, cfg := fixture(t)
+	data, _ := os.ReadFile(filepath.Join(dir, "stories.yml"))
+	// list/rows gets an extra outcome that always fails; the golden is still
+	// captured at the snapshot step and must be reported as created.
+	failing := strings.Replace(string(data), "    ready: { contains: \"(empty)\" }\n", "    ready: { contains: \"(empty)\" }\n    outcomes:\n      - id: never\n        description: always fails\n        verify:\n          screen: { contains: \"THIS TEXT IS NOT ON SCREEN\" }\n", 2)
+	if err := os.WriteFile(filepath.Join(dir, "stories.yml"), []byte(failing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{Paths: []string{dir}, ConfigPath: cfg, Only: []string{"list/rows"}}
+	plan, err := Discover(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := Run(context.Background(), opts, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Failed != 1 || report.GoldensNew != 1 || !report.Results[0].GoldenCreated {
+		t.Fatalf("a failed run that wrote the golden must report it: %+v", report)
+	}
+	if !strings.Contains(RenderReportMarkdown(report), "| failed") || !strings.Contains(RenderReportMarkdown(report), "created") {
+		t.Fatalf("markdown = %s", RenderReportMarkdown(report))
 	}
 }

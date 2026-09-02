@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -86,4 +87,57 @@ func writeFileFingerprint(h hash.Hash64, path string, info os.FileInfo) {
 	_, _ = h.Write([]byte{0})
 	_, _ = h.Write([]byte(strconv.FormatInt(info.ModTime().UnixNano(), 10)))
 	_, _ = h.Write([]byte{0})
+}
+
+// FingerprintExcluding is Fingerprint with extra directories left out:
+// callers pass their own output roots (artifacts, goldens, the stories
+// index) so a run's writes never look like a source change.
+func FingerprintExcluding(roots []string, excluded []string) uint64 {
+	if len(excluded) == 0 {
+		return Fingerprint(roots)
+	}
+	skip := make([]string, 0, len(excluded))
+	for _, e := range excluded {
+		if abs, err := filepath.Abs(e); err == nil {
+			skip = append(skip, abs)
+		}
+	}
+	h := fnv.New64a()
+	for _, root := range roots {
+		info, err := os.Stat(root)
+		if err != nil {
+			continue
+		}
+		if !info.IsDir() {
+			if !underAny(root, skip) {
+				writeFileFingerprint(h, root, info)
+			}
+			continue
+		}
+		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				if ExcludedDirs[d.Name()] || underAny(path, skip) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			if fi, err := d.Info(); err == nil {
+				writeFileFingerprint(h, path, fi)
+			}
+			return nil
+		})
+	}
+	return h.Sum64()
+}
+
+func underAny(path string, dirs []string) bool {
+	for _, d := range dirs {
+		if path == d || strings.HasPrefix(path, d+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }

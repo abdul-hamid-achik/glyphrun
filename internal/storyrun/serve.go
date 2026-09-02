@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -43,12 +42,14 @@ type runRequest struct {
 // latest catalog, streams updates over SSE, and serialises reruns through a
 // single worker so two clicks never race the same story.
 type Server struct {
-	opts    ServeOptions
-	mu      sync.Mutex
-	payload stories.PagePayload
-	clients map[chan string]struct{}
-	queue   chan runRequest
-	roots   []string
+	opts     ServeOptions
+	mu       sync.Mutex
+	payload  stories.PagePayload
+	clients  map[chan string]struct{}
+	queue    chan runRequest
+	roots    []string
+	excluded []string
+	lastFP   uint64
 	// hosts are the Host header values the server answers for. Anything
 	// else is refused so a DNS-rebinding page cannot drive the server.
 	hosts map[string]bool
@@ -166,15 +167,7 @@ func (s *Server) collectOptions() (stories.CollectOptions, error) {
 	if err != nil {
 		return stories.CollectOptions{}, err
 	}
-	return stories.CollectOptions{
-		Paths:           paths,
-		ArtifactRoot:    absUnder(rt.ProjectRoot, firstNonEmpty(s.opts.ArtifactRoot, rt.Config.ArtifactRoot)),
-		SnapshotRoot:    absUnder(rt.ProjectRoot, firstNonEmpty(rt.Config.SnapshotRoot, config.DefaultSnapshotRoot)),
-		StoriesRoot:     absUnder(rt.ProjectRoot, firstNonEmpty(rt.Config.StoriesRoot, config.DefaultStoriesRoot)),
-		ConfigPath:      s.opts.ConfigPath,
-		Environment:     s.opts.Environment,
-		DefaultTerminal: rt.SpecParseOptions().DefaultTerminal,
-	}, nil
+	return stories.ResolveRoots(rt, s.opts.ArtifactRoot).CollectOptions(paths, s.opts.ConfigPath, s.opts.Environment), nil
 }
 
 // refresh rebuilds the payload from disk and broadcasts it.
@@ -207,6 +200,9 @@ func (s *Server) worker(ctx context.Context) {
 			opts.Update = req.update
 			if req.key != "" {
 				opts.Only = []string{req.key}
+				// Accepting a golden must touch exactly the row that was
+				// reviewed, never its variants; a rerun may fan out.
+				opts.Exact = req.update
 			}
 			plan, err := Discover(opts)
 			if err != nil {
@@ -218,45 +214,70 @@ func (s *Server) worker(ctx context.Context) {
 				log.Warn("stories: refresh failed", "err", err)
 			}
 			if s.opts.Watch {
-				s.refreshRoots()
+				// Filter never changes WatchRoots, so the worker's plan is the
+				// authoritative watch set: no second discovery needed. The
+				// fingerprint is reset after the run so build output under a
+				// watched directory does not re-trigger it.
+				s.setRoots(plan)
+				s.resetFingerprint()
 			}
 			s.broadcast("busy", "false")
 		}
 	}
 }
 
-// refreshRoots recomputes the watch set (manifests, harness.watch paths,
-// story spec directories). It runs after each run rather than on every
-// poll so the watcher does not re-parse every manifest twice a second.
-func (s *Server) refreshRoots() {
-	var roots []string
-	if plan, err := Discover(Options{Paths: s.opts.Paths, ConfigPath: s.opts.ConfigPath, Environment: s.opts.Environment}); err == nil {
+// setRoots stores the watch set from a discovered plan: manifests,
+// harness.watch paths, story spec directories, plus --watch-path extras. The
+// output roots (artifacts, goldens, index) are excluded from fingerprinting
+// so a run's own writes never look like a source change. A nil plan (the
+// manifest failed to parse) falls back to watching the manifests themselves
+// so the fix re-triggers.
+func (s *Server) setRoots(plan *Plan) {
+	var roots, excluded []string
+	if plan != nil {
 		roots = append(roots, plan.WatchRoots...)
-	} else if collect, cerr := s.collectOptions(); cerr == nil {
-		// A broken manifest still needs watching so the fix re-triggers.
+		excluded = plan.OutputRoots()
+	} else if collect, err := s.collectOptions(); err == nil {
 		if manifests, ferr := stories.FindManifests(collect.Paths); ferr == nil {
 			roots = append(roots, manifests...)
 		}
-	}
-	for _, p := range s.opts.Paths {
-		if abs, err := filepath.Abs(p); err == nil {
-			roots = append(roots, abs)
-		}
+		excluded = []string{collect.ArtifactRoot, collect.SnapshotRoot, collect.StoriesRoot}
 	}
 	roots = append(roots, s.opts.ExtraWatch...)
 	s.mu.Lock()
 	s.roots = watchfs.Roots(roots...)
+	s.excluded = excluded
 	s.mu.Unlock()
 }
 
-func (s *Server) watchRoots() []string {
+// refreshRoots discovers the plan once and stores its watch set.
+func (s *Server) refreshRoots() {
+	plan, err := Discover(Options{Paths: s.opts.Paths, ConfigPath: s.opts.ConfigPath, Environment: s.opts.Environment})
+	if err != nil {
+		plan = nil
+	}
+	s.setRoots(plan)
+	s.resetFingerprint()
+}
+
+func (s *Server) fingerprint() uint64 {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string(nil), s.roots...)
+	roots := append([]string(nil), s.roots...)
+	excluded := append([]string(nil), s.excluded...)
+	s.mu.Unlock()
+	return watchfs.FingerprintExcluding(roots, excluded)
+}
+
+// resetFingerprint records the current state as the baseline the watch loop
+// compares against.
+func (s *Server) resetFingerprint() {
+	fp := s.fingerprint()
+	s.mu.Lock()
+	s.lastFP = fp
+	s.mu.Unlock()
 }
 
 func (s *Server) watchLoop(ctx context.Context) {
-	last := watchfs.Fingerprint(s.watchRoots())
 	ticker := time.NewTicker(watchfs.PollInterval)
 	defer ticker.Stop()
 	for {
@@ -264,11 +285,14 @@ func (s *Server) watchLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			fp := watchfs.Fingerprint(s.watchRoots())
-			if fp == last {
+			fp := s.fingerprint()
+			s.mu.Lock()
+			changed := fp != s.lastFP
+			s.lastFP = fp
+			s.mu.Unlock()
+			if !changed {
 				continue
 			}
-			last = fp
 			log.Info("stories: change detected, re-running")
 			select {
 			case s.queue <- runRequest{}:

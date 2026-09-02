@@ -945,26 +945,5 @@ func storyCollectOptions(opts ServerOptions, paths []string) (stories.CollectOpt
 	if err != nil {
 		return stories.CollectOptions{}, err
 	}
-	abs := func(p, def string) string {
-		if p == "" {
-			p = def
-		}
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(rt.ProjectRoot, p)
-		}
-		return p
-	}
-	artifactRoot := opts.ArtifactRoot
-	if artifactRoot == "" {
-		artifactRoot = rt.Config.ArtifactRoot
-	}
-	return stories.CollectOptions{
-		Paths:           paths,
-		ArtifactRoot:    abs(artifactRoot, config.DefaultArtifactRoot),
-		SnapshotRoot:    abs(rt.Config.SnapshotRoot, config.DefaultSnapshotRoot),
-		StoriesRoot:     abs(rt.Config.StoriesRoot, config.DefaultStoriesRoot),
-		ConfigPath:      opts.ConfigPath,
-		Environment:     opts.Environment,
-		DefaultTerminal: rt.SpecParseOptions().DefaultTerminal,
-	}, nil
+	return stories.ResolveRoots(rt, opts.ArtifactRoot).CollectOptions(paths, opts.ConfigPath, opts.Environment), nil
 }

@@ -32,24 +32,12 @@ func resolveStoryRoots(opts *globalOptions, start string) (storyRoots, error) {
 	if err != nil {
 		return storyRoots{}, err
 	}
-	abs := func(p, def string) string {
-		if p == "" {
-			p = def
-		}
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(rt.ProjectRoot, p)
-		}
-		return p
-	}
-	artifactRoot := opts.artifactRoot
-	if artifactRoot == "" {
-		artifactRoot = rt.Config.ArtifactRoot
-	}
+	roots := stories.ResolveRoots(rt, opts.artifactRoot)
 	return storyRoots{
 		runtime:      rt,
-		artifactRoot: abs(artifactRoot, config.DefaultArtifactRoot),
-		snapshotRoot: abs(rt.Config.SnapshotRoot, config.DefaultSnapshotRoot),
-		storiesRoot:  abs(rt.Config.StoriesRoot, config.DefaultStoriesRoot),
+		artifactRoot: roots.ArtifactRoot,
+		snapshotRoot: roots.SnapshotRoot,
+		storiesRoot:  roots.StoriesRoot,
 	}, nil
 }
 
@@ -61,19 +49,12 @@ func collectStories(opts *globalOptions, paths []string, feature, tag, owner str
 	if err != nil {
 		return stories.Catalog{}, roots, err
 	}
-	cat, err := stories.Collect(stories.CollectOptions{
-		Paths:           paths,
-		ArtifactRoot:    roots.artifactRoot,
-		SnapshotRoot:    roots.snapshotRoot,
-		StoriesRoot:     roots.storiesRoot,
-		ConfigPath:      opts.configPath,
-		Environment:     opts.environment,
-		Feature:         feature,
-		Tag:             tag,
-		Owner:           owner,
-		All:             all,
-		DefaultTerminal: roots.runtime.SpecParseOptions().DefaultTerminal,
-	})
+	collect := stories.ResolveRoots(roots.runtime, opts.artifactRoot).CollectOptions(paths, opts.configPath, opts.environment)
+	collect.Feature = feature
+	collect.Tag = tag
+	collect.Owner = owner
+	collect.All = all
+	cat, err := stories.Collect(collect)
 	return cat, roots, err
 }
 

@@ -11,32 +11,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ValidateSourceSchema checks a spec document against the spec JSON schema
+// after placeholder substitution.
 func ValidateSourceSchema(source []byte, path string, opts ParseOptions) error {
-	schemaRoot := opts.ConfigValues["schemaRoot"]
-	if schemaRoot == "" {
-		schemaRoot = "schemas"
-	}
-	if !filepath.IsAbs(schemaRoot) {
-		projectRoot := opts.ProjectRoot
-		if projectRoot == "" {
-			projectRoot = filepath.Dir(path)
-		}
-		schemaRoot = filepath.Join(projectRoot, schemaRoot)
-	}
-	schemaName := "glyphrun.spec.v1.schema.json"
-	schemaPath := filepath.Join(schemaRoot, schemaName)
-	schemaBytes, err := os.ReadFile(schemaPath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return err
-		}
-		embedded, ok := embeddedschemas.Get(schemaName)
-		if !ok {
-			return nil
-		}
-		schemaBytes = embedded
-		schemaPath = "embedded://" + schemaName
-	}
 	substituted, err := SubstitutePlaceholders(string(source), path, opts)
 	if err != nil {
 		return err
@@ -50,7 +27,39 @@ func ValidateSourceSchema(source []byte, path string, opts ParseOptions) error {
 		if err := yaml.Unmarshal([]byte(substituted), &document); err != nil {
 			return err
 		}
-		document = toJSONValue(document)
+		document = ToJSONValue(document)
+	}
+	return ValidateDocumentSchema(document, path, "glyphrun.spec.v1.schema.json", opts)
+}
+
+// ValidateDocumentSchema validates an already-decoded document (JSON-shaped:
+// string-keyed maps) against the named schema. The schema is read from the
+// project schemaRoot when present so a project can override any bundled
+// schema (spec, config, stories alike); otherwise the embedded copy is used.
+func ValidateDocumentSchema(document any, path, schemaName string, opts ParseOptions) error {
+	schemaRoot := opts.ConfigValues["schemaRoot"]
+	if schemaRoot == "" {
+		schemaRoot = "schemas"
+	}
+	if !filepath.IsAbs(schemaRoot) {
+		projectRoot := opts.ProjectRoot
+		if projectRoot == "" {
+			projectRoot = filepath.Dir(path)
+		}
+		schemaRoot = filepath.Join(projectRoot, schemaRoot)
+	}
+	schemaPath := filepath.Join(schemaRoot, schemaName)
+	schemaBytes, err := os.ReadFile(schemaPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		embedded, ok := embeddedschemas.Get(schemaName)
+		if !ok {
+			return nil
+		}
+		schemaBytes = embedded
+		schemaPath = "embedded://" + schemaName
 	}
 	var schemaDoc any
 	if err := json.Unmarshal(schemaBytes, &schemaDoc); err != nil {
@@ -66,6 +75,10 @@ func ValidateSourceSchema(source []byte, path string, opts ParseOptions) error {
 	}
 	return compiled.Validate(document)
 }
+
+// ToJSONValue converts yaml.v3 output (which may contain map[any]any) into
+// the string-keyed tree a JSON-schema validator expects.
+func ToJSONValue(value any) any { return toJSONValue(value) }
 
 func toJSONValue(value any) any {
 	switch typed := value.(type) {

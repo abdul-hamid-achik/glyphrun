@@ -32,8 +32,15 @@ import (
 
 // Options select and configure a stories run.
 type Options struct {
-	Paths        []string
-	Only         []string
+	Paths []string
+	// Only narrows the run to matching stories: a key (`list/rows`,
+	// `list/rows@wide`), a spec name, a feature, or `feature/` prefix. A bare
+	// id also selects its variants unless Exact is set.
+	Only []string
+	// Exact makes Only match keys and spec names literally (no variant or
+	// feature fan-out). Accepting a golden from the live page uses it so one
+	// row never rewrites another row's golden.
+	Exact        bool
 	ConfigPath   string
 	Environment  string
 	ArtifactRoot string
@@ -54,10 +61,12 @@ type Job struct {
 	Source     string `json:"source"`
 	SourcePath string `json:"sourcePath"`
 	SpecName   string `json:"specName"`
-	// GoldenName is the snapshot compared against a committed golden ("" = none).
-	GoldenName string            `json:"goldenName,omitempty"`
-	Parsed     *spec.ParseResult `json:"-"`
-	SpecPath   string            `json:"-"`
+	// GoldenName is the snapshot compared against a committed golden ("" =
+	// none); GoldenOutcomeID is the outcome that performs the comparison.
+	GoldenName      string            `json:"goldenName,omitempty"`
+	GoldenOutcomeID string            `json:"goldenOutcomeId,omitempty"`
+	Parsed          *spec.ParseResult `json:"-"`
+	SpecPath        string            `json:"-"`
 }
 
 // ManifestPlan is one manifest with its expanded jobs.
@@ -70,12 +79,19 @@ type ManifestPlan struct {
 // Plan is everything Run needs, resolved once.
 type Plan struct {
 	Runtime      config.Runtime
+	Roots        stories.Roots
 	Manifests    []ManifestPlan
 	Jobs         []Job
 	WatchRoots   []string
 	ArtifactRoot string
 	SnapshotRoot string
 	StoriesRoot  string
+}
+
+// OutputRoots are the directories a run writes; watchers exclude them so a
+// run never looks like a source change.
+func (p *Plan) OutputRoots() []string {
+	return []string{p.ArtifactRoot, p.SnapshotRoot, p.StoriesRoot}
 }
 
 // Result is one story's outcome inside a Report.
@@ -106,7 +122,7 @@ type Report struct {
 var ErrNoStories = errors.New("no stories found: add a stories.yml manifest or tag a spec with `story`")
 
 // Discover resolves the runtime, finds manifests and story specs under the
-// paths, expands manifests, and applies --only.
+// paths, expands manifests, and applies Only.
 func Discover(opts Options) (*Plan, error) {
 	paths := opts.Paths
 	if len(paths) == 0 {
@@ -116,23 +132,22 @@ func Discover(opts Options) (*Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	plan := &Plan{Runtime: rt}
-	plan.ArtifactRoot = absUnder(rt.ProjectRoot, firstNonEmpty(opts.ArtifactRoot, rt.Config.ArtifactRoot))
-	plan.SnapshotRoot = absUnder(rt.ProjectRoot, firstNonEmpty(rt.Config.SnapshotRoot, config.DefaultSnapshotRoot))
-	plan.StoriesRoot = absUnder(rt.ProjectRoot, firstNonEmpty(rt.Config.StoriesRoot, config.DefaultStoriesRoot))
+	roots := stories.ResolveRoots(rt, opts.ArtifactRoot)
+	plan := &Plan{Runtime: rt, Roots: roots, ArtifactRoot: roots.ArtifactRoot, SnapshotRoot: roots.SnapshotRoot, StoriesRoot: roots.StoriesRoot}
 
 	manifests, err := stories.FindManifests(paths)
 	if err != nil {
 		return nil, err
 	}
-	defaultTerminal := rt.SpecParseOptions().DefaultTerminal
+	parseOpts := rt.SpecParseOptions()
+	parseOpts.AllowHashMismatch = true
 	watch := map[string]bool{}
 	for _, mp := range manifests {
-		m, err := stories.LoadManifest(mp)
+		m, err := stories.LoadManifest(mp, parseOpts)
 		if err != nil {
 			return nil, err
 		}
-		expanded, err := stories.Expand(m, mp, defaultTerminal)
+		expanded, err := stories.Expand(m, mp, parseOpts.DefaultTerminal)
 		if err != nil {
 			return nil, err
 		}
@@ -149,23 +164,19 @@ func Discover(opts Options) (*Plan, error) {
 				SpecName:   ex.Spec.Name,
 				Parsed:     &ex.Parsed,
 			}
-			if ex.Golden {
-				job.GoldenName = ex.SnapshotName
-			}
+			job.GoldenName, job.GoldenOutcomeID = stories.GoldenOutcome(ex.Spec)
 			item.Jobs = append(item.Jobs, job)
 		}
 		plan.Manifests = append(plan.Manifests, item)
 		plan.Jobs = append(plan.Jobs, item.Jobs...)
 		watch[mp] = true
-		base := filepath.Dir(mp)
+		// harness.watch entries are project-root relative, like harness.cwd
+		// and a spec's target.cwd.
 		for _, w := range m.Harness.Watch {
 			if filepath.IsAbs(w) {
 				watch[w] = true
 			} else {
 				watch[filepath.Join(rt.ProjectRoot, w)] = true
-				if _, err := os.Stat(filepath.Join(rt.ProjectRoot, w)); err != nil {
-					watch[filepath.Join(base, w)] = true
-				}
 			}
 		}
 	}
@@ -179,8 +190,6 @@ func Discover(opts Options) (*Plan, error) {
 			filepath.Base(f) == "spec.resolved.yml" || stories.UnderRoots(f, plan.ArtifactRoot, plan.SnapshotRoot, plan.StoriesRoot) {
 			continue
 		}
-		parseOpts := rt.SpecParseOptions()
-		parseOpts.AllowHashMismatch = true
 		parsed, err := spec.ParseFile(f, parseOpts)
 		if err != nil {
 			continue
@@ -196,12 +205,7 @@ func Discover(opts Options) (*Plan, error) {
 			SpecName:   parsed.Spec.Name,
 			SpecPath:   f,
 		}
-		for _, o := range parsed.Resolved.Outcomes {
-			if o.Verify.Snapshot != nil {
-				job.GoldenName = o.Verify.Snapshot.Name
-				break
-			}
-		}
+		job.GoldenName, job.GoldenOutcomeID = stories.GoldenOutcome(parsed.Resolved)
 		plan.Jobs = append(plan.Jobs, job)
 		watch[filepath.Dir(f)] = true
 	}
@@ -210,7 +214,7 @@ func Discover(opts Options) (*Plan, error) {
 	}
 	sort.Strings(plan.WatchRoots)
 	if len(opts.Only) > 0 {
-		plan.Filter(opts.Only)
+		plan.Filter(opts.Only, opts.Exact)
 	}
 	if len(plan.Jobs) == 0 {
 		return nil, ErrNoStories
@@ -218,20 +222,31 @@ func Discover(opts Options) (*Plan, error) {
 	return plan, nil
 }
 
-// Filter keeps the jobs whose key, spec name, id, or feature matches one of
-// the selectors (exact match or prefix, so `list/` selects a feature).
-func (p *Plan) Filter(only []string) {
+// Filter keeps the jobs matching one of the selectors. A selector matches a
+// job's key, spec name, or feature exactly; a bare id also matches its
+// variants and a trailing `/` matches a feature or id prefix. With exact set,
+// only key and spec name matches count.
+func (p *Plan) Filter(only []string, exact bool) {
 	keep := func(j Job) bool {
 		for _, sel := range only {
 			sel = strings.TrimSpace(sel)
 			if sel == "" {
 				continue
 			}
-			if j.Key == sel || j.SpecName == sel || j.ID == sel || j.Feature == sel {
+			if j.Key == sel || j.SpecName == sel {
 				return true
 			}
-			if strings.HasSuffix(sel, "/") && strings.HasPrefix(j.ID+"/", sel) {
+			if exact {
+				continue
+			}
+			if j.ID == sel || j.Feature == sel {
 				return true
+			}
+			if strings.HasSuffix(sel, "/") {
+				prefix := strings.TrimSuffix(sel, "/")
+				if j.Feature == prefix || strings.HasPrefix(j.ID+"/", sel) {
+					return true
+				}
 			}
 			if strings.HasPrefix(j.Key, sel+"@") {
 				return true
@@ -366,17 +381,34 @@ func Run(ctx context.Context, opts Options, plan *Plan) (Report, error) {
 	return report, nil
 }
 
+// goldenStamp identifies the on-disk state of a golden so a run can report
+// whether it created or rewrote it, whatever the run's outcome status.
+type goldenStamp struct {
+	exists  bool
+	modTime time.Time
+	size    int64
+}
+
+func statGolden(path string) goldenStamp {
+	info, err := os.Stat(path)
+	if err != nil {
+		return goldenStamp{}
+	}
+	return goldenStamp{exists: true, modTime: info.ModTime(), size: info.Size()}
+}
+
 func runOne(ctx context.Context, opts Options, plan *Plan, job Job) Result {
 	res := Result{Job: job}
 	update := opts.Update
-	goldenMissing := false
+	var goldenPath string
+	var before goldenStamp
 	if job.GoldenName != "" {
-		_, err := os.Stat(runner.CommittedSnapshotPath(plan.Runtime, job.SpecName, job.GoldenName))
-		goldenMissing = err != nil
-	}
-	if job.GoldenName != "" && !update && !opts.Strict && goldenMissing {
-		update = true
-		log.Info("stories: no golden yet, capturing", "story", job.Key, "snapshot", job.GoldenName)
+		goldenPath = runner.CommittedSnapshotPath(plan.Runtime, job.SpecName, job.GoldenName)
+		before = statGolden(goldenPath)
+		if !before.exists && !update && !opts.Strict {
+			update = true
+			log.Info("stories: no golden yet, capturing", "story", job.Key, "snapshot", job.GoldenName)
+		}
 	}
 	ropts := runner.Options{
 		SpecPath:        job.SourcePath,
@@ -395,17 +427,22 @@ func runOne(ctx context.Context, opts Options, plan *Plan, job Job) Result {
 	res.Run = result
 	if err != nil {
 		res.Error = err.Error()
-		return res
 	}
-	// Report a golden as created/updated only when the verifier actually
-	// wrote it: a run that failed before reaching the snapshot outcome
-	// leaves the golden as it was.
-	if update && job.GoldenName != "" && result.Status == artifacts.StatusPassed {
-		if goldenMissing {
+	// The runner writes the golden at the capture step, before any outcome
+	// is verified, so the file — not the run status — says whether it was
+	// created or rewritten. A failed run that wrote a golden is reported as
+	// such so an unreviewed golden never lands silently.
+	if goldenPath != "" && update {
+		after := statGolden(goldenPath)
+		switch {
+		case !before.exists && after.exists:
 			res.GoldenCreated = true
-		} else {
+		case before.exists && after.exists && (after.modTime != before.modTime || after.size != before.size):
 			res.GoldenUpdated = true
 		}
+	}
+	if err != nil {
+		return res
 	}
 	entry := stories.EntryFromRun(job.Key, job.ID, job.Variant, job.Feature, job.Source, job.SourcePath, job.GoldenName, result)
 	if err := stories.WriteIndexEntry(plan.StoriesRoot, entry, result.RunDir); err != nil {
@@ -435,19 +472,7 @@ func RenderReportMarkdown(r Report) string {
 		} else if res.Run.Status != artifacts.StatusPassed && res.Run.Diagnostic != "" {
 			status += " — " + res.Run.Diagnostic
 		}
-		golden := "—"
-		switch {
-		case res.Job.GoldenName == "":
-			golden = "none"
-		case res.GoldenCreated:
-			golden = "created"
-		case res.GoldenUpdated:
-			golden = "updated"
-		case res.Run.Status == artifacts.StatusPassed:
-			golden = "match"
-		default:
-			golden = goldenOutcome(res.Run)
-		}
+		golden := goldenLabel(res)
 		run := res.Run.RunID
 		if run == "" {
 			run = "—"
@@ -457,14 +482,25 @@ func RenderReportMarkdown(r Report) string {
 	return b.String()
 }
 
-func goldenOutcome(run artifacts.RunResult) string {
-	for _, o := range run.Outcomes {
-		if o.ID == "golden" || strings.Contains(o.Message, "snapshot") {
-			if o.Status == artifacts.OutcomePassed {
-				return "match"
-			}
-			return "changed"
+// goldenLabel describes what happened to a story's golden: created/updated
+// (the file changed), match/changed (from the golden outcome by id), or none.
+func goldenLabel(res Result) string {
+	switch {
+	case res.Job.GoldenName == "":
+		return "none"
+	case res.GoldenCreated:
+		return "created"
+	case res.GoldenUpdated:
+		return "updated"
+	}
+	for _, o := range res.Run.Outcomes {
+		if o.ID != res.Job.GoldenOutcomeID {
+			continue
 		}
+		if o.Status == artifacts.OutcomePassed {
+			return "match"
+		}
+		return "changed"
 	}
 	return "—"
 }
@@ -476,22 +512,6 @@ func hasTag(tags []string, want string) bool {
 		}
 	}
 	return false
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-func absUnder(root, path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	}
-	return filepath.Join(root, path)
 }
 
 func envSlice(env map[string]string) []string {

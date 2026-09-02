@@ -39,20 +39,20 @@ stories:
 `
 
 func TestParseManifestRejectsUnknownFieldsAndDuplicates(t *testing.T) {
-	if _, err := ParseManifest([]byte(sampleManifest+"  - id: list/rows\n"), "stories.yml"); err == nil || !strings.Contains(err.Error(), "duplicate story id") {
+	if _, err := ParseManifest([]byte(sampleManifest+"  - id: list/rows\n"), "stories.yml", spec.ParseOptions{}); err == nil || !strings.Contains(err.Error(), "duplicate story id") {
 		t.Fatalf("expected duplicate id error, got %v", err)
 	}
 	bad := strings.Replace(sampleManifest, "harness:", "harnesss:", 1)
-	if _, err := ParseManifest([]byte(bad), "stories.yml"); err == nil {
+	if _, err := ParseManifest([]byte(bad), "stories.yml", spec.ParseOptions{}); err == nil {
 		t.Fatal("expected schema error for unknown top-level field")
 	}
-	if _, err := ParseManifest([]byte("version: 1\nkind: spec\nharness: {cmd: [x]}\nstories: [{id: a}]\n"), "s.yml"); err == nil {
+	if _, err := ParseManifest([]byte("version: 1\nkind: spec\nharness: {cmd: [x]}\nstories: [{id: a}]\n"), "s.yml", spec.ParseOptions{}); err == nil {
 		t.Fatal("expected kind error")
 	}
 }
 
 func TestExpandBuildsSpecsAndVariants(t *testing.T) {
-	m, err := ParseManifest([]byte(sampleManifest), "/repo/stories.yml")
+	m, err := ParseManifest([]byte(sampleManifest), "/repo/stories.yml", spec.ParseOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestSpecNameForStory(t *testing.T) {
 	cases := map[[2]string]string{
 		{"list/rows", ""}:        "story_list_rows",
 		{"list/rows", "wide"}:    "story_list_rows__wide",
-		{"Agent Chat/Empty", ""}: "story_agent_chat_empty",
+		{"Agent Chat/Empty", ""}: "story_agent-chat_empty",
 	}
 	for in, want := range cases {
 		if got := SpecNameForStory(in[0], in[1]); got != want {
@@ -181,7 +181,7 @@ func TestSpecNameForStory(t *testing.T) {
 }
 
 func TestExpandRejectsSpecNameCollisions(t *testing.T) {
-	m, err := ParseManifest([]byte("version: 1\nkind: stories\nharness:\n  cmd: [x]\nstories:\n  - id: list/rows\n  - id: list_rows\n"), "stories.yml")
+	m, err := ParseManifest([]byte("version: 1\nkind: stories\nharness:\n  cmd: [x]\nstories:\n  - id: list/rows\n  - id: list_rows\n"), "stories.yml", spec.ParseOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

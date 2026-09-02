@@ -52,7 +52,7 @@ const IndexFile = "latest.json"
 
 // IndexDir is where a story's entry lives under the stories root.
 func IndexDir(root, specName string) string {
-	return filepath.Join(root, sanitizeName(specName))
+	return filepath.Join(root, artifacts.SanitizeRunName(specName))
 }
 
 // WriteIndexEntry stores the entry and copies the run's final screen and

@@ -85,6 +85,7 @@ func fingerprint(roots []string) uint64 {
 	return watchfs.Fingerprint(roots)
 }
 
+// renderWatchResults formats a watch iteration's results the same way a normal
 // `glyph run` does (single result or batch summary), with color applied.
 func renderWatchResults(cmd *cobra.Command, opts *globalOptions, results []artifacts.RunResult) string {
 	var value any

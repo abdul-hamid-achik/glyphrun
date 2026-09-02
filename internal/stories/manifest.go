@@ -2,16 +2,14 @@ package stories
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
-	embeddedschemas "github.com/abdul-hamid-achik/glyphrun/schemas"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,7 +32,9 @@ type Manifest struct {
 
 // Harness describes the story binary. Build runs once per `glyph stories run`
 // (not once per story), Watch lists extra paths that should re-trigger a
-// watch loop (typically the harness source directory).
+// watch loop (typically the harness source directory). Cwd, Build, and
+// Watch entries are relative to the project root (where glyphrun.config.yml
+// lives), exactly like a spec's target.cwd — not to the manifest file.
 type Harness struct {
 	Cmd            []string          `yaml:"cmd" json:"cmd"`
 	Cwd            string            `yaml:"cwd,omitempty" json:"cwd,omitempty"`
@@ -96,6 +96,23 @@ type Expanded struct {
 	ManifestPath string
 	Spec         spec.Spec
 	Parsed       spec.ParseResult
+}
+
+// GoldenOutcomeID is the id of the generated snapshot-verifier outcome, or
+// "" when the story keeps no golden. Consumers match outcomes by this id,
+// never by message text.
+const GoldenOutcomeID = "golden"
+
+// GoldenOutcome returns the name and outcome id of the first snapshot
+// verifier in a spec ("" when there is none). It is the single place that
+// decides which outcome a story's golden state is read from.
+func GoldenOutcome(s spec.Spec) (snapshotName, outcomeID string) {
+	for _, o := range s.Outcomes {
+		if o.Verify.Snapshot != nil {
+			return o.Verify.Snapshot.Name, o.ID
+		}
+	}
+	return "", ""
 }
 
 // Key is the catalog identity: `list/rows` or `list/rows@wide`.
@@ -183,19 +200,22 @@ func FindManifests(paths []string) ([]string, error) {
 	return out, nil
 }
 
-// LoadManifest reads, schema-validates, and strictly decodes a manifest.
-func LoadManifest(path string) (Manifest, error) {
+// LoadManifest reads, schema-validates, and strictly decodes a manifest. The
+// parse options carry the project root and schemaRoot so a project-level
+// schema override applies to manifests the same way it applies to specs.
+func LoadManifest(path string, opts spec.ParseOptions) (Manifest, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Manifest{}, err
 	}
-	return ParseManifest(data, path)
+	return ParseManifest(data, path, opts)
 }
 
-// ParseManifest validates a manifest document against the embedded JSON
-// schema, then decodes it with unknown fields rejected.
-func ParseManifest(data []byte, path string) (Manifest, error) {
-	if err := validateManifestSchema(data, path); err != nil {
+// ParseManifest validates a manifest document against the stories JSON
+// schema (project schemaRoot first, embedded fallback), then decodes it with
+// unknown fields rejected.
+func ParseManifest(data []byte, path string, opts spec.ParseOptions) (Manifest, error) {
+	if err := validateManifestSchema(data, path, opts); err != nil {
 		return Manifest{}, err
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(data))
@@ -233,60 +253,15 @@ func ParseManifest(data []byte, path string) (Manifest, error) {
 	return m, nil
 }
 
-func validateManifestSchema(data []byte, path string) error {
-	schemaName := "glyphrun.stories.v1.schema.json"
-	schemaBytes, ok := embeddedschemas.Get(schemaName)
-	if !ok {
-		return nil
-	}
+func validateManifestSchema(data []byte, path string, opts spec.ParseOptions) error {
 	var document any
 	if err := yaml.Unmarshal(data, &document); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
-	document = normalizeYAML(document)
-	var schemaDoc any
-	if err := json.Unmarshal(schemaBytes, &schemaDoc); err != nil {
-		return err
-	}
-	compiler := jsonschema.NewCompiler()
-	schemaPath := "embedded://" + schemaName
-	if err := compiler.AddResource(schemaPath, schemaDoc); err != nil {
-		return err
-	}
-	compiled, err := compiler.Compile(schemaPath)
-	if err != nil {
-		return err
-	}
-	if err := compiled.Validate(document); err != nil {
+	if err := spec.ValidateDocumentSchema(spec.ToJSONValue(document), path, "glyphrun.stories.v1.schema.json", opts); err != nil {
 		return fmt.Errorf("%s: stories manifest schema: %w", path, err)
 	}
 	return nil
-}
-
-// normalizeYAML converts yaml.v3's map[string]any / []any tree into the
-// JSON-shaped tree jsonschema expects (map keys must be strings).
-func normalizeYAML(v any) any {
-	switch t := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for k, val := range t {
-			out[k] = normalizeYAML(val)
-		}
-		return out
-	case map[any]any:
-		out := make(map[string]any, len(t))
-		for k, val := range t {
-			out[fmt.Sprint(k)] = normalizeYAML(val)
-		}
-		return out
-	case []any:
-		for i := range t {
-			t[i] = normalizeYAML(t[i])
-		}
-		return t
-	default:
-		return v
-	}
 }
 
 // Expand turns every story (times its variants) into a validated spec. The
@@ -340,10 +315,9 @@ func expandOne(m Manifest, entry Entry, v Variant, manifestPath string, defaultT
 			feature = m.Name
 		}
 	}
-	snapName := SpecNameForStory(id, "")
-	snapName = strings.TrimPrefix(snapName, "story_")
+	snapName := artifacts.SanitizeRunName(strings.ReplaceAll(id, "/", "_"))
 	if i := strings.LastIndex(id, "/"); i >= 0 && i+1 < len(id) {
-		snapName = sanitizeName(id[i+1:])
+		snapName = artifacts.SanitizeRunName(id[i+1:])
 	}
 	specName := SpecNameForStory(id, v.Name)
 
@@ -423,7 +397,7 @@ func expandOne(m Manifest, entry Entry, v Variant, manifestPath string, defaultT
 	var outcomes []spec.Outcome
 	if golden {
 		outcomes = append(outcomes, spec.Outcome{
-			ID:          "golden",
+			ID:          GoldenOutcomeID,
 			Description: "the screen matches the committed golden " + snapName,
 			Verify:      spec.Verify{Snapshot: &spec.SnapshotCondition{Name: snapName}},
 		})
@@ -498,30 +472,15 @@ func expandedKey(id, variant string) string {
 
 // SpecNameForStory maps a story id (and optional variant) to the spec name
 // used for run ids and golden directories: `list/rows` → `story_list_rows`,
-// `list/rows@wide` → `story_list_rows__wide`.
+// `list/rows@wide` → `story_list_rows__wide`. It uses the runner's own name
+// sanitizer so the golden directory the catalog reads is the one the runner
+// writes.
 func SpecNameForStory(id, variant string) string {
-	name := "story_" + sanitizeName(strings.ReplaceAll(strings.TrimSpace(id), "/", "_"))
+	name := "story_" + artifacts.SanitizeRunName(strings.ReplaceAll(strings.TrimSpace(id), "/", "_"))
 	if variant != "" {
-		name += "__" + sanitizeName(variant)
+		name += "__" + artifacts.SanitizeRunName(variant)
 	}
 	return name
-}
-
-func sanitizeName(s string) string {
-	s = strings.TrimSpace(strings.ToLower(s))
-	var b strings.Builder
-	for _, r := range s {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
-			b.WriteRune(r)
-		default:
-			b.WriteRune('_')
-		}
-	}
-	if b.Len() == 0 {
-		return "story"
-	}
-	return b.String()
 }
 
 func mergeTerminal(base, over spec.Terminal) spec.Terminal {

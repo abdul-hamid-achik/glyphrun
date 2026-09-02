@@ -1782,10 +1782,7 @@ func CommittedSnapshotPath(rt config.Runtime, specName, snapshotName string) str
 	if root == "" {
 		root = config.DefaultSnapshotRoot
 	}
-	if !filepath.IsAbs(root) {
-		root = filepath.Join(rt.ProjectRoot, root)
-	}
-	return filepath.Join(root, sanitize(specName), sanitize(snapshotName)+".txt")
+	return artifacts.CommittedSnapshotPath(rt.ProjectRoot, root, specName, snapshotName)
 }
 
 func (s *runState) runShellCommand(ctx context.Context, command string, cwd string, timeoutMS int) error {
@@ -2720,21 +2717,4 @@ func makeRunID(t time.Time, name string) string {
 	return t.UTC().Format("2006-01-02T15-04-05Z") + "-" + strconv.FormatInt(t.UnixNano()%1e9, 36) + "-" + sanitize(name)
 }
 
-func sanitize(name string) string {
-	name = strings.TrimSpace(strings.ToLower(name))
-	if name == "" {
-		return "run"
-	}
-	var b strings.Builder
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-		case r == '-', r == '_', r == '.':
-			b.WriteRune(r)
-		default:
-			b.WriteByte('-')
-		}
-	}
-	return strings.Trim(b.String(), "-")
-}
+func sanitize(name string) string { return artifacts.SanitizeRunName(name) }

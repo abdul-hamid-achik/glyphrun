@@ -172,15 +172,28 @@ func Collect(opts CollectOptions) (Catalog, error) {
 		return Catalog{}, ErrNoSpecs
 	}
 
+	// Resolve the project runtime once for the whole catalog; per-file
+	// config discovery is both slow and a way for two stories to disagree
+	// about which config applies.
+	rt, err := config.LoadRuntime(paths[0], opts.ConfigPath, opts.Environment)
+	if err != nil {
+		return Catalog{}, err
+	}
+	parseOpts := rt.SpecParseOptions()
+	parseOpts.AllowHashMismatch = true
+	if opts.DefaultTerminal.Cols > 0 && opts.DefaultTerminal.Rows > 0 {
+		parseOpts.DefaultTerminal = opts.DefaultTerminal
+	}
+
 	index := ReadIndex(opts.StoriesRoot)
 	runs := indexRuns(opts.ArtifactRoot)
 
 	var stories []Story
 	for _, path := range manifests {
-		stories = append(stories, loadManifestStories(path, opts, index, runs)...)
+		stories = append(stories, loadManifestStories(path, opts, parseOpts, index, runs)...)
 	}
 	for _, path := range specFiles {
-		stories = append(stories, loadSpecStory(path, opts, index, runs))
+		stories = append(stories, loadSpecStory(path, opts, parseOpts, index, runs))
 	}
 	filtered := filterStories(stories, opts, len(manifests) > 0)
 	sort.SliceStable(filtered, func(i, j int) bool {
@@ -234,12 +247,12 @@ func UnderRoots(path string, roots ...string) bool {
 	return false
 }
 
-func loadManifestStories(path string, opts CollectOptions, index map[string]IndexEntry, runs map[string]artifacts.RunResult) []Story {
-	m, err := LoadManifest(path)
+func loadManifestStories(path string, opts CollectOptions, parseOpts spec.ParseOptions, index map[string]IndexEntry, runs map[string]artifacts.RunResult) []Story {
+	m, err := LoadManifest(path, parseOpts)
 	if err != nil {
 		return []Story{{Key: path, Name: filepath.Base(path), Source: SourceManifest, Path: path, Status: "parse_error", Golden: GoldenNone, ParseError: err.Error(), Snapshots: []Snapshot{}}}
 	}
-	expanded, err := Expand(m, path, opts.DefaultTerminal)
+	expanded, err := Expand(m, path, parseOpts.DefaultTerminal)
 	if err != nil {
 		return []Story{{Key: path, Name: filepath.Base(path), Source: SourceManifest, Path: path, Status: "parse_error", Golden: GoldenNone, ParseError: err.Error(), Snapshots: []Snapshot{}}}
 	}
@@ -263,25 +276,15 @@ func loadManifestStories(path string, opts CollectOptions, index map[string]Inde
 			row.Owner = ex.Spec.Metadata.Owner
 			row.Tags = append([]string(nil), ex.Spec.Metadata.Tags...)
 		}
-		goldenName := ""
-		if ex.Golden {
-			goldenName = ex.SnapshotName
-		}
-		joinResult(&row, ex.Spec, goldenName, opts, index, runs)
+		goldenName, goldenID := GoldenOutcome(ex.Spec)
+		joinResult(&row, ex.Spec, goldenName, goldenID, opts, index, runs)
 		out = append(out, row)
 	}
 	return out
 }
 
-func loadSpecStory(path string, opts CollectOptions, index map[string]IndexEntry, runs map[string]artifacts.RunResult) Story {
+func loadSpecStory(path string, opts CollectOptions, parseOpts spec.ParseOptions, index map[string]IndexEntry, runs map[string]artifacts.RunResult) Story {
 	row := Story{Key: path, Path: path, Name: filepath.Base(path), Source: SourceSpec, Status: "parse_error", Golden: GoldenNone, Snapshots: []Snapshot{}}
-	rt, err := config.LoadRuntime(path, opts.ConfigPath, opts.Environment)
-	if err != nil {
-		row.ParseError = err.Error()
-		return row
-	}
-	parseOpts := rt.SpecParseOptions()
-	parseOpts.AllowHashMismatch = true
 	parsed, err := spec.ParseFile(path, parseOpts)
 	if err != nil {
 		row.ParseError = err.Error()
@@ -297,20 +300,14 @@ func loadSpecStory(path string, opts CollectOptions, index map[string]IndexEntry
 		row.Owner = parsed.Spec.Metadata.Owner
 		row.Tags = append([]string(nil), parsed.Spec.Metadata.Tags...)
 	}
-	goldenName := ""
-	for _, o := range parsed.Resolved.Outcomes {
-		if o.Verify.Snapshot != nil {
-			goldenName = o.Verify.Snapshot.Name
-			break
-		}
-	}
-	joinResult(&row, parsed.Resolved, goldenName, opts, index, runs)
+	goldenName, goldenID := GoldenOutcome(parsed.Resolved)
+	joinResult(&row, parsed.Resolved, goldenName, goldenID, opts, index, runs)
 	return row
 }
 
 // joinResult fills the run-side fields of a row from the stories index or,
 // failing that, the newest matching run directory.
-func joinResult(row *Story, s spec.Spec, goldenName string, opts CollectOptions, index map[string]IndexEntry, runs map[string]artifacts.RunResult) {
+func joinResult(row *Story, s spec.Spec, goldenName, goldenID string, opts CollectOptions, index map[string]IndexEntry, runs map[string]artifacts.RunResult) {
 	regions := regionsFromSpec(s)
 	if entry, ok := index[s.Name]; ok {
 		row.RunID = entry.RunID
@@ -320,7 +317,7 @@ func joinResult(row *Story, s spec.Spec, goldenName string, opts CollectOptions,
 		dir := IndexDir(opts.StoriesRoot, s.Name)
 		row.Snapshots = loadSnapshots(dir, s.Name, goldenName, regions, opts.SnapshotRoot)
 		row.Golden = aggregateGolden(row.Snapshots, goldenName)
-		reconcileGoldenWithOutcomes(row, goldenName, entry.Outcomes)
+		reconcileGoldenWithOutcomes(row, goldenName, goldenID, entry.Outcomes)
 		return
 	}
 	if run, ok := runs[s.Name]; ok {
@@ -333,7 +330,7 @@ func joinResult(row *Story, s spec.Spec, goldenName string, opts CollectOptions,
 		row.Passed, row.Failed = countOutcomes(run.Outcomes)
 		row.Snapshots = loadSnapshots(run.RunDir, s.Name, goldenName, regions, opts.SnapshotRoot)
 		row.Golden = aggregateGolden(row.Snapshots, goldenName)
-		reconcileGoldenWithOutcomes(row, goldenName, run.Outcomes)
+		reconcileGoldenWithOutcomes(row, goldenName, goldenID, run.Outcomes)
 		return
 	}
 	row.Status = "not_run"
@@ -372,16 +369,14 @@ func aggregateGolden(snaps []Snapshot, goldenName string) string {
 // reconcileGoldenWithOutcomes trusts the runner over the cell diff: the
 // `snapshot` verifier compares normalized text (and a hand-edited golden
 // .txt may differ while the .json cells still match), so a failed golden
-// outcome marks the story changed even when the cell diff is empty.
-func reconcileGoldenWithOutcomes(row *Story, goldenName string, outcomes []artifacts.OutcomeResult) {
-	if goldenName == "" {
+// outcome marks the story changed even when the cell diff is empty. The
+// outcome is matched by its id, never by message text.
+func reconcileGoldenWithOutcomes(row *Story, goldenName, goldenID string, outcomes []artifacts.OutcomeResult) {
+	if goldenName == "" || goldenID == "" {
 		return
 	}
 	for _, o := range outcomes {
-		if o.Status == artifacts.OutcomePassed {
-			continue
-		}
-		if o.ID != "golden" && !strings.Contains(o.Message, "snapshot") {
+		if o.ID != goldenID || o.Status == artifacts.OutcomePassed {
 			continue
 		}
 		if row.Golden == GoldenMatch {
@@ -519,14 +514,12 @@ func loadSnapshots(dir, specName, goldenName string, regions []render.RegionHigh
 	return snaps
 }
 
-// goldenPath mirrors the runner's committed snapshot layout:
-// <snapshotRoot>/<spec>/<name>.json (the JSON sibling of the .txt golden).
+// goldenPath is the JSON sibling of the runner's committed golden
+// (<snapshotRoot>/<spec>/<name>.txt), resolved by the same helper the
+// runner writes with so the two can never disagree on sanitization.
 func goldenPath(snapshotRoot, specName, name string) string {
-	root := snapshotRoot
-	if root == "" {
-		root = config.DefaultSnapshotRoot
-	}
-	return filepath.Join(root, sanitizeName(specName), sanitizeName(name)+".json")
+	txt := artifacts.CommittedSnapshotPath("", snapshotRoot, specName, name)
+	return strings.TrimSuffix(txt, ".txt") + ".json"
 }
 
 // readGolden loads the committed golden as a cell grid. The JSON sibling
@@ -636,4 +629,53 @@ func regionsFromSpec(s spec.Spec) []render.RegionHighlight {
 		}
 	}
 	return out
+}
+
+// Roots are the absolute directories a stories command reads and writes,
+// resolved once from the project runtime. Every surface (CLI, MCP, run,
+// serve) goes through ResolveRoots so they cannot drift apart.
+type Roots struct {
+	ProjectRoot     string
+	ArtifactRoot    string
+	SnapshotRoot    string
+	StoriesRoot     string
+	DefaultTerminal spec.Terminal
+}
+
+// ResolveRoots computes the roots for a runtime; artifactOverride is the
+// --artifact-root flag ("" keeps the config value).
+func ResolveRoots(rt config.Runtime, artifactOverride string) Roots {
+	abs := func(p, def string) string {
+		if strings.TrimSpace(p) == "" {
+			p = def
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(rt.ProjectRoot, p)
+		}
+		return p
+	}
+	artifactRoot := artifactOverride
+	if artifactRoot == "" {
+		artifactRoot = rt.Config.ArtifactRoot
+	}
+	return Roots{
+		ProjectRoot:     rt.ProjectRoot,
+		ArtifactRoot:    abs(artifactRoot, config.DefaultArtifactRoot),
+		SnapshotRoot:    abs(rt.Config.SnapshotRoot, config.DefaultSnapshotRoot),
+		StoriesRoot:     abs(rt.Config.StoriesRoot, config.DefaultStoriesRoot),
+		DefaultTerminal: rt.SpecParseOptions().DefaultTerminal,
+	}
+}
+
+// CollectOptions builds the catalog options for these roots.
+func (r Roots) CollectOptions(paths []string, configPath, environment string) CollectOptions {
+	return CollectOptions{
+		Paths:           paths,
+		ArtifactRoot:    r.ArtifactRoot,
+		SnapshotRoot:    r.SnapshotRoot,
+		StoriesRoot:     r.StoriesRoot,
+		ConfigPath:      configPath,
+		Environment:     environment,
+		DefaultTerminal: r.DefaultTerminal,
+	}
 }
