@@ -6,6 +6,8 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-19
+
 ### Added
 
 - Emulator support for HPA (`` CSI n ` ``), which ultraviolet uses to position the cursor for ghostty, kitty, wezterm, tmux, foot, rio, st, contour, screen and linux.
@@ -157,7 +159,8 @@ follows Semantic Versioning for its pre-1.0 release line.
 - CI and release workflows reject private employer references in tracked
   release content.
 
-[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.18.0...v0.19.0
