@@ -367,10 +367,11 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		e.cursor.X = clamp(e.cursor.X-csiNumber(strings.TrimSuffix(body, "D"), 1), 0, e.cols-1)
 		return
 	}
-	if strings.HasSuffix(body, "G") {
-		// CHA — cursor horizontal absolute (1-based column).
+	if strings.HasSuffix(body, "G") || strings.HasSuffix(body, "`") {
+		// CHA / HPA — cursor horizontal absolute (1-based column). ultraviolet
+		// uses HPA for every terminal whose capabilities include it.
 		e.pendingWrap = false
-		e.cursor.X = clamp(csiNumber(strings.TrimSuffix(body, "G"), 1)-1, 0, e.cols-1)
+		e.cursor.X = clamp(csiNumber(body[:len(body)-1], 1)-1, 0, e.cols-1)
 		return
 	}
 	if strings.HasSuffix(body, "Z") {
