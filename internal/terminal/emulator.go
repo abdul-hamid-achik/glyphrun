@@ -290,6 +290,13 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		return
 	}
 	body := strings.TrimPrefix(seq, "[")
+	if isPrefixedOrIntermediateCSI(body) {
+		// Keyboard-protocol, query and report controls (`CSI > 4;2 m`,
+		// `CSI = 1;1 u`, `CSI < u`, `CSI 2 SP q`, ...) share final bytes with
+		// SGR and cursor save/restore. None of them changes the screen, and
+		// dispatching them by final byte alone corrupts the pen or the cursor.
+		return
+	}
 	if strings.HasPrefix(body, "?") {
 		e.applyPrivateMode(body)
 		return
@@ -458,6 +465,26 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		e.applySGR(strings.TrimSuffix(body, "m"))
 		return
 	}
+}
+
+// isPrefixedOrIntermediateCSI reports whether a CSI body (without the leading
+// "[") starts with one of the private prefixes "<", "=" or ">", or carries an
+// intermediate byte (0x20-0x2F, e.g. the space in DECSCUSR or the "$" in
+// DECRQM) before its final byte. The "?" prefix is not included: private modes
+// are dispatched by applyPrivateMode.
+func isPrefixedOrIntermediateCSI(body string) bool {
+	if body == "" {
+		return false
+	}
+	if strings.IndexByte("<=>", body[0]) >= 0 {
+		return true
+	}
+	for i := 0; i < len(body)-1; i++ {
+		if body[i] >= 0x20 && body[i] <= 0x2f {
+			return true
+		}
+	}
+	return false
 }
 
 // applyOSC handles Operating System Command sequences. OSC 8 (hyperlinks) and

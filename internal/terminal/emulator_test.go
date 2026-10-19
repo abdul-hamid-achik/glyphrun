@@ -986,3 +986,43 @@ func TestSimpleEmulatorFullReset(t *testing.T) {
 		t.Fatalf("scroll region survived RIS, row 0 = %q, want Z", got)
 	}
 }
+
+// Prefixed (`<`, `=`, `>`) and intermediate-byte CSI sequences are keyboard
+// protocol, query and report controls, not the SGR/cursor commands that share
+// their final byte. Bubble Tea v2 emits several at startup, on suspend/resume
+// and when it changes keyboard enhancements; dispatching them by final byte
+// alone turned `CSI > 4;2 m` into SGR underline+dim and `CSI = 1;1 u` into a
+// cursor restore.
+func TestSimpleEmulatorIgnoresPrefixedAndIntermediateCSI(t *testing.T) {
+	tests := []struct {
+		name string
+		seq  string
+	}{
+		{"xterm modifyOtherKeys", "\x1b[>4;2m"},
+		{"xterm modifyOtherKeys reset", "\x1b[>4m"},
+		{"kitty keyboard set flags", "\x1b[=1;1u"},
+		{"kitty keyboard push", "\x1b[>1u"},
+		{"kitty keyboard pop", "\x1b[<u"},
+		{"kitty keyboard query", "\x1b[?u"},
+		{"secondary device attributes", "\x1b[>c"},
+		{"cursor style", "\x1b[2 q"},
+		{"request ANSI mode", "\x1b[4$p"},
+		{"soft reset prefix shape", "\x1b[>0s"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			em := NewEmulator(10, 3)
+			// Save the cursor at the origin, print with a known pen, then send
+			// the sequence and keep printing: neither the cursor nor the pen may
+			// change.
+			feedAll(t, em, "\x1b[2J\x1b[H\x1b[s\x1b[3;1H\x1b[31mab", tc.seq, "c")
+			scr := em.Screen()
+			if got := rowText(scr, 2, 10); got != "abc" {
+				t.Errorf("row 2 = %q, want %q", got, "abc")
+			}
+			if c := scr.Cell(2, 2); c.Style != (Style{Fg: "red"}) {
+				t.Errorf("style after %q = %+v, want only fg red", tc.seq, c.Style)
+			}
+		})
+	}
+}

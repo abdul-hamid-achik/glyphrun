@@ -15,6 +15,7 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 - Background color erase: ED, EL, ECH, ICH, DCH, IL, DL, SU/SD and scrolling from LF/IND/NEL/RI now blank cells with the current SGR background instead of the default, as xterm does. Captures of apps that clear regions after setting a background (Bubble Tea v2 panels, for example) no longer show those cells as default-colored. Output without a background set is unchanged.
 - Insert mode was ignored, so a renderer that inserted text with IRM instead of ICH had its glyphs overwrite the existing text; and autowrap could not be switched off, so painting the bottom-right cell wrapped.
+- CSI sequences with a `<`, `=` or `>` prefix or an intermediate byte were dispatched by their final byte alone, so Bubble Tea v2's keyboard-protocol controls corrupted the capture: `CSI > 4;2 m` (modifyOtherKeys) set dim/underline like SGR, and `CSI = 1;1 u` / `CSI > 1 u` / `CSI < u` (kitty keyboard) restored a saved cursor position. They are now ignored.
 
 ### Changed
 
