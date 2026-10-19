@@ -62,6 +62,12 @@ type SimpleEmulator struct {
 	bracketedPaste      bool
 	alternateScreen     bool
 	alternateScreenUsed bool
+	// mainCursor is where the cursor was when the app entered the alternate
+	// screen; leaving it puts the cursor back there, as xterm's 1049 does.
+	// Only the position is kept: the alternate-screen contents stay visible
+	// after the app exits because specs assert on that final screen.
+	mainCursor    Cursor
+	hasMainCursor bool
 
 	// link is the currently open OSC 8 hyperlink URI. It is attached to every
 	// glyph printed until the link is closed (OSC 8 with an empty URI). Unlike
@@ -123,6 +129,7 @@ func (e *SimpleEmulator) Resize(cols, rows int) error {
 	e.scrollTop = 0
 	e.scrollBottom = rows - 1
 	e.originMode = false
+	e.hasMainCursor = false
 	return nil
 }
 
@@ -649,6 +656,16 @@ func (e *SimpleEmulator) applyPrivateMode(body string) {
 		case "25":
 			e.cursor.Visible = enable
 		case "1049":
+			if enable && !e.alternateScreen {
+				e.mainCursor = e.cursor
+				e.hasMainCursor = true
+			}
+			if !enable && e.alternateScreen && e.hasMainCursor {
+				e.cursor.X = e.mainCursor.X
+				e.cursor.Y = e.mainCursor.Y
+				e.pendingWrap = false
+				e.hasMainCursor = false
+			}
 			e.alternateScreen = enable
 			if enable {
 				e.alternateScreenUsed = true
@@ -1181,6 +1198,7 @@ func (e *SimpleEmulator) fullReset() {
 	e.hasSaved = false
 	e.bracketedPaste = false
 	e.alternateScreen = false
+	e.hasMainCursor = false
 	e.mouseTracking = false
 	e.mouseSGR = false
 	e.defaultFg = ""

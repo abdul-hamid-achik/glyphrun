@@ -1026,3 +1026,85 @@ func TestSimpleEmulatorIgnoresPrefixedAndIntermediateCSI(t *testing.T) {
 		})
 	}
 }
+
+// Leaving the alternate screen (`CSI ? 1049 l`) puts the cursor back where it
+// was when the app entered it, as xterm does. A full-screen app that leaves the
+// cursor in the bottom-right cell with autowrap off must not make the shell's
+// next line start in the last column and wrap. The alternate-screen contents
+// are deliberately not swapped out: specs assert on the screen after the app
+// quits.
+func TestSimpleEmulatorAltScreenExitRestoresCursor(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   []string
+		row     int
+		wantRow string
+		wantX   int
+		wantY   int
+	}{
+		{
+			name:    "cursor parked in the last cell with autowrap off",
+			input:   []string{"\x1b[?1049h\x1b[?7l\x1b[4;10HX\x1b[?7h\x1b[?1049l", "run-exit=0\r\n"},
+			row:     0,
+			wantRow: "run-exit=0",
+			wantX:   0,
+			wantY:   1,
+		},
+		{
+			name:    "returns to the position the shell left",
+			input:   []string{"$ app\r\n", "\x1b[?1049h\x1b[3;5Hframe\x1b[?1049l", "done"},
+			row:     1,
+			wantRow: "done",
+			wantX:   4,
+			wantY:   1,
+		},
+		{
+			name:    "exit without enter keeps the cursor",
+			input:   []string{"\x1b[2;3H\x1b[?1049l", "x"},
+			row:     1,
+			wantRow: "  x",
+			wantX:   3,
+			wantY:   1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			em := NewEmulator(10, 4)
+			feedAll(t, em, tc.input...)
+			scr := em.Screen()
+			if got := rowText(scr, tc.row, 10); got != tc.wantRow {
+				t.Errorf("row %d = %q, want %q", tc.row, got, tc.wantRow)
+			}
+			if scr.Cursor().X != tc.wantX || scr.Cursor().Y != tc.wantY {
+				t.Errorf("cursor = (%d,%d), want (%d,%d)", scr.Cursor().X, scr.Cursor().Y, tc.wantX, tc.wantY)
+			}
+		})
+	}
+}
+
+// A resize or full reset while on the alternate screen discards the saved
+// main-screen position, which may no longer fit.
+func TestSimpleEmulatorAltScreenSavedCursorDroppedOnResizeAndReset(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		reset func(t *testing.T, em *SimpleEmulator)
+	}{
+		{"resize", func(t *testing.T, em *SimpleEmulator) {
+			if err := em.Resize(6, 3); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{"RIS", func(t *testing.T, em *SimpleEmulator) { feedAll(t, em, "\x1bc") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			em := NewEmulator(10, 4)
+			feedAll(t, em, "\x1b[4;9H\x1b[?1049h")
+			tc.reset(t, em)
+			feedAll(t, em, "\x1b[2;2H\x1b[?1049l")
+			scr := em.Screen()
+			if scr.Cursor().X != 1 || scr.Cursor().Y != 1 {
+				t.Errorf("cursor = (%d,%d), want (1,1): a stale saved position was restored", scr.Cursor().X, scr.Cursor().Y)
+			}
+		})
+	}
+}
