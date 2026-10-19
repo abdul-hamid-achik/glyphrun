@@ -6,6 +6,8 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-19
+
 ### Added
 
 - The emulator tracks the terminal default colors an app sets with OSC 10/11 (and clears with OSC 110/111 or a full reset). Snapshots report them as optional `defaultFg` / `defaultBg` (`#rrggbb`, omitted when unset), and `glyph render` uses them as the SVG canvas, default text and cursor colors. Cell styles are unchanged: a cell on the default background still has an empty `bg`.
@@ -142,7 +144,8 @@ follows Semantic Versioning for its pre-1.0 release line.
 - CI and release workflows reject private employer references in tracked
   release content.
 
-[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.17.0...v0.18.0
