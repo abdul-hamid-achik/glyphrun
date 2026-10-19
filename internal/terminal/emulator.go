@@ -37,6 +37,28 @@ type SimpleEmulator struct {
 	// frame that fills the full terminal width drifts by a row.
 	pendingWrap bool
 
+	// autoWrap is DECAWM (private mode 7), on by default. With it off, printing
+	// at the last column overwrites that column and never defers a wrap;
+	// renderers such as ultraviolet switch it off to paint the bottom-right
+	// cell without scrolling.
+	autoWrap bool
+	// insertMode is IRM (ANSI mode 4): while set, printing a glyph first shifts
+	// the rest of the line right. Unlike the origin flag it is not part of the
+	// DECSC save set.
+	insertMode bool
+	// lastRune is the most recently printed graphic character, which REP
+	// repeats; hasLast is false until one has been printed (and again after a
+	// full reset). Cursor motion does not clear it, matching
+	// charmbracelet/x/vt.
+	lastRune rune
+	hasLast  bool
+
+	// defaultFg and defaultBg are the terminal default colors the target set
+	// with OSC 10 / OSC 11, normalized to "#rrggbb" (empty when unset). They are
+	// reported on snapshots and never copied into cell styles.
+	defaultFg string
+	defaultBg string
+
 	bracketedPaste      bool
 	alternateScreen     bool
 	alternateScreenUsed bool
@@ -76,7 +98,7 @@ func NewEmulator(cols, rows int) *SimpleEmulator {
 	if rows <= 0 {
 		rows = 24
 	}
-	e := &SimpleEmulator{cursor: Cursor{Visible: true}}
+	e := &SimpleEmulator{cursor: Cursor{Visible: true}, autoWrap: true}
 	_ = e.Resize(cols, rows)
 	return e
 }
@@ -262,12 +284,23 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		case "E": // NEL — next line (CR + index)
 			e.cursor.X = 0
 			e.index()
+		case "c": // RIS — full reset
+			e.fullReset()
 		}
 		return
 	}
 	body := strings.TrimPrefix(seq, "[")
 	if strings.HasPrefix(body, "?") {
 		e.applyPrivateMode(body)
+		return
+	}
+	if strings.HasSuffix(body, "h") || strings.HasSuffix(body, "l") {
+		e.applyANSIMode(body)
+		return
+	}
+	if strings.HasSuffix(body, "b") {
+		// REP — repeat the preceding graphic character.
+		e.repeatLast(csiNumber(strings.TrimSuffix(body, "b"), 1))
 		return
 	}
 	if strings.HasSuffix(body, "J") {
@@ -362,14 +395,15 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 	if strings.HasSuffix(body, "X") {
 		// ECH — erase N characters from the cursor without moving it.
 		// Erasing cancels any deferred autowrap so a subsequent print does
-		// not spuriously advance to the next line.
+		// not spuriously advance to the next line. The erased cells take the
+		// current background (BCE).
 		e.pendingWrap = false
 		n := csiNumber(strings.TrimSuffix(body, "X"), 1)
 		if e.cursor.Y >= 0 && e.cursor.Y < e.rows {
 			for i := 0; i < n; i++ {
 				x := e.cursor.X + i
 				if x >= 0 && x < e.cols {
-					e.cells[e.cursor.Y][x] = Cell{X: x, Y: e.cursor.Y, Char: " ", Width: 1}
+					e.cells[e.cursor.Y][x] = e.blankCell(x, e.cursor.Y)
 				}
 			}
 		}
@@ -426,13 +460,18 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 	}
 }
 
-// applyOSC handles Operating System Command sequences. Only OSC 8 (hyperlinks)
-// changes state today; other OSCs (e.g. window title) are ignored. The format
-// is `8 ; params ; URI`; an empty URI closes the current link.
+// applyOSC handles Operating System Command sequences. OSC 8 (hyperlinks) and
+// OSC 10/11/110/111 (default foreground/background) change state; other OSCs
+// (e.g. window title) are ignored. The hyperlink format is
+// `8 ; params ; URI`; an empty URI closes the current link.
 func (e *SimpleEmulator) applyOSC(seq string) {
 	body := strings.TrimPrefix(seq, "]")
 	body = strings.TrimSuffix(body, "\a")
 	body = strings.TrimSuffix(body, "\x1b\\")
+	if cmd, arg, _ := strings.Cut(body, ";"); cmd == "10" || cmd == "11" || cmd == "110" || cmd == "111" {
+		e.applyDefaultColorOSC(cmd, arg)
+		return
+	}
 	if !strings.HasPrefix(body, "8;") {
 		return
 	}
@@ -443,6 +482,119 @@ func (e *SimpleEmulator) applyOSC(seq string) {
 		return
 	}
 	e.link = rest[idx+1:]
+}
+
+// applyDefaultColorOSC handles OSC 10/11 (set the default foreground/
+// background) and OSC 110/111 (reset them). Queries (`?`) and values that do not
+// parse are ignored, leaving the previous default in place. The colors are
+// metadata for snapshots and renderers: cells printed on the default background
+// keep an empty Style.Bg.
+func (e *SimpleEmulator) applyDefaultColorOSC(cmd, arg string) {
+	switch cmd {
+	case "110":
+		e.defaultFg = ""
+	case "111":
+		e.defaultBg = ""
+	default:
+		hex, ok := parseOSCColor(arg)
+		if !ok {
+			return
+		}
+		if cmd == "10" {
+			e.defaultFg = hex
+		} else {
+			e.defaultBg = hex
+		}
+	}
+}
+
+// parseOSCColor parses the X11 color specs terminals accept for OSC 10/11 and
+// returns them as lowercase "#rrggbb". It understands `rgb:r/g/b` (and
+// `rgba:r/g/b/a`, alpha ignored) with 1-4 hex digits per component, and `#rgb`,
+// `#rrggbb`, `#rrrgggbbb` and `#rrrrggggbbbb`. Components are scaled to 8 bits
+// proportionally, so "f" and "ffff" both give 255. Color names are not
+// supported.
+func parseOSCColor(spec string) (string, bool) {
+	var comps []string
+	switch {
+	case strings.HasPrefix(spec, "rgb:"):
+		comps = strings.Split(spec[len("rgb:"):], "/")
+		if len(comps) != 3 {
+			return "", false
+		}
+	case strings.HasPrefix(spec, "rgba:"):
+		comps = strings.Split(spec[len("rgba:"):], "/")
+		if len(comps) != 4 {
+			return "", false
+		}
+		if _, ok := hexComponent(comps[3]); !ok {
+			return "", false
+		}
+		comps = comps[:3]
+	case strings.HasPrefix(spec, "#"):
+		digits := spec[1:]
+		if len(digits) == 0 || len(digits)%3 != 0 || len(digits)/3 > 4 {
+			return "", false
+		}
+		n := len(digits) / 3
+		comps = []string{digits[:n], digits[n : 2*n], digits[2*n:]}
+	default:
+		return "", false
+	}
+	var rgb [3]int
+	for i, c := range comps {
+		v, ok := hexComponent(c)
+		if !ok {
+			return "", false
+		}
+		rgb[i] = v
+	}
+	return fmt.Sprintf("#%02x%02x%02x", rgb[0], rgb[1], rgb[2]), true
+}
+
+// hexComponent parses one 1-4 digit hex color component and scales it to 0-255.
+func hexComponent(c string) (int, bool) {
+	if len(c) < 1 || len(c) > 4 {
+		return 0, false
+	}
+	v, err := strconv.ParseUint(c, 16, 16)
+	if err != nil {
+		return 0, false
+	}
+	max := (1 << (4 * len(c))) - 1
+	return (int(v)*255 + max/2) / max, true
+}
+
+// applyANSIMode handles non-private SM/RM (`CSI Pm h` / `CSI Pm l`). Only IRM
+// (mode 4) is supported; other parameters (LNM, KAM, ...) are ignored so that a
+// combined `CSI 4;20 h` still applies the part that is understood.
+func (e *SimpleEmulator) applyANSIMode(body string) {
+	set := strings.HasSuffix(body, "h")
+	args := body[:len(body)-1]
+	if strings.Trim(args, "0123456789;") != "" {
+		return // a prefixed (<, >, =) or intermediate-byte sequence, not SM/RM
+	}
+	for _, arg := range strings.Split(args, ";") {
+		if arg == "4" {
+			e.insertMode = set
+		}
+	}
+}
+
+// repeatLast implements REP: print the last graphic character n more times as if
+// it had been typed, so autowrap, insert mode and the current pen all apply. It
+// does nothing before the first printable character or after a full reset.
+func (e *SimpleEmulator) repeatLast(n int) {
+	if !e.hasLast {
+		return
+	}
+	const maxRepeat = 65535 // a sane cap on a hostile or corrupt count
+	if n > maxRepeat {
+		n = maxRepeat
+	}
+	for i := 0; i < n; i++ {
+		e.putRune(e.lastRune)
+	}
 }
 
 func (e *SimpleEmulator) applyPrivateMode(body string) {
@@ -461,6 +613,12 @@ func (e *SimpleEmulator) applyPrivateMode(body string) {
 			} else {
 				e.cursor.Y = 0
 			}
+		case "7":
+			// DECAWM — autowrap. Switching it either way drops any deferred
+			// wrap: with it off nothing wraps, and turning it on must not
+			// resurrect a stale pending wrap from the old state.
+			e.autoWrap = enable
+			e.pendingWrap = false
 		case "25":
 			e.cursor.Visible = enable
 		case "1049":
@@ -656,14 +814,22 @@ func (e *SimpleEmulator) putRune(r rune) {
 		e.pendingWrap = false
 	}
 	if e.cursor.Y >= 0 && e.cursor.Y < e.rows && e.cursor.X >= 0 && e.cursor.X < e.cols {
+		if e.insertMode {
+			// IRM: open room for the glyph first. Every rune occupies one cell
+			// here, so that is the shift; cells pushed past the right margin
+			// are discarded.
+			e.insertChars(1)
+		}
 		e.cells[e.cursor.Y][e.cursor.X].Char = string(r)
 		e.cells[e.cursor.Y][e.cursor.X].Style = e.style
 		e.cells[e.cursor.Y][e.cursor.X].Link = e.link
 	}
+	e.lastRune, e.hasLast = r, true
 	if e.cursor.X >= e.cols-1 {
-		// Last column: stay put and defer the wrap (VT100 autowrap quirk).
+		// Last column: stay put and, with autowrap on, defer the wrap (VT100
+		// autowrap quirk). With autowrap off later glyphs overwrite this column.
 		e.cursor.X = e.cols - 1
-		e.pendingWrap = true
+		e.pendingWrap = e.autoWrap
 	} else {
 		e.cursor.X++
 	}
@@ -830,7 +996,7 @@ func (e *SimpleEmulator) insertChars(n int) {
 			e.cells[y][x] = e.cells[y][src]
 			e.cells[y][x].X = x
 		} else {
-			e.cells[y][x] = Cell{X: x, Y: y, Char: " ", Width: 1}
+			e.cells[y][x] = e.blankCell(x, y)
 		}
 	}
 	e.pendingWrap = false
@@ -848,7 +1014,7 @@ func (e *SimpleEmulator) deleteChars(n int) {
 			e.cells[y][x] = e.cells[y][src]
 			e.cells[y][x].X = x
 		} else {
-			e.cells[y][x] = Cell{X: x, Y: y, Char: " ", Width: 1}
+			e.cells[y][x] = e.blankCell(x, y)
 		}
 	}
 	e.pendingWrap = false
@@ -873,13 +1039,30 @@ func (e *SimpleEmulator) restoreCursor() {
 	e.originMode = e.savedOrigin
 }
 
-func (e *SimpleEmulator) blankRow(y int) {
+// blankCell returns the cell every erase, insert, delete and scroll leaves
+// behind: a blank carrying only the current SGR background, as xterm's BCE
+// (background color erase) does. Foreground, attributes and hyperlink are never
+// part of it. With no background set it is the plain default blank, so output
+// without a background is unchanged. Resize, RIS and the alternate-screen
+// switch fill with plain blanks instead (see clear).
+func (e *SimpleEmulator) blankCell(x, y int) Cell {
+	return Cell{X: x, Y: y, Char: " ", Width: 1, Style: Style{Bg: e.style.Bg}}
+}
+
+// eraseCells blanks columns [x0, x1) of row y with BCE, clamping to the grid.
+func (e *SimpleEmulator) eraseCells(y, x0, x1 int) {
 	if y < 0 || y >= e.rows {
 		return
 	}
-	for x := 0; x < e.cols; x++ {
-		e.cells[y][x] = Cell{X: x, Y: y, Char: " ", Width: 1}
+	x0 = max(x0, 0)
+	x1 = min(x1, e.cols)
+	for x := x0; x < x1; x++ {
+		e.cells[y][x] = e.blankCell(x, y)
 	}
+}
+
+func (e *SimpleEmulator) blankRow(y int) {
+	e.eraseCells(y, 0, e.cols)
 }
 
 // reindex restores each cell's X/Y after a row-level move (copy shuffles whole
@@ -893,6 +1076,9 @@ func (e *SimpleEmulator) reindex() {
 	}
 }
 
+// clear blanks the whole grid with plain default cells, ignoring the pen. It is
+// what entering the alternate screen does, which follows charmbracelet/x/vt;
+// ED uses clearScreen, which honors BCE.
 func (e *SimpleEmulator) clear() {
 	for y := 0; y < e.rows; y++ {
 		for x := 0; x < e.cols; x++ {
@@ -901,33 +1087,33 @@ func (e *SimpleEmulator) clear() {
 	}
 }
 
+// clearScreen implements ED. Erased cells take the current background (BCE).
 func (e *SimpleEmulator) clearScreen(mode int) {
 	switch mode {
 	case 1:
-		for y := 0; y <= e.cursor.Y; y++ {
+		for y := 0; y <= e.cursor.Y && y < e.rows; y++ {
 			end := e.cols
 			if y == e.cursor.Y {
 				end = e.cursor.X + 1
 			}
-			for x := 0; x < end; x++ {
-				e.cells[y][x] = Cell{X: x, Y: y, Char: " ", Width: 1}
-			}
+			e.eraseCells(y, 0, end)
 		}
 	case 2, 3:
-		e.clear()
+		for y := 0; y < e.rows; y++ {
+			e.eraseCells(y, 0, e.cols)
+		}
 	default:
-		for y := e.cursor.Y; y < e.rows; y++ {
+		for y := max(e.cursor.Y, 0); y < e.rows; y++ {
 			start := 0
 			if y == e.cursor.Y {
 				start = e.cursor.X
 			}
-			for x := start; x < e.cols; x++ {
-				e.cells[y][x] = Cell{X: x, Y: y, Char: " ", Width: 1}
-			}
+			e.eraseCells(y, start, e.cols)
 		}
 	}
 }
 
+// clearLine implements EL. Erased cells take the current background (BCE).
 func (e *SimpleEmulator) clearLine(mode int) {
 	if e.cursor.Y < 0 || e.cursor.Y >= e.rows {
 		return
@@ -939,9 +1125,39 @@ func (e *SimpleEmulator) clearLine(mode int) {
 	case 2:
 		start, end = 0, e.cols
 	}
-	for x := start; x < end && x < e.cols; x++ {
-		e.cells[e.cursor.Y][x] = Cell{X: x, Y: e.cursor.Y, Char: " ", Width: 1}
-	}
+	e.eraseCells(e.cursor.Y, start, end)
+}
+
+// fullReset implements RIS (ESC c): the terminal returns to its power-on state.
+// The screen is blanked with plain cells (the pen is reset first, so there is no
+// background to erase with), and the cursor, pen, hyperlink, saved cursor,
+// scroll region, origin/insert/autowrap modes, REP memory, mouse and paste
+// modes, alternate-screen flag and the OSC-set default colors are all cleared.
+// alternateScreenUsed is history, not state, so it is kept.
+func (e *SimpleEmulator) fullReset() {
+	e.escMode = false
+	e.escBuf = nil
+	e.style = Style{}
+	e.link = ""
+	e.clear()
+	e.cursor = Cursor{Visible: true}
+	e.pendingWrap = false
+	e.scrollTop = 0
+	e.scrollBottom = e.rows - 1
+	e.originMode = false
+	e.autoWrap = true
+	e.insertMode = false
+	e.lastRune, e.hasLast = 0, false
+	e.savedCursor = Cursor{}
+	e.savedStyle = Style{}
+	e.savedOrigin = false
+	e.hasSaved = false
+	e.bracketedPaste = false
+	e.alternateScreen = false
+	e.mouseTracking = false
+	e.mouseSGR = false
+	e.defaultFg = ""
+	e.defaultBg = ""
 }
 
 func (e *SimpleEmulator) snapshotLocked() ScreenSnapshot {
@@ -968,6 +1184,9 @@ func (e *SimpleEmulator) snapshotLocked() ScreenSnapshot {
 		Cursor: e.cursor,
 		Cells:  cells,
 		Text:   strings.TrimRight(b.String(), "\n"),
+
+		DefaultFg: e.defaultFg,
+		DefaultBg: e.defaultBg,
 	}
 }
 

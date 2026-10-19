@@ -232,3 +232,87 @@ func TestSnapshotSVGRegions(t *testing.T) {
 		t.Fatalf("region rect should carry cell coordinates:\n%s", out)
 	}
 }
+
+// TestSnapshotSVGUsesTerminalDefaultColors checks that colors the target set
+// with OSC 10/11 replace the theme's canvas colors, that cursor and reverse
+// video follow them, and that unset defaults leave the theme untouched.
+func TestSnapshotSVGUsesTerminalDefaultColors(t *testing.T) {
+	base := snap("hi")
+	base.Cursor = terminal.Cursor{X: 0, Y: 0, Visible: true}
+	withReverse := snap("hi")
+	withReverse.Cursor = terminal.Cursor{Visible: false}
+	withReverse.Cells[0].Style.Reverse = true
+
+	tests := []struct {
+		name      string
+		snap      terminal.ScreenSnapshot
+		fg, bg    string
+		want      []string
+		wantNot   []string
+		wantEqual bool // output must equal the render of the snapshot without defaults
+	}{
+		{
+			name: "background and foreground",
+			snap: base, fg: "#d8dee9", bg: "#2e3440",
+			want:    []string{`<rect width="40" height="40" fill="#2e3440"/>`, `fill="#d8dee9"`, `stroke="#d8dee9"`},
+			wantNot: []string{"#1d1f21", "#c5c8c6"},
+		},
+		{
+			name: "background only keeps the theme foreground",
+			snap: base, bg: "#2e3440",
+			want:    []string{`fill="#2e3440"`, `fill="#c5c8c6"`},
+			wantNot: []string{`<rect width="40" height="40" fill="#1d1f21"/>`},
+		},
+		{
+			name: "reverse video swaps the app's colors",
+			snap: withReverse, fg: "#d8dee9", bg: "#2e3440",
+			want: []string{`<rect x="10" y="10" width="10" height="20" fill="#d8dee9"/>`, `fill="#2e3440"`},
+		},
+		{
+			name: "invalid values are ignored", snap: base, fg: `"/><script>`, bg: "red",
+			wantEqual: true,
+		},
+		{name: "unset changes nothing", snap: base, wantEqual: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s := tc.snap
+			s.DefaultFg, s.DefaultBg = tc.fg, tc.bg
+			out := SnapshotSVG(s, DefaultOptions())
+			if again := SnapshotSVG(s, DefaultOptions()); again != out {
+				t.Fatal("render with default colors is not deterministic")
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("missing %q in:\n%s", w, out)
+				}
+			}
+			for _, w := range tc.wantNot {
+				if strings.Contains(out, w) {
+					t.Errorf("unexpected %q in:\n%s", w, out)
+				}
+			}
+			if tc.wantEqual {
+				plain := tc.snap
+				plain.DefaultFg, plain.DefaultBg = "", ""
+				if want := SnapshotSVG(plain, DefaultOptions()); out != want {
+					t.Errorf("output changed without valid defaults:\n%s\nwant:\n%s", out, want)
+				}
+			}
+		})
+	}
+}
+
+// TestSnapshotSVGDefaultColorsKeepCellColors makes sure explicit cell colors are
+// not replaced by the terminal defaults, only the canvas and unset colors are.
+func TestSnapshotSVGDefaultColorsKeepCellColors(t *testing.T) {
+	s := snap("ab")
+	s.DefaultBg, s.DefaultFg = "#2e3440", "#d8dee9"
+	s.Cells[1].Style = terminal.Style{Bg: "#3b4252", Fg: "red"}
+	out := SnapshotSVG(s, DefaultOptions())
+	for _, w := range []string{`fill="#3b4252"`, `fill="#2e3440"`, `fill="#cc342b"`} {
+		if !strings.Contains(out, w) {
+			t.Errorf("missing %q in:\n%s", w, out)
+		}
+	}
+}

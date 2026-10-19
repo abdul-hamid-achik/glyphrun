@@ -19,7 +19,9 @@ import (
 
 // Theme is the color palette used to paint a screen. Empty cell colors fall
 // back to Foreground/Background; named or indexed ANSI colors resolve through
-// Palette.
+// Palette. A snapshot whose target set its own default colors (OSC 10/11,
+// ScreenSnapshot.DefaultFg/DefaultBg) overrides Foreground and Background for
+// that render, and Cursor too when it was the same color as Foreground.
 type Theme struct {
 	Background string
 	Foreground string
@@ -69,6 +71,37 @@ func DefaultTheme() Theme {
 	}
 }
 
+// themeForSnapshot applies the terminal default colors the target set via OSC
+// 10/11 so the canvas matches what a real terminal showed. Only well-formed
+// "#rrggbb" values are used: a snapshot can come from an untrusted file and the
+// value lands in an SVG attribute. The cursor follows the foreground only when
+// the theme derived it from the foreground in the first place.
+func themeForSnapshot(theme Theme, snap terminal.ScreenSnapshot) Theme {
+	if validHexColor(snap.DefaultBg) {
+		theme.Background = snap.DefaultBg
+	}
+	if validHexColor(snap.DefaultFg) {
+		if theme.Cursor == theme.Foreground {
+			theme.Cursor = snap.DefaultFg
+		}
+		theme.Foreground = snap.DefaultFg
+	}
+	return theme
+}
+
+// validHexColor reports whether s is exactly "#rrggbb".
+func validHexColor(s string) bool {
+	if len(s) != 7 || s[0] != '#' {
+		return false
+	}
+	for _, c := range s[1:] {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	return true
+}
+
 // DefaultOptions returns the standard rendering geometry.
 func DefaultOptions() Options {
 	return Options{
@@ -87,6 +120,7 @@ func DefaultOptions() Options {
 // no clock or randomness involved.
 func SnapshotSVG(snap terminal.ScreenSnapshot, opts Options) string {
 	opts = withDefaults(opts)
+	opts.Theme = themeForSnapshot(opts.Theme, snap)
 	cols, rows := snap.Cols, snap.Rows
 	if cols <= 0 {
 		cols = 80

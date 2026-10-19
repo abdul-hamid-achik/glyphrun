@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -557,5 +558,431 @@ func TestSimpleEmulatorCBTSegmentRewriteReplay(t *testing.T) {
 	}
 	if !strings.Contains(row, "Recovery receipt review") {
 		t.Fatalf("segment rewrite tore the row: %q", row)
+	}
+}
+
+// feedAll feeds each chunk to em and fails the test on error.
+func feedAll(t *testing.T, em *SimpleEmulator, chunks ...string) {
+	t.Helper()
+	for _, c := range chunks {
+		if _, err := em.Feed([]byte(c)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// TestSimpleEmulatorBackgroundColorErase pins xterm's BCE: every operation that
+// blanks cells fills them with a blank carrying only the current SGR
+// background (no fg, no attributes), and with no background set the blanks stay
+// the plain default cell so pre-BCE goldens are unchanged.
+func TestSimpleEmulatorBackgroundColorErase(t *testing.T) {
+	const fill = "abcdef" + "ghijkl" + "mnopqr" // 6x3, wraps with no newlines
+	row := func(y int) [][2]int {
+		out := make([][2]int, 0, 6)
+		for x := 0; x < 6; x++ {
+			out = append(out, [2]int{x, y})
+		}
+		return out
+	}
+	span := func(y, x0, x1 int) [][2]int {
+		var out [][2]int
+		for x := x0; x <= x1; x++ {
+			out = append(out, [2]int{x, y})
+		}
+		return out
+	}
+	join := func(parts ...[][2]int) [][2]int {
+		var out [][2]int
+		for _, p := range parts {
+			out = append(out, p...)
+		}
+		return out
+	}
+	tests := []struct {
+		name  string
+		op    string // fed after the fill, with the pen already set
+		blank [][2]int
+	}{
+		{"ED0", "\x1b[2;3H\x1b[J", join(span(1, 2, 5), row(2))},
+		{"ED1", "\x1b[2;2H\x1b[1J", join(row(0), span(1, 0, 1))},
+		{"ED2", "\x1b[2J", join(row(0), row(1), row(2))},
+		{"ED3", "\x1b[3J", join(row(0), row(1), row(2))},
+		{"EL0", "\x1b[2;3H\x1b[K", span(1, 2, 5)},
+		{"EL1", "\x1b[2;3H\x1b[1K", span(1, 0, 2)},
+		{"EL2", "\x1b[2;3H\x1b[2K", row(1)},
+		{"ECH", "\x1b[2;2H\x1b[3X", span(1, 1, 3)},
+		{"ICH", "\x1b[2;2H\x1b[2@", span(1, 1, 2)},
+		{"DCH", "\x1b[2;2H\x1b[2P", span(1, 4, 5)},
+		{"IL", "\x1b[2;1H\x1b[L", row(1)},
+		{"DL", "\x1b[2;1H\x1b[M", row(2)},
+		{"SU", "\x1b[S", row(2)},
+		{"SD", "\x1b[T", row(0)},
+		{"LF at bottom margin", "\x1b[3;1H\n", row(2)},
+		{"IND at bottom margin", "\x1b[3;1H\x1bD", row(2)},
+		{"NEL at bottom margin", "\x1b[3;1H\x1bE", row(2)},
+		{"RI at top margin", "\x1b[1;1H\x1bM", row(0)},
+		{"LF at region bottom", "\x1b[1;2r\x1b[2;1H\n", row(1)},
+		{"RI at region top", "\x1b[2;3r\x1b[2;1H\x1bM", row(1)},
+	}
+	for _, tc := range tests {
+		for _, withBG := range []bool{true, false} {
+			name := tc.name + "/default-bg"
+			pen := "\x1b[0m"
+			want := Style{}
+			if withBG {
+				name = tc.name + "/blue-bg"
+				// Bold red on blue: only the background may leak into blanks.
+				pen = "\x1b[1;31;44m"
+				want = Style{Bg: "blue"}
+			}
+			t.Run(name, func(t *testing.T) {
+				em := NewEmulator(6, 3)
+				feedAll(t, em, "\x1b[2J\x1b[H"+fill, pen, tc.op)
+				blank := map[[2]int]bool{}
+				for _, p := range tc.blank {
+					blank[p] = true
+				}
+				scr := em.Screen()
+				for y := 0; y < 3; y++ {
+					for x := 0; x < 6; x++ {
+						c := scr.Cell(x, y)
+						if blank[[2]int{x, y}] {
+							wantCell := Cell{X: x, Y: y, Char: " ", Width: 1, Style: want}
+							if c != wantCell {
+								t.Errorf("cell (%d,%d) = %+v, want %+v", x, y, c, wantCell)
+							}
+						} else if c.Style.Bg != "" {
+							t.Errorf("cell (%d,%d) = %+v: background leaked into a cell that was not erased", x, y, c)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestSimpleEmulatorBCETruecolorBackground checks that BCE carries any color
+// form the pen can hold, not just the named palette.
+func TestSimpleEmulatorBCETruecolorBackground(t *testing.T) {
+	em := NewEmulator(4, 1)
+	feedAll(t, em, "abcd\x1b[H\x1b[48;2;59;66;82m\x1b[2X")
+	for x := 0; x < 2; x++ {
+		if got := em.Screen().Cell(x, 0).Style.Bg; got != "#3b4252" {
+			t.Fatalf("cell %d bg = %q, want #3b4252", x, got)
+		}
+	}
+	if got := em.Screen().Cell(2, 0); got.Char != "c" || got.Style.Bg != "" {
+		t.Fatalf("cell 2 = %+v, want untouched c", got)
+	}
+}
+
+// TestSimpleEmulatorAlternateScreenClearIsPlain pins that entering the
+// alternate screen blanks with default cells even when a background is set,
+// matching charmbracelet/x/vt (the reference emulator).
+func TestSimpleEmulatorAlternateScreenClearIsPlain(t *testing.T) {
+	em := NewEmulator(4, 2)
+	feedAll(t, em, "abcd\x1b[44m\x1b[?1049h")
+	for x := 0; x < 4; x++ {
+		if c := em.Screen().Cell(x, 0); c.Char != " " || c.Style != (Style{}) {
+			t.Fatalf("cell %d = %+v, want a plain blank", x, c)
+		}
+	}
+}
+
+func TestSimpleEmulatorInsertReplaceMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		cols    int
+		input   string
+		wantRow string
+		wantX   int
+	}{
+		{"replace by default", 10, "abcdef\x1b[3GXY", "abXYef", 4},
+		{"IRM shifts the tail right", 10, "abcdef\x1b[3G\x1b[4hXY", "abXYcdef", 4},
+		{"RM restores replace", 10, "abcdef\x1b[3G\x1b[4h\x1b[4lXY", "abXYef", 4},
+		{"tail pushed past the margin is discarded", 6, "abcdef\x1b[3G\x1b[4hX", "abXcde", 3},
+		{"multiple params apply the supported one", 10, "abcdef\x1b[3G\x1b[4;20hX", "abXcdef", 3},
+		{"unsupported mode alone leaves replace on", 10, "abcdef\x1b[3G\x1b[20hX", "abXdef", 3},
+		{"reset with multiple params", 10, "abcdef\x1b[3G\x1b[4h\x1b[4;20lX", "abXdef", 3},
+		{"insert in the last column", 5, "abcde\x1b[1;5H\x1b[4hX", "abcdX", 4},
+		{"DECRC does not restore IRM", 10, "abcdef\x1b[3G\x1b[4h\x1b7\x1b[4l\x1b8X", "abXdef", 3},
+		{"DECRC does not turn IRM on", 10, "abcdef\x1b[3G\x1b7\x1b[4h\x1b[4l\x1b8X", "abXdef", 3},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			em := NewEmulator(tc.cols, 2)
+			feedAll(t, em, "\x1b[2J\x1b[H", tc.input)
+			scr := em.Screen()
+			if got := rowText(scr, 0, tc.cols); got != tc.wantRow {
+				t.Fatalf("row 0 = %q, want %q", got, tc.wantRow)
+			}
+			if x := scr.Cursor().X; x != tc.wantX {
+				t.Fatalf("cursor X = %d, want %d", x, tc.wantX)
+			}
+		})
+	}
+}
+
+// TestSimpleEmulatorInsertModePendingWrap checks that a deferred wrap resolves
+// before the insert: the glyph lands at the start of the next line, and the
+// line that was full is not shifted.
+func TestSimpleEmulatorInsertModePendingWrap(t *testing.T) {
+	em := NewEmulator(5, 3)
+	feedAll(t, em, "\x1b[2J\x1b[H\x1b[4habcdeX")
+	scr := em.Screen()
+	if got := rowText(scr, 0, 5); got != "abcde" {
+		t.Fatalf("row 0 = %q, want abcde", got)
+	}
+	if got := rowText(scr, 1, 5); got != "X" {
+		t.Fatalf("row 1 = %q, want X", got)
+	}
+}
+
+// TestSimpleEmulatorInsertModeKeepsStyleAndLinks checks the shifted cells keep
+// their own style while the inserted glyph takes the pen.
+func TestSimpleEmulatorInsertModeKeepsStyleAndLinks(t *testing.T) {
+	em := NewEmulator(8, 1)
+	feedAll(t, em, "\x1b[31mabc\x1b[0m\x1b[1G\x1b[4h\x1b[32mX")
+	scr := em.Screen()
+	if got := rowText(scr, 0, 8); got != "Xabc" {
+		t.Fatalf("row = %q, want Xabc", got)
+	}
+	if got := scr.Cell(0, 0).Style.Fg; got != "green" {
+		t.Fatalf("inserted glyph fg = %q, want green", got)
+	}
+	if got := scr.Cell(1, 0); got.Style.Fg != "red" || got.X != 1 {
+		t.Fatalf("shifted cell = %+v, want red at x=1", got)
+	}
+}
+
+func TestSimpleEmulatorRepeatPrecedingCharacter(t *testing.T) {
+	tests := []struct {
+		name    string
+		cols    int
+		input   string
+		wantRow []string // wanted text per row, trailing blanks trimmed
+		wantX   int
+	}{
+		{"count", 10, "A\x1b[3b", []string{"AAAA"}, 4},
+		{"default count is 1", 10, "A\x1b[b", []string{"AA"}, 2},
+		{"zero count is 1", 10, "A\x1b[0b", []string{"AA"}, 2},
+		{"nothing printed yet", 10, "\x1b[3b", []string{""}, 0},
+		{"repeats the last of several", 10, "ab\x1b[2b", []string{"abbb"}, 4},
+		{"wraps like typing", 5, "ab\x1b[5b", []string{"abbbb", "bb"}, 2},
+		{"survives cursor movement", 10, "A\x1b[5G\x1b[2b", []string{"A   AA"}, 6},
+		{"cleared by RIS", 10, "A\x1bc\x1b[2b", []string{""}, 0},
+		{"non-ASCII glyph", 10, "\u2022\x1b[2b", []string{"\u2022\u2022\u2022"}, 3},
+		{"insert mode shifts for each repeat", 10, "abc\x1b[1G\x1b[4h\x1b[2b", []string{"ccabc"}, 2},
+		{"autowrap off overwrites the last column", 4, "abc\x1b[?7l\x1b[3b", []string{"abcc"}, 3},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			em := NewEmulator(tc.cols, 3)
+			feedAll(t, em, "\x1b[2J\x1b[H", tc.input)
+			scr := em.Screen()
+			for y, want := range tc.wantRow {
+				if got := rowText(scr, y, tc.cols); got != want {
+					t.Errorf("row %d = %q, want %q", y, got, want)
+				}
+			}
+			if x := scr.Cursor().X; x != tc.wantX {
+				t.Errorf("cursor X = %d, want %d", x, tc.wantX)
+			}
+		})
+	}
+}
+
+func TestSimpleEmulatorRepeatUsesCurrentStyle(t *testing.T) {
+	em := NewEmulator(10, 1)
+	feedAll(t, em, "\x1b[31mA\x1b[1;32m\x1b[2b")
+	scr := em.Screen()
+	if got := scr.Cell(0, 0).Style; got != (Style{Fg: "red"}) {
+		t.Fatalf("original style = %+v", got)
+	}
+	for _, x := range []int{1, 2} {
+		if got := scr.Cell(x, 0).Style; got != (Style{Fg: "green", Bold: true}) {
+			t.Fatalf("repeated cell %d style = %+v, want bold green", x, got)
+		}
+	}
+}
+
+func TestSimpleEmulatorAutoWrapMode(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		rows  []string
+		x, y  int
+	}{
+		{"on by default", "abcdefg", []string{"abcde", "fg"}, 2, 1},
+		{"off overwrites the last column", "\x1b[?7labcdefg", []string{"abcdg", ""}, 4, 0},
+		{"off cancels a pending wrap", "abcde\x1b[?7lX", []string{"abcdX", ""}, 4, 0},
+		{"back on wraps again", "\x1b[?7l\x1b[?7habcdefg", []string{"abcde", "fg"}, 2, 1},
+		{"paint the last cell and restore", "\x1b[?7l\x1b[1;5HZ\x1b[?7h\x1b[2;1Hnext", []string{"    Z", "next"}, 4, 1},
+		{"RIS restores autowrap", "\x1b[?7l\x1bcabcdefg", []string{"abcde", "fg"}, 2, 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			em := NewEmulator(5, 2)
+			feedAll(t, em, "\x1b[2J\x1b[H", tc.input)
+			scr := em.Screen()
+			for y, want := range tc.rows {
+				if got := rowText(scr, y, 5); got != want {
+					t.Errorf("row %d = %q, want %q", y, got, want)
+				}
+			}
+			if c := scr.Cursor(); c.X != tc.x || c.Y != tc.y {
+				t.Errorf("cursor = (%d,%d), want (%d,%d)", c.X, c.Y, tc.x, tc.y)
+			}
+		})
+	}
+}
+
+func TestSimpleEmulatorDefaultColorOSC(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantFg     string
+		wantBg     string
+		presetBg   string // applied first, to prove invalid values keep the old one
+		presetFg   string
+		wantNoCell bool
+	}{
+		{name: "bg xterm 4-digit BEL", input: "\x1b]11;rgb:2e2e/3434/4040\a", wantBg: "#2e3440"},
+		{name: "bg xterm 4-digit ST", input: "\x1b]11;rgb:2e2e/3434/4040\x1b\\", wantBg: "#2e3440"},
+		{name: "fg xterm 4-digit", input: "\x1b]10;rgb:d8d8/dede/e9e9\a", wantFg: "#d8dee9"},
+		{name: "2-digit components", input: "\x1b]11;rgb:2e/34/40\a", wantBg: "#2e3440"},
+		{name: "1-digit components scale to 8 bits", input: "\x1b]11;rgb:e/3/4\a", wantBg: "#ee3344"},
+		{name: "3-digit components", input: "\x1b]11;rgb:123/456/789\a", wantBg: "#124578"},
+		{name: "mixed digit counts", input: "\x1b]11;rgb:f/80/ffff\a", wantBg: "#ff80ff"},
+		{name: "rgba ignores alpha", input: "\x1b]11;rgba:2e2e/3434/4040/ffff\a", wantBg: "#2e3440"},
+		{name: "hash 6", input: "\x1b]11;#2e3440\a", wantBg: "#2e3440"},
+		{name: "hash 6 uppercase", input: "\x1b]11;#2E3440\a", wantBg: "#2e3440"},
+		{name: "hash 3", input: "\x1b]11;#fa0\a", wantBg: "#ffaa00"},
+		{name: "hash 9", input: "\x1b]11;#123456789\a", wantBg: "#124578"},
+		{name: "hash 12", input: "\x1b]11;#2e2e34344040\a", wantBg: "#2e3440"},
+		{name: "both in sequence", input: "\x1b]10;#d8dee9\a\x1b]11;#2e3440\a", wantFg: "#d8dee9", wantBg: "#2e3440"},
+		{name: "query ignored", input: "\x1b]11;?\a", presetBg: "#112233", wantBg: "#112233"},
+		{name: "query ignored fg", input: "\x1b]10;?\a", presetFg: "#112233", wantFg: "#112233"},
+		{name: "bad hex digit", input: "\x1b]11;rgb:zz/00/00\a", presetBg: "#112233", wantBg: "#112233"},
+		{name: "wrong component count", input: "\x1b]11;rgb:11/22\a", presetBg: "#112233", wantBg: "#112233"},
+		{name: "five digit component", input: "\x1b]11;rgb:12345/00/00\a", presetBg: "#112233", wantBg: "#112233"},
+		{name: "hash bad length", input: "\x1b]11;#12345\a", presetBg: "#112233", wantBg: "#112233"},
+		{name: "color name unsupported", input: "\x1b]11;red\a", presetBg: "#112233", wantBg: "#112233"},
+		{name: "empty value", input: "\x1b]11;\a", presetBg: "#112233", wantBg: "#112233"},
+		{name: "reset bg 111", input: "\x1b]111\a", presetBg: "#112233", presetFg: "#445566", wantFg: "#445566"},
+		{name: "reset bg 111 with empty arg", input: "\x1b]111;\a", presetBg: "#112233"},
+		{name: "reset fg 110 ST", input: "\x1b]110\x1b\\", presetFg: "#445566", presetBg: "#112233", wantBg: "#112233"},
+		{name: "cursor color ignored", input: "\x1b]12;#ffffff\a"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			em := NewEmulator(10, 2)
+			if tc.presetBg != "" {
+				feedAll(t, em, "\x1b]11;"+tc.presetBg+"\a")
+			}
+			if tc.presetFg != "" {
+				feedAll(t, em, "\x1b]10;"+tc.presetFg+"\a")
+			}
+			feedAll(t, em, tc.input, "hi")
+			snap := em.Screen().Snapshot()
+			if snap.DefaultFg != tc.wantFg || snap.DefaultBg != tc.wantBg {
+				t.Fatalf("defaults = fg %q bg %q, want fg %q bg %q", snap.DefaultFg, snap.DefaultBg, tc.wantFg, tc.wantBg)
+			}
+			// The OSC never leaks glyphs and never touches cell styles.
+			if got := rowText(em.Screen(), 0, 10); got != "hi" {
+				t.Fatalf("row = %q, want hi", got)
+			}
+			if st := em.Screen().Cell(5, 0).Style; st != (Style{}) {
+				t.Fatalf("default-background cell style = %+v, want zero value", st)
+			}
+		})
+	}
+}
+
+// TestSimpleEmulatorDefaultColorsReachEverySnapshot checks the defaults ride
+// along on Screen(), Snapshot() and the frames Feed emits, and are omitted from
+// JSON when the target never set them.
+func TestSimpleEmulatorDefaultColorsReachEverySnapshot(t *testing.T) {
+	em := NewEmulator(4, 1)
+	frames, err := em.Feed([]byte("hi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(frames[0].Screen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "defaultBg") || strings.Contains(string(raw), "defaultFg") {
+		t.Fatalf("unset defaults must be omitted from JSON: %s", raw)
+	}
+	frames, err = em.Feed([]byte("\x1b]11;#2e3440\a\x1b]10;#d8dee9\a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := frames[0].Screen; got.DefaultBg != "#2e3440" || got.DefaultFg != "#d8dee9" {
+		t.Fatalf("frame defaults = %q/%q", got.DefaultFg, got.DefaultBg)
+	}
+	raw, _ = json.Marshal(em.Screen().Snapshot())
+	if !strings.Contains(string(raw), `"defaultBg":"#2e3440"`) || !strings.Contains(string(raw), `"defaultFg":"#d8dee9"`) {
+		t.Fatalf("snapshot JSON missing defaults: %s", raw)
+	}
+	var round ScreenSnapshot
+	if err := json.Unmarshal(raw, &round); err != nil {
+		t.Fatal(err)
+	}
+	if round.DefaultBg != "#2e3440" {
+		t.Fatalf("round-trip lost defaultBg: %+v", round)
+	}
+}
+
+// TestSimpleEmulatorFullReset covers RIS (ESC c): screen, cursor, pen, modes,
+// scroll region, saved cursor, hyperlink and the OSC-set default colors all go
+// back to power-on state.
+func TestSimpleEmulatorFullReset(t *testing.T) {
+	em := NewEmulator(8, 4)
+	feedAll(t, em,
+		"\x1b[2J\x1b[H\x1b[44;31mhello\x1b[2;3r\x1b[?6h\x1b[4h\x1b[?7l\x1b[?25l",
+		"\x1b]11;#2e3440\a\x1b]10;#d8dee9\a\x1b]8;;http://x\x1b\\\x1b[?2004h\x1b[?1000h\x1b[?1006h\x1b[?1049h",
+		"\x1b[3;3H\x1b7",
+		"\x1bc",
+	)
+	if em.BracketedPasteMode() || em.AlternateScreenMode() || em.MouseTrackingMode() || em.MouseSGRMode() {
+		t.Fatal("RIS must clear bracketed paste, alternate screen and mouse modes")
+	}
+	scr := em.Screen()
+	snap := scr.Snapshot()
+	if snap.DefaultFg != "" || snap.DefaultBg != "" {
+		t.Fatalf("RIS must clear default colors: %q/%q", snap.DefaultFg, snap.DefaultBg)
+	}
+	if c := scr.Cursor(); c.X != 0 || c.Y != 0 || !c.Visible {
+		t.Fatalf("cursor after RIS = %+v, want home and visible", c)
+	}
+	if snap.Text != "" {
+		t.Fatalf("screen not blank after RIS: %q", snap.Text)
+	}
+	// ESC 8 with nothing saved homes the cursor (the saved slot was cleared).
+	feedAll(t, em, "\x1b[4;4H\x1b8")
+	if c := em.Screen().Cursor(); c.X != 0 || c.Y != 0 {
+		t.Fatalf("saved cursor survived RIS: %+v", c)
+	}
+	// Printing now: replace mode, autowrap on, default pen, no link, region reset,
+	// origin mode off (CUP row 1 is the true top row).
+	feedAll(t, em, "\x1b[1;1Hab\x1b[1;1HX\x1b[1;8HYZ")
+	scr = em.Screen()
+	if got := rowText(scr, 0, 8); got != "Xb     Y" {
+		t.Fatalf("row 0 = %q", got)
+	}
+	if got := rowText(scr, 1, 8); got != "Z" {
+		t.Fatalf("row 1 = %q, want Z (autowrap should be back on)", got)
+	}
+	for _, c := range []Cell{scr.Cell(0, 0), scr.Cell(7, 0)} {
+		if c.Style != (Style{}) || c.Link != "" {
+			t.Fatalf("pen/link survived RIS: %+v", c)
+		}
+	}
+	// Scroll region reset: a line feed at the last row scrolls the whole screen.
+	feedAll(t, em, "\x1b[4;1H\n")
+	if got := rowText(em.Screen(), 0, 8); got != "Z" {
+		t.Fatalf("scroll region survived RIS, row 0 = %q, want Z", got)
 	}
 }

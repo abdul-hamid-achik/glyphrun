@@ -51,6 +51,14 @@ type ScreenSnapshot struct {
 	Cursor Cursor `json:"cursor"`
 	Cells  []Cell `json:"cells"`
 	Text   string `json:"text"`
+	// DefaultFg and DefaultBg are the terminal's default foreground and
+	// background colors as normalized "#rrggbb", set by the target through OSC
+	// 10 / OSC 11 (and cleared by OSC 110 / 111 or a full reset). They are empty
+	// when the target never set them. They describe the canvas only: a cell
+	// whose background is the terminal default still carries Style.Bg == "", so
+	// cell assertions keep comparing the raw cell styles.
+	DefaultFg string `json:"defaultFg,omitempty"`
+	DefaultBg string `json:"defaultBg,omitempty"`
 }
 
 type Frame struct {

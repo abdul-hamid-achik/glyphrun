@@ -6,6 +6,16 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+### Added
+
+- The emulator tracks the terminal default colors an app sets with OSC 10/11 (and clears with OSC 110/111 or a full reset). Snapshots report them as optional `defaultFg` / `defaultBg` (`#rrggbb`, omitted when unset), and `glyph render` uses them as the SVG canvas, default text and cursor colors. Cell styles are unchanged: a cell on the default background still has an empty `bg`.
+- Emulator support for IRM (`CSI 4 h/l`), REP (`CSI n b`), DECAWM (`CSI ? 7 h/l`) and RIS (`ESC c`).
+
+### Fixed
+
+- Background color erase: ED, EL, ECH, ICH, DCH, IL, DL, SU/SD and scrolling from LF/IND/NEL/RI now blank cells with the current SGR background instead of the default, as xterm does. Captures of apps that clear regions after setting a background (Bubble Tea v2 panels, for example) no longer show those cells as default-colored. Output without a background set is unchanged.
+- Insert mode was ignored, so a renderer that inserted text with IRM instead of ICH had its glyphs overwrite the existing text; and autowrap could not be switched off, so painting the bottom-right cell wrapped.
+
 ### Changed
 
 - MCP tool descriptions now state what each tool returns, when to use it, and what every parameter accepts (`run` takes an id, a directory, or `latest`; `screen` takes `final` or a snapshot name), and `readOnlyHint` comes from an explicit list of mutating tools instead of a name heuristic, so `glyph_snapshot_inventory` is correctly read-only.

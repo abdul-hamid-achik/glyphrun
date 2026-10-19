@@ -15,5 +15,9 @@ Glyphrun is black-box: if the target runs in a PTY, a spec can drive it. The tab
 | Windows ConPTY | supported | Windows 10 1809+ |
 | OSC 8 hyperlinks | supported | `link` verifier |
 | Sixel / Kitty graphics | consumed | Sequences are eaten, not rendered |
+| Background color erase (BCE) | supported | ED, EL, ECH, ICH, DCH, IL, DL, SU/SD and scrolling blank cells with the current SGR background, like xterm; cells blanked while no background is set stay default |
+| Insert mode (IRM), REP, autowrap (DECAWM) | supported | `CSI 4 h/l`, `CSI n b`, `CSI ? 7 h/l`, the sequences Bubble Tea v2 and ultraviolet emit depending on `TERM` |
+| Default colors (OSC 10/11, 110/111) | supported | Reported as `defaultFg` / `defaultBg` on snapshots and used by the SVG render as the canvas colors; cell styles keep an empty color for the default |
+| Full reset (RIS, `ESC c`) | supported | Screen, cursor, pen, modes, scroll region and default colors return to power-on state |
 
 Use `glyph doctor --format json` on the machine that will run CI. Use `glyph run --repeat 20` before trusting a new kit.
