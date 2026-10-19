@@ -20,8 +20,8 @@ outcomes:
 ## Matcher (`matches`)
 
 - omitted or `"nonEmpty"` — count non-blank cells
-- a single rune — count cells equal to that rune
-- multi-character strings are rejected (cells are single runes; a substring would be ambiguous)
+- a single character (one grapheme cluster, so a flag, an emoji sequence or a letter with combining marks counts as one) — count cells holding exactly that character. A wide character counts once: its continuation cell is never matched
+- multi-character strings are rejected (a substring would be ambiguous)
 
 ## Comparator (exactly one)
 

@@ -49,7 +49,7 @@ Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `
 
 ` + "`snapshot`" + ` compares a captured screen with its committed golden. ` + "`mode: text`" + ` (default) compares normalized characters; ` + "`mode: cell`" + ` also compares every cell's style against the committed .json grid so a color regression fails the run; ` + "`mode: json`" + ` additionally requires the cursor to match.
 
-Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes (fg, bg, bold, dim, italic, underline, reverse). Cell verifiers compare the raw cell style: a cell on the terminal's default background has an empty ` + "`bg`" + ` even when the app set a default background with OSC 11; that color is reported separately as ` + "`defaultBg`" + ` on the snapshot. Process verifiers can check exit state and exit code.
+Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes (fg, bg, bold, dim, italic, underline, reverse). Cell verifiers compare the raw cell style: a cell on the terminal's default background has an empty ` + "`bg`" + ` even when the app set a default background with OSC 11; that color is reported separately as ` + "`defaultBg`" + ` on the snapshot. A wide character covers two cells: its char is in the first, and the second is a continuation with an empty char and width 0. Process verifiers can check exit state and exit code.
 
 Colors use a canonical form: the 16 base colors are named (` + "`red`" + `, ` + "`brightblue`" + `, …), 256-palette indices 16-255 are their decimal string (` + "`\"201\"`" + `), and truecolor is lowercase hex (` + "`\"#ff8800\"`" + `). The same values color the rendered ` + "`screens/final.svg`" + `.
 
@@ -476,8 +476,8 @@ outcomes:
 Matcher (` + "`matches`" + `):
 
 - omitted or ` + "\"nonEmpty\"" + ` — count non-blank cells
-- a single rune — count cells equal to that rune
-- multi-character strings are rejected (cells are single runes; a substring would be ambiguous)
+- a single character (one grapheme cluster, so a flag, an emoji sequence or a letter with combining marks counts as one) — count cells holding exactly that character. A wide character counts once: its continuation cell is never matched
+- multi-character strings are rejected (a substring would be ambiguous)
 
 Comparator (exactly one):
 
@@ -574,7 +574,8 @@ Glyphrun is black-box: if the target runs in a PTY, a spec can drive it.
 | OSC 8 hyperlinks | supported |
 | Sixel / Kitty graphics | consumed, not rendered |
 | Background color erase (BCE) | supported |
-| IRM, REP, DECAWM, RIS | supported |
+| IRM, REP, HPA, DECAWM, RIS | supported |
+| Wide characters, grapheme clusters | supported: two cells (char + empty continuation, width 0), Bubble Tea v2 widths without mode 2027 |
 | Default colors (OSC 10/11) | supported, reported as defaultFg/defaultBg on snapshots |
 
 Use ` + "`glyph doctor`" + ` and ` + "`glyph run --repeat 20`" + ` before trusting a new kit.

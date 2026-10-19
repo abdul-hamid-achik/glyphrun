@@ -452,6 +452,10 @@ func paintScreenOpts(snap *terminal.ScreenSnapshot, opts paintOptions) string {
 				if c.Style != st || opts.changed[[2]int{x, y}] != marked {
 					break
 				}
+				if c.IsContinuation() {
+					x++ // the wide character before it already covers this column
+					continue
+				}
 				ch := charOf(c)
 				if opts.spaces && ch == " " {
 					ch = "·"

@@ -213,6 +213,15 @@ func SnapshotSVG(snap terminal.ScreenSnapshot, opts Options) string {
 				if !next.equalText(st) {
 					break
 				}
+				if cell.Width == 2 {
+					// A wide character gets a <text> of its own spanning its two
+					// columns, so its font advance cannot shift its neighbours.
+					if x == start {
+						runChars.WriteString(cellChar(cell, opts.ShowSpaces))
+						x = min(x+2, cols)
+					}
+					break
+				}
 				runChars.WriteString(cellChar(cell, opts.ShowSpaces))
 				x++
 			}

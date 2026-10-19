@@ -1108,3 +1108,18 @@ func TestSimpleEmulatorAltScreenSavedCursorDroppedOnResizeAndReset(t *testing.T)
 		})
 	}
 }
+
+// HPA (CSI n followed by a backquote) is CHA under another name. ultraviolet emits it for every
+// terminal whose capabilities include it (ghostty, kitty, wezterm, tmux,
+// screen, linux, ...); ignoring it left the following text at the old column.
+func TestSimpleEmulatorHorizontalPositionAbsolute(t *testing.T) {
+	em := NewEmulator(10, 1)
+	feedAll(t, em, "abcdef\x1b[3`X\x1b[`Y")
+	scr := em.Screen()
+	if got := rowText(scr, 0, 10); got != "YbXdef" {
+		t.Errorf("row = %q, want %q", got, "YbXdef")
+	}
+	if c := scr.Cursor(); c.X != 1 {
+		t.Errorf("cursor x = %d, want 1", c.X)
+	}
+}

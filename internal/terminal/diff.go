@@ -59,12 +59,14 @@ func cellAt(snap ScreenSnapshot, x, y int) Cell {
 		return blank
 	}
 	c := snap.Cells[idx]
-	if c.Char == "" {
+	if c.Char == "" && !c.IsContinuation() {
 		c.Char = " "
 	}
 	return c
 }
 
+// cellsEqual compares what a cell shows. The right half of a wide character
+// differs from a blank: the character's width changed.
 func cellsEqual(a, b Cell) bool {
-	return a.Char == b.Char && a.Style == b.Style && a.Link == b.Link
+	return a.Char == b.Char && a.Style == b.Style && a.Link == b.Link && a.IsContinuation() == b.IsContinuation()
 }

@@ -31,6 +31,13 @@ type Cell struct {
 	Link string `json:"link,omitempty"`
 }
 
+// IsContinuation reports whether c is the right half of a wide (two-column)
+// character. The character itself is in the cell to its left with Width 2; a
+// continuation has an empty Char and Width 0 and contributes no text.
+func (c Cell) IsContinuation() bool {
+	return c.Width == 0 && c.Char == ""
+}
+
 type Region interface {
 	Text() string
 	Cells() []Cell

@@ -133,10 +133,10 @@ func CompactScreen(screen terminal.ScreenSnapshot) (grid [][]string, styles []St
 		for x := 0; x < cols; x++ {
 			c := at(x, y)
 			ch := c.Char
-			if ch == "" {
+			if ch == "" && !c.IsContinuation() {
 				ch = " "
 			}
-			row[x] = ch
+			row[x] = ch // "" marks the right half of a wide character
 		}
 		grid[y] = row
 		x := 0

@@ -8,7 +8,19 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/clipperhouse/uax29/v2/graphemes"
+	"github.com/mattn/go-runewidth"
 )
+
+// cellWidth measures how many columns a character takes. It is the model
+// Bubble Tea v2 and ultraviolet lay out with when the terminal does not report
+// Unicode core mode (2027), which this emulator never does: East Asian wide
+// characters and most emoji take two columns, and East Asian Ambiguous ones
+// (box drawing, ●, ▲, Nerd Font private-use icons) take one. The options are
+// fixed rather than read from the locale or RUNEWIDTH_EASTASIAN, so a capture
+// does not depend on the machine that made it.
+var cellWidth = &runewidth.Condition{EastAsianWidth: false, StrictEmojiNeutral: true}
 
 type SimpleEmulator struct {
 	mu      sync.RWMutex
@@ -52,6 +64,13 @@ type SimpleEmulator struct {
 	// charmbracelet/x/vt.
 	lastRune rune
 	hasLast  bool
+	// joinX/joinY locate the cell the previous printable rune went into, so a
+	// rune that continues its grapheme cluster (a combining mark, variation
+	// selector, ZWJ sequence, skin tone or flag pair) joins that cell instead
+	// of taking one of its own. canJoin is cleared by every control and escape
+	// sequence, which covers all cursor motion. It survives a Feed boundary.
+	joinX, joinY int
+	canJoin      bool
 
 	// defaultFg and defaultBg are the terminal default colors the target set
 	// with OSC 10 / OSC 11, normalized to "#rrggbb" (empty when unset). They are
@@ -130,6 +149,7 @@ func (e *SimpleEmulator) Resize(cols, rows int) error {
 	e.scrollBottom = rows - 1
 	e.originMode = false
 	e.hasMainCursor = false
+	e.canJoin = false
 	return nil
 }
 
@@ -205,6 +225,9 @@ func (e *SimpleEmulator) feedRune(r rune) {
 			e.escBuf = nil
 		}
 		return
+	}
+	if r < 0x20 || r == 0x7f {
+		e.canJoin = false
 	}
 	switch r {
 	case '\x1b':
@@ -367,10 +390,11 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		e.cursor.X = clamp(e.cursor.X-csiNumber(strings.TrimSuffix(body, "D"), 1), 0, e.cols-1)
 		return
 	}
-	if strings.HasSuffix(body, "G") {
-		// CHA — cursor horizontal absolute (1-based column).
+	if strings.HasSuffix(body, "G") || strings.HasSuffix(body, "`") {
+		// CHA / HPA — cursor horizontal absolute (1-based column). ultraviolet
+		// uses HPA for every terminal whose capabilities include it.
 		e.pendingWrap = false
-		e.cursor.X = clamp(csiNumber(strings.TrimSuffix(body, "G"), 1)-1, 0, e.cols-1)
+		e.cursor.X = clamp(csiNumber(body[:len(body)-1], 1)-1, 0, e.cols-1)
 		return
 	}
 	if strings.HasSuffix(body, "Z") {
@@ -413,14 +437,7 @@ func (e *SimpleEmulator) applyEscape(seq string) {
 		// current background (BCE).
 		e.pendingWrap = false
 		n := csiNumber(strings.TrimSuffix(body, "X"), 1)
-		if e.cursor.Y >= 0 && e.cursor.Y < e.rows {
-			for i := 0; i < n; i++ {
-				x := e.cursor.X + i
-				if x >= 0 && x < e.cols {
-					e.cells[e.cursor.Y][x] = e.blankCell(x, e.cursor.Y)
-				}
-			}
-		}
+		e.eraseCells(e.cursor.Y, e.cursor.X, e.cursor.X+n)
 		return
 	}
 	if strings.HasSuffix(body, "r") {
@@ -851,31 +868,114 @@ func (e *SimpleEmulator) putRune(r rune) {
 	if e.cursor.Y < 0 || e.cursor.Y >= e.rows {
 		return
 	}
+	if e.canJoin && e.joinCluster(r) {
+		return
+	}
+	width := cellWidth.RuneWidth(r)
+	if width == 0 {
+		// A zero-width rune with no cluster to join (after a cursor move, or
+		// at the very start) has no cell of its own.
+		return
+	}
+	if width > e.cols {
+		return // a wide character can never fit a one-column screen
+	}
 	// Resolve a deferred wrap from the previous last-column write before
 	// printing this glyph.
 	if e.pendingWrap {
 		e.newLine()
 		e.pendingWrap = false
 	}
-	if e.cursor.Y >= 0 && e.cursor.Y < e.rows && e.cursor.X >= 0 && e.cursor.X < e.cols {
-		if e.insertMode {
-			// IRM: open room for the glyph first. Every rune occupies one cell
-			// here, so that is the shift; cells pushed past the right margin
-			// are discarded.
-			e.insertChars(1)
+	if width == 2 && e.cursor.X >= e.cols-1 {
+		// A wide character never splits across the margin. With autowrap it
+		// moves whole to the next line, leaving the last column blank; without
+		// it, xterm drops it and leaves the cursor where it is.
+		if !e.autoWrap {
+			return
 		}
-		e.cells[e.cursor.Y][e.cursor.X].Char = string(r)
-		e.cells[e.cursor.Y][e.cursor.X].Style = e.style
-		e.cells[e.cursor.Y][e.cursor.X].Link = e.link
+		e.eraseCells(e.cursor.Y, e.cols-1, e.cols)
+		e.newLine()
 	}
+	x, y := e.cursor.X, e.cursor.Y
+	if e.insertMode {
+		// IRM: open room for the glyph first; cells pushed past the right
+		// margin are discarded.
+		e.insertChars(width)
+	}
+	// Overwriting either half of a wide character blanks the other half.
+	e.splitWide(y, x)
+	if width == 2 {
+		e.splitWide(y, x+1)
+	}
+	e.cells[y][x] = Cell{X: x, Y: y, Char: string(r), Width: width, Style: e.style, Link: e.link}
+	if width == 2 {
+		e.cells[y][x+1] = Cell{X: x + 1, Y: y, Char: "", Width: 0, Style: e.style, Link: e.link}
+	}
+	e.joinX, e.joinY, e.canJoin = x, y, true
 	e.lastRune, e.hasLast = r, true
-	if e.cursor.X >= e.cols-1 {
+	if x+width >= e.cols {
 		// Last column: stay put and, with autowrap on, defer the wrap (VT100
 		// autowrap quirk). With autowrap off later glyphs overwrite this column.
 		e.cursor.X = e.cols - 1
 		e.pendingWrap = e.autoWrap
 	} else {
-		e.cursor.X++
+		e.cursor.X = x + width
+	}
+}
+
+// joinCluster appends r to the cell the previous rune went into when the two
+// form one grapheme cluster, and reports whether it did. The cell keeps the
+// width of the cluster's first character, which is how Bubble Tea v2 measures a
+// cluster outside Unicode core mode.
+func (e *SimpleEmulator) joinCluster(r rune) bool {
+	if r < 0x300 {
+		// Nothing below the combining diacritics block extends a cluster
+		// (prepend characters aside), so plain text skips the segmentation.
+		return false
+	}
+	if e.joinY < 0 || e.joinY >= e.rows || e.joinX < 0 || e.joinX >= e.cols {
+		return false
+	}
+	cell := &e.cells[e.joinY][e.joinX]
+	joined := cell.Char + string(r)
+	g := graphemes.FromString(joined)
+	if !g.Next() || len(g.Value()) != len(joined) {
+		return false
+	}
+	cell.Char = joined
+	return true
+}
+
+// splitWide prepares column x of row y to be overwritten: if the cell there is
+// half of a wide character, the other half becomes a blank that keeps its
+// style.
+func (e *SimpleEmulator) splitWide(y, x int) {
+	if y < 0 || y >= e.rows || x < 0 || x >= e.cols {
+		return
+	}
+	row := e.cells[y]
+	switch {
+	case row[x].IsContinuation() && x > 0 && row[x-1].Width == 2:
+		row[x-1].Char, row[x-1].Width = " ", 1
+	case row[x].Width == 2 && x+1 < e.cols && row[x+1].IsContinuation():
+		row[x+1].Char, row[x+1].Width = " ", 1
+	}
+}
+
+// fixWideRow blanks every half of a wide character on row y whose partner an
+// erase, insert or delete removed, keeping the cell's style.
+func (e *SimpleEmulator) fixWideRow(y int) {
+	if y < 0 || y >= e.rows {
+		return
+	}
+	row := e.cells[y]
+	for x := range row {
+		switch {
+		case row[x].Width == 2 && (x+1 >= len(row) || !row[x+1].IsContinuation()):
+			row[x].Char, row[x].Width = " ", 1
+		case row[x].IsContinuation() && (x == 0 || row[x-1].Width != 2):
+			row[x].Char, row[x].Width = " ", 1
+		}
 	}
 }
 
@@ -1043,6 +1143,7 @@ func (e *SimpleEmulator) insertChars(n int) {
 			e.cells[y][x] = e.blankCell(x, y)
 		}
 	}
+	e.fixWideRow(y)
 	e.pendingWrap = false
 }
 
@@ -1061,6 +1162,7 @@ func (e *SimpleEmulator) deleteChars(n int) {
 			e.cells[y][x] = e.blankCell(x, y)
 		}
 	}
+	e.fixWideRow(y)
 	e.pendingWrap = false
 }
 
@@ -1102,6 +1204,9 @@ func (e *SimpleEmulator) eraseCells(y, x0, x1 int) {
 	x1 = min(x1, e.cols)
 	for x := x0; x < x1; x++ {
 		e.cells[y][x] = e.blankCell(x, y)
+	}
+	if x0 > 0 || x1 < e.cols {
+		e.fixWideRow(y) // a partial erase may have cut a wide character
 	}
 }
 
@@ -1215,11 +1320,11 @@ func (e *SimpleEmulator) snapshotLocked() ScreenSnapshot {
 		row := make([]string, e.cols)
 		for x := 0; x < e.cols; x++ {
 			cell := e.cells[y][x]
-			if cell.Char == "" {
+			if !cell.IsContinuation() && cell.Char == "" {
 				cell.Char = " "
 			}
 			cells = append(cells, cell)
-			row[x] = cell.Char
+			row[x] = cell.Char // a continuation adds nothing
 		}
 		b.WriteString(strings.TrimRight(strings.Join(row, ""), " "))
 	}
@@ -1302,11 +1407,18 @@ func (r snapshotRegion) Text() string {
 		for x := 0; x < r.width; x++ {
 			idx := y*r.width + x
 			if idx >= 0 && idx < len(r.cells) {
-				ch := r.cells[idx].Char
-				if ch == "" {
-					ch = " "
+				cell := r.cells[idx]
+				ch := cell.Char
+				switch {
+				case cell.IsContinuation() && x > 0:
+					// The wide character was written in the previous column.
+				case ch == "":
+					// Includes a region starting on the right half of a
+					// wide character: that column reads as blank.
+					row.WriteString(" ")
+				default:
+					row.WriteString(ch)
 				}
-				row.WriteString(ch)
 			}
 		}
 		b.WriteString(strings.TrimRight(row.String(), " "))

@@ -1729,42 +1729,55 @@ func normalizeSnapshotText(snapshot terminal.ScreenSnapshot, normalize config.No
 	if len(normalize.IgnoreRegions) == 0 {
 		return normalizeText(snapshot.Text, normalize)
 	}
-	lines := make([][]rune, snapshot.Rows)
+	// One string per column: the cell's character, or "" for the right half
+	// of a wide character, which adds no text.
+	lines := make([][]string, snapshot.Rows)
 	for y := 0; y < snapshot.Rows; y++ {
-		lines[y] = make([]rune, snapshot.Cols)
+		lines[y] = make([]string, snapshot.Cols)
 		for x := 0; x < snapshot.Cols; x++ {
-			ch := ' '
+			ch := " "
 			idx := y*snapshot.Cols + x
-			if idx >= 0 && idx < len(snapshot.Cells) && snapshot.Cells[idx].Char != "" {
-				cell := snapshot.Cells[idx]
-				runes := []rune(cell.Char)
-				if len(runes) > 0 {
-					ch = runes[0]
+			if idx >= 0 && idx < len(snapshot.Cells) {
+				switch cell := snapshot.Cells[idx]; {
+				case cell.IsContinuation():
+					ch = ""
+				case cell.Char != "":
+					ch = cell.Char
 				}
 			}
 			lines[y][x] = ch
 		}
 	}
-	for _, region := range normalize.IgnoreRegions {
-		for y := region.Y; y < region.Y+region.Height && y < len(lines); y++ {
-			if y < 0 {
-				continue
-			}
-			for x := region.X; x < region.X+region.Width && x < len(lines[y]); x++ {
-				if x >= 0 {
-					lines[y][x] = ' '
-				}
-			}
-		}
-	}
+	blankIgnoredRegions(lines, normalize.IgnoreRegions)
 	var b strings.Builder
 	for y, line := range lines {
 		if y > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(string(line))
+		b.WriteString(strings.Join(line, ""))
 	}
 	return normalizeText(b.String(), normalize)
+}
+
+// blankIgnoredRegions blanks the columns each ignore region covers in lines,
+// which hold one string per column ("" for the right half of a wide
+// character). A region covering either half of a wide character blanks all of
+// it, as two spaces, so the text after it stays in its columns.
+func blankIgnoredRegions(lines [][]string, regions []spec.NormalizeIgnoreArea) {
+	for _, region := range regions {
+		for y := max(region.Y, 0); y < region.Y+region.Height && y < len(lines); y++ {
+			line := lines[y]
+			for x := max(region.X, 0); x < region.X+region.Width && x < len(line); x++ {
+				if line[x] == "" && x > 0 {
+					line[x-1] = " "
+				}
+				line[x] = " "
+				if x+1 < len(line) && line[x+1] == "" {
+					line[x+1] = " "
+				}
+			}
+		}
+	}
 }
 
 func normalizeText(text string, normalize config.Normalize) string {
@@ -1797,19 +1810,13 @@ func normalizePlainSnapshotText(text string, normalize config.Normalize) string 
 		return normalizeText(text, normalize)
 	}
 	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
-	for _, region := range normalize.IgnoreRegions {
-		for y := region.Y; y < region.Y+region.Height && y < len(lines); y++ {
-			if y < 0 {
-				continue
-			}
-			runes := []rune(lines[y])
-			for x := region.X; x < region.X+region.Width && x < len(runes); x++ {
-				if x >= 0 {
-					runes[x] = ' '
-				}
-			}
-			lines[y] = string(runes)
-		}
+	cols := make([][]string, len(lines))
+	for y, line := range lines {
+		cols[y] = terminal.TextColumns(line)
+	}
+	blankIgnoredRegions(cols, normalize.IgnoreRegions)
+	for y := range lines {
+		lines[y] = strings.Join(cols[y], "")
 	}
 	return normalizeText(strings.Join(lines, "\n"), normalize)
 }
@@ -2475,7 +2482,7 @@ func (s *runState) checkCount(screen terminal.Screen, cond spec.CountCondition) 
 				matched++
 			}
 		}
-	case len(cond.Matches) == 1:
+	case terminal.SingleCluster(cond.Matches):
 		needle := cond.Matches
 		for _, c := range cells {
 			if c.Char == needle {
@@ -2540,6 +2547,9 @@ func checkLink(screen terminal.Screen, cond spec.LinkCondition) (bool, string, a
 		if curIdx < 0 || spans[curIdx].url != c.Link {
 			spans = append(spans, linkSpan{url: c.Link})
 			curIdx = len(spans) - 1
+		}
+		if c.IsContinuation() {
+			continue // the wide character's text is already in the span
 		}
 		ch := c.Char
 		if ch == "" {

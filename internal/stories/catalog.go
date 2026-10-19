@@ -573,23 +573,29 @@ func screenFromText(text string, cols, rows int) terminal.ScreenSnapshot {
 	if rows < len(lines) {
 		rows = len(lines)
 	}
-	for _, line := range lines {
-		if n := len([]rune(line)); n > cols {
-			cols = n
-		}
+	columns := make([][]string, len(lines))
+	for i, line := range lines {
+		columns[i] = terminal.TextColumns(line)
+		cols = max(cols, len(columns[i]))
 	}
 	screen := terminal.ScreenSnapshot{Cols: cols, Rows: rows, Text: text}
 	for y := 0; y < rows; y++ {
-		var runes []rune
-		if y < len(lines) {
-			runes = []rune(lines[y])
+		var row []string
+		if y < len(columns) {
+			row = columns[y]
 		}
 		for x := 0; x < cols; x++ {
-			ch := " "
-			if x < len(runes) {
-				ch = string(runes[x])
+			cell := terminal.Cell{X: x, Y: y, Char: " ", Width: 1}
+			switch {
+			case x >= len(row):
+			case row[x] == "":
+				cell.Char, cell.Width = "", 0
+			case x+1 < len(row) && row[x+1] == "":
+				cell.Char, cell.Width = row[x], 2
+			default:
+				cell.Char = row[x]
 			}
-			screen.Cells = append(screen.Cells, terminal.Cell{X: x, Y: y, Char: ch, Width: 1})
+			screen.Cells = append(screen.Cells, cell)
 		}
 	}
 	return screen
