@@ -6,6 +6,19 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+### Added
+
+- Emulator support for HPA (`` CSI n ` ``), which ultraviolet uses to position the cursor for ghostty, kitty, wezterm, tmux, foot, rio, st, contour, screen and linux.
+
+### Changed
+
+- Wide characters take two cells. East Asian characters and most emoji now occupy two columns, as in a real terminal: the character sits in the first cell with `width: 2`, and the second is a continuation cell with an empty `char` and `width: 0` that screen and region text skip. Combining marks, ZWJ sequences, skin tones and flags join their base cell. Widths follow the model Bubble Tea v2 lays out with when the terminal does not report Unicode core mode (2027): East Asian Ambiguous characters stay one column regardless of the locale. Captures of lines with wide characters shift from that character on, so `cell`/`region` coordinates and `cell`/`json` goldens covering them change; text goldens change only where a wide character used to be followed by a space that was really its second column.
+
+### Fixed
+
+- `count.matches` rejected a single non-ASCII character that validation accepted.
+- Ignore-region normalization dropped combining marks from the live screen while the text golden kept them, so the two could never match on such a line.
+
 ## [0.21.0] - 2026-10-19
 
 ### Added

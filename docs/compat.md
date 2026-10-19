@@ -16,7 +16,8 @@ Glyphrun is black-box: if the target runs in a PTY, a spec can drive it. The tab
 | OSC 8 hyperlinks | supported | `link` verifier |
 | Sixel / Kitty graphics | consumed | Sequences are eaten, not rendered |
 | Background color erase (BCE) | supported | ED, EL, ECH, ICH, DCH, IL, DL, SU/SD and scrolling blank cells with the current SGR background, like xterm; cells blanked while no background is set stay default |
-| Insert mode (IRM), REP, autowrap (DECAWM) | supported | `CSI 4 h/l`, `CSI n b`, `CSI ? 7 h/l`, the sequences Bubble Tea v2 and ultraviolet emit depending on `TERM` |
+| Insert mode (IRM), REP, HPA, autowrap (DECAWM) | supported | `CSI 4 h/l`, `CSI n b`, `` CSI n ` ``, `CSI ? 7 h/l`, the sequences Bubble Tea v2 and ultraviolet emit depending on `TERM` |
+| Wide characters and grapheme clusters | supported | East Asian wide characters and most emoji take two cells: the character is in the first, the second is a continuation with an empty `char` and `width` 0. Combining marks, ZWJ sequences, skin tones and flags join one cell. Widths follow the model Bubble Tea v2 uses when the terminal does not report Unicode core mode (2027), which glyph never does: East Asian Ambiguous characters (box drawing, `●`, Nerd Font icons) are narrow whatever the locale, and a cluster takes the width of its first character, so a flag or a VS16 emoji takes one cell where a 2027-aware terminal gives it two |
 | Default colors (OSC 10/11, 110/111) | supported | Reported as `defaultFg` / `defaultBg` on snapshots and used by the SVG render as the canvas colors; cell styles keep an empty color for the default |
 | Full reset (RIS, `ESC c`) | supported | Screen, cursor, pen, modes, scroll region and default colors return to power-on state |
 

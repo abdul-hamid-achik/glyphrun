@@ -48,6 +48,8 @@ outcomes:
 
 Screen and region verifiers accept exactly one of: `equals`, `contains`, `notContains`, `matches` (preferred regex form), or legacy `regex` (alias of `matches`). Cell verifiers can check characters and style attributes such as foreground color, background color, bold, dim, italic, underline, and reverse. Cell verifiers compare the raw cell style: a cell on the terminal's default background has an empty `bg` even when the app set a default background with OSC 11. That color is reported separately as `defaultBg` (and `defaultFg`) on the snapshot and is used only when rendering SVG. Cells the app erased while a background was set carry that background, as in xterm.
 
+Cell coordinates are columns. A wide character (East Asian text, most emoji) covers two: its `char` is in the first cell, and the second is a continuation cell with an empty `char` and `width` 0 that region and screen text skip. Combining marks and emoji sequences are part of their base cell's `char`.
+
 Color values use a canonical form so `style: { fg, bg }` assertions are stable across SGR encodings:
 
 - the 16 base colors are named: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, and their `bright`-prefixed variants (e.g. `brightred`). SGR `31` and `38;5;1` both read as `red`.
