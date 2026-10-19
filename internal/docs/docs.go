@@ -49,7 +49,7 @@ Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `
 
 ` + "`snapshot`" + ` compares a captured screen with its committed golden. ` + "`mode: text`" + ` (default) compares normalized characters; ` + "`mode: cell`" + ` also compares every cell's style against the committed .json grid so a color regression fails the run; ` + "`mode: json`" + ` additionally requires the cursor to match.
 
-Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes (fg, bg, bold, dim, italic, underline, reverse). Process verifiers can check exit state and exit code.
+Screen verifiers support ` + "`contains`" + `, ` + "`notContains`" + `, and ` + "`regex`" + `. Cell verifiers can check characters and style attributes (fg, bg, bold, dim, italic, underline, reverse). Cell verifiers compare the raw cell style: a cell on the terminal's default background has an empty ` + "`bg`" + ` even when the app set a default background with OSC 11; that color is reported separately as ` + "`defaultBg`" + ` on the snapshot. Process verifiers can check exit state and exit code.
 
 Colors use a canonical form: the 16 base colors are named (` + "`red`" + `, ` + "`brightblue`" + `, …), 256-palette indices 16-255 are their decimal string (` + "`\"201\"`" + `), and truecolor is lowercase hex (` + "`\"#ff8800\"`" + `). The same values color the rendered ` + "`screens/final.svg`" + `.
 
@@ -573,6 +573,9 @@ Glyphrun is black-box: if the target runs in a PTY, a spec can drive it.
 | Windows ConPTY | supported |
 | OSC 8 hyperlinks | supported |
 | Sixel / Kitty graphics | consumed, not rendered |
+| Background color erase (BCE) | supported |
+| IRM, REP, DECAWM, RIS | supported |
+| Default colors (OSC 10/11) | supported, reported as defaultFg/defaultBg on snapshots |
 
 Use ` + "`glyph doctor`" + ` and ` + "`glyph run --repeat 20`" + ` before trusting a new kit.
 `,

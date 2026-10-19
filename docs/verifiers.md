@@ -46,7 +46,7 @@ outcomes:
         run: "test -x ./bin/app"
 ```
 
-Screen and region verifiers accept exactly one of: `equals`, `contains`, `notContains`, `matches` (preferred regex form), or legacy `regex` (alias of `matches`). Cell verifiers can check characters and style attributes such as foreground color, background color, bold, dim, italic, underline, and reverse.
+Screen and region verifiers accept exactly one of: `equals`, `contains`, `notContains`, `matches` (preferred regex form), or legacy `regex` (alias of `matches`). Cell verifiers can check characters and style attributes such as foreground color, background color, bold, dim, italic, underline, and reverse. Cell verifiers compare the raw cell style: a cell on the terminal's default background has an empty `bg` even when the app set a default background with OSC 11. That color is reported separately as `defaultBg` (and `defaultFg`) on the snapshot and is used only when rendering SVG. Cells the app erased while a background was set carry that background, as in xterm.
 
 Color values use a canonical form so `style: { fg, bg }` assertions are stable across SGR encodings:
 
