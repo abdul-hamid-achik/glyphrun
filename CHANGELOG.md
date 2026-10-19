@@ -17,6 +17,7 @@ follows Semantic Versioning for its pre-1.0 release line.
 - Insert mode was ignored, so a renderer that inserted text with IRM instead of ICH had its glyphs overwrite the existing text; and autowrap could not be switched off, so painting the bottom-right cell wrapped.
 - CSI sequences with a `<`, `=` or `>` prefix or an intermediate byte were dispatched by their final byte alone, so Bubble Tea v2's keyboard-protocol controls corrupted the capture: `CSI > 4;2 m` (modifyOtherKeys) set dim/underline like SGR, and `CSI = 1;1 u` / `CSI > 1 u` / `CSI < u` (kitty keyboard) restored a saved cursor position. They are now ignored.
 - Leaving the alternate screen (`CSI ? 1049 l`) now puts the cursor back where it was when the app entered it, as xterm does. A full-screen app that ended with the cursor in the bottom-right cell made the shell's next line start in the last column and wrap. Only the position is restored: the alternate-screen contents stay on the captured screen after the app exits, as before.
+- The committed cell goldens of the example stories no longer record the spurious `dim` that `CSI > 4;2 m` used to set.
 
 ### Changed
 
