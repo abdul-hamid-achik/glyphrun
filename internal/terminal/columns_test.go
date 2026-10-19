@@ -63,3 +63,14 @@ func TestDiffSnapshotsSeesAWidthChange(t *testing.T) {
 		t.Fatalf("a snapshot differs from itself: %+v", same.Changed)
 	}
 }
+
+func TestSingleCluster(t *testing.T) {
+	for s, want := range map[string]bool{
+		"": false, "x": true, "雪": true, "🇲🇽": true, "é": true,
+		"👨‍👩‍👧": true, "ab": false, "🇲🇽🇲🇽": false,
+	} {
+		if got := SingleCluster(s); got != want {
+			t.Errorf("SingleCluster(%q) = %v, want %v", s, got, want)
+		}
+	}
+}

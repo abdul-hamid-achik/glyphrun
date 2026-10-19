@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
 )
 
 func Validate(s Spec) error {
@@ -456,7 +458,7 @@ func validateCountCondition(c CountCondition) error {
 		}
 	}
 	if c.Matches != "" && c.Matches != "nonEmpty" {
-		if len([]rune(c.Matches)) != 1 {
+		if !terminal.SingleCluster(c.Matches) {
 			return fmt.Errorf("count.matches must be a single character or \"nonEmpty\", got %q", c.Matches)
 		}
 	}

@@ -407,3 +407,28 @@ func TestValidateVerify_AcceptsMetricsVerifier(t *testing.T) {
 		t.Fatalf("expected error for empty metrics verifier, got nil")
 	}
 }
+
+// count.matches names what one cell holds: a single grapheme cluster, which may
+// be several code points (a flag, a ZWJ emoji, a decomposed accent).
+func TestValidateCountMatchesOneCluster(t *testing.T) {
+	one := 1
+	for _, tt := range []struct {
+		matches string
+		ok      bool
+	}{
+		{"x", true},
+		{"雪", true},
+		{"🇲🇽", true},
+		{"👨‍👩‍👧", true},
+		{"é", true},
+		{"nonEmpty", true},
+		{"ab", false},
+		{"雪雪", false},
+		{"🇲🇽🇲🇽", false},
+	} {
+		err := validateCountCondition(CountCondition{Matches: tt.matches, Equals: &one})
+		if (err == nil) != tt.ok {
+			t.Errorf("matches %q: err = %v, want ok=%v", tt.matches, err, tt.ok)
+		}
+	}
+}

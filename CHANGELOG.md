@@ -16,7 +16,7 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ### Fixed
 
-- `count.matches` rejected a single non-ASCII character that validation accepted.
+- `count.matches` takes one grapheme cluster, what a cell holds, so a flag, an emoji sequence or a letter with combining marks can be counted. The runner used to reject any non-ASCII character that validation had accepted.
 - Ignore-region normalization dropped combining marks from the live screen while the text golden kept them, so the two could never match on such a line.
 
 ## [0.21.0] - 2026-10-19

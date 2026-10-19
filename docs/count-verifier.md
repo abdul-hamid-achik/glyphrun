@@ -20,7 +20,7 @@ outcomes:
 ## Matcher (`matches`)
 
 - omitted or `"nonEmpty"` — count non-blank cells
-- a single character — count cells holding exactly that character. A wide character counts once: its continuation cell is never matched
+- a single character (one grapheme cluster, so a flag, an emoji sequence or a letter with combining marks counts as one) — count cells holding exactly that character. A wide character counts once: its continuation cell is never matched
 - multi-character strings are rejected (a substring would be ambiguous)
 
 ## Comparator (exactly one)

@@ -47,3 +47,11 @@ func lastLead(cols []string) int {
 	}
 	return -1
 }
+
+// SingleCluster reports whether s is exactly one grapheme cluster, which is
+// what one cell's Char holds: possibly several code points, such as a flag, a
+// ZWJ emoji sequence or a letter with combining marks.
+func SingleCluster(s string) bool {
+	g := graphemes.FromString(s)
+	return s != "" && g.Next() && len(g.Value()) == len(s)
+}

@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/abdul-hamid-achik/glyphrun/internal/artifacts"
 	"github.com/abdul-hamid-achik/glyphrun/internal/config"
@@ -2483,7 +2482,7 @@ func (s *runState) checkCount(screen terminal.Screen, cond spec.CountCondition) 
 				matched++
 			}
 		}
-	case utf8.RuneCountInString(cond.Matches) == 1:
+	case terminal.SingleCluster(cond.Matches):
 		needle := cond.Matches
 		for _, c := range cells {
 			if c.Char == needle {

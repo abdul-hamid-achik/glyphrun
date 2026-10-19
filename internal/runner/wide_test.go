@@ -54,3 +54,14 @@ func TestCheckCountMatchesAWideCharacter(t *testing.T) {
 		t.Fatalf("expected 3 cells holding 雪: %s", msg)
 	}
 }
+
+func TestCheckCountMatchesAClusteredCell(t *testing.T) {
+	emu := makeScreen(t, 20, 1, "🇲🇽 é 🇲🇽 👨‍👩‍👧")
+	s := &runState{emulator: emu}
+	for needle, want := range map[string]int{"🇲🇽": 2, "é": 1, "👨‍👩‍👧": 1} {
+		ok, msg, _ := s.checkCount(emu.Screen(), spec.CountCondition{Matches: needle, Equals: intPtr(want)})
+		if !ok {
+			t.Errorf("matches %q: %s", needle, msg)
+		}
+	}
+}
