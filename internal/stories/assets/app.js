@@ -85,6 +85,14 @@
         while (x < cols) {
           const cell = at(x, y);
           if (!sameText(effectiveStyle(cell, palette), st)) break;
+          if (cell.width === 2) {
+            // A wide character gets a <text> of its own spanning its two columns.
+            if (x === start) {
+              text += cell.char;
+              x = Math.min(x + 2, cols);
+            }
+            break;
+          }
           let chr = cell.char || " ";
           if (opts.spaces && chr === " ") chr = "·";
           text += chr;
@@ -150,7 +158,9 @@
     for (let y = 0; y < rows; y++) {
       const row = (grid && grid[y]) || [];
       for (let x = 0; x < cols; x++) {
-        cells[y * cols + x] = { x, y, char: row[x] || " ", width: 1 };
+        // "" marks the right half of a wide character: no text of its own.
+        cells[y * cols + x] =
+          row[x] === "" ? { x, y, char: "", width: 0 } : { x, y, char: row[x] || " ", width: row[x + 1] === "" ? 2 : 1 };
       }
     }
     (styles || []).forEach((r) => {
