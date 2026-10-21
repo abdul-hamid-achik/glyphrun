@@ -58,6 +58,14 @@ Use `wait` to synchronize on screen text, process state, snapshots, or trusted c
 
 `press` accepts printable single characters plus common terminal keys: `enter`, `tab`, `shift+tab`, `esc`, `backspace`, `delete`, `space`, arrow keys, `pgup`, `pgdown`, `home`, `end`, and `ctrl+<letter>`/`c-<letter>` aliases such as `ctrl+c`, `ctrl+u`, and `c-m`.
 
+`resize: { cols, rows }` changes the terminal size mid-run, as dragging a real terminal window does: Glyphrun resizes the emulator and then the PTY, so the target gets `SIGWINCH` and sees the new size. The screen keeps what is on it, with no reflow, following xterm:
+
+- Columns: each row keeps the cells that still fit. Growing pads with blanks; shrinking cuts every row at the new width, and a wide character cut in half becomes a blank.
+- Rows: growing adds blank rows at the bottom and does not pull lines back from the scrollback. Shrinking drops rows from the bottom, except that when the cursor would fall below the new last row, the top rows move into the scrollback, oldest first, until the cursor's row is the last one.
+- The cursor is clamped to the new size and keeps its visibility. A deferred wrap is cleared and the scroll region goes back to the full screen.
+
+This is what lets an inline-mode TUI, which redraws its live region after `SIGWINCH` with relative cursor moves only, be tested: the lines above the region are still there to move over. Wait for the redraw after a resize (`wait: { screen: { contains: ... } }`) before asserting. See `examples/specs/resize.yml`.
+
 Use `snapshot` to capture named terminal states inside the artifact pack. Use `glyph snapshot update <spec>` when a committed snapshot intentionally changes. When the scrollback is not empty, a snapshot also writes `snapshots/<name>.scrollback.txt` beside the screen; committed goldens stay screen-only.
 
 Use `paste` for multi-character clipboard-style input. Glyphrun sends bracketed paste delimiters only after the target enables terminal mode `?2004`; otherwise it writes the literal text.

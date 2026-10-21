@@ -52,6 +52,26 @@ steps:
     press: "enter"
 ```
 
+## Placeholders
+
+Specs and action files can refer to values from the config and the environment with `${...}` placeholders. They are replaced when the file is read:
+
+| Placeholder | Value |
+| --- | --- |
+| `${projectRoot}` | the project root (the directory of the config, or of the spec) |
+| `${vars.NAME}` | `environments.<env>.vars.NAME` from the config |
+| `${env.NAME}` | `environments.<env>.env.NAME` from the config |
+| `${config.NAME}` | a config value such as `${config.artifactRoot}` |
+| `${artifacts.NAME.path}`, `${artifacts.NAME.relativePath}` | a named artifact; resolved just before the step that uses it runs |
+
+Only text shaped like one of these keys is a placeholder. Everything else is left as written, so scripts in `command` verifiers, `transform` steps, and `when` guards can use shell parameter expansion and JavaScript template literals directly: `${HOME}`, `${var#*:}`, `${x:-y}`, `${#arr}`, `${arr[@]}`, and `${a + b}` all pass through to the script. A bare identifier is not a key (`projectRoot` is the only bare one), which is why `${HOME}` needs no escape.
+
+A key-shaped placeholder that has no value is an error, so a typo such as `${vars.nmae}` fails with `unresolved placeholder(s)` instead of reaching the script as text.
+
+To write a literal `${...}` that looks like a key, double the dollar: `$${...}` becomes `${...}`. Use it for a shell variable or template that happens to be shaped like a key, such as `$${projectRoot}` or a JavaScript `$${vars.x}`. The escape works for any `${...}`, so `$${HOME}` is `${HOME}` too, but `${HOME}` alone is enough. A `$$` that is not followed by `{` (the shell's process id) is untouched.
+
+A typo in the namespace itself (`${var.bin}`) is not key-shaped, so it passes through to the script rather than failing; that is the cost of leaving JavaScript `${obj.prop}` alone. An escaped artifact key (`$${artifacts.x.path}`) becomes `${artifacts.x.path}` and is still resolved in the fields the runner resolves it in (download paths, transform input and arguments, script fixtures), so it cannot be escaped there.
+
 ## Inline-mode TUIs
 
 An inline-mode TUI never uses the alternate screen. It keeps a small live region (a prompt, a status line) at the bottom of the terminal and commits finished lines above it, so they stay in the shell's scrollback after the app exits. Chat and agent UIs work this way. Their evidence is mostly not on the visible screen: after a long reply, `screen` shows only the last few rows.
@@ -98,6 +118,8 @@ Tips:
 - Size the terminal for the test. A taller terminal keeps more on the screen and scrolls less; a short one scrolls early. Use `lines` (`equals`, `atLeast`, `between`) when the number of committed rows is the contract, and `terminal.scrollbackLines` if a run commits more than 10000.
 - A shell prompt, or whatever ran before the app, may already be in the scrollback. Match with `matches` or `contains` instead of `equals`, and anchor on lines your app prints.
 - Scrollback is never fed by the alternate screen. A full-screen TUI that also commits a summary after leaving it will show the summary in the scrollback and nothing from the alternate screen.
+- A `resize` step keeps what is on the screen, like a real terminal: use it to test how the live region redraws on `SIGWINCH`. Shrinking the rows with the cursor at the bottom pushes the top rows into the scrollback, in order; growing adds blank rows at the bottom and pulls nothing back.
 - Every run with a non-empty scrollback writes `scrollback.txt`, and each `snapshot:` step writes `snapshots/<name>.scrollback.txt`. Read them first when a scrollback outcome fails; the failure message also says how many rows were kept and dropped.
 
 `examples/specs/scrollback.yml` runs a small inline-mode program that commits 100 lines above a two-line live region and asserts what reached the scrollback.
+`examples/specs/resize.yml` resizes a terminal around an inline-mode program that redraws its live region with relative cursor moves.

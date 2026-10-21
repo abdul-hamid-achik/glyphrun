@@ -5,6 +5,7 @@ examples/apps/hello/hello
 examples/apps/reporter/reporter
 examples/apps/mouseapp/mouseapp
 examples/apps/inline/inline
+examples/apps/resize/resize
 examples/apps/stories/stories
 reports/
 spec.md

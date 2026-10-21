@@ -595,10 +595,13 @@ func (s *runState) executeStep(ctx context.Context, step spec.Step) (stepExecuti
 	case step.Wait != nil:
 		return stepExecutionResult{}, s.waitFor(ctx, *step.Wait)
 	case step.Resize != nil:
-		if err := s.session.Resize(step.Resize.Cols, step.Resize.Rows); err != nil {
+		// Resize the emulator first: the PTY resize raises SIGWINCH, and the
+		// program's redraw (relative cursor moves, in an inline-mode TUI) must
+		// land on a screen that already has the new size, not race with it.
+		if err := s.emulator.Resize(step.Resize.Cols, step.Resize.Rows); err != nil {
 			return stepExecutionResult{}, err
 		}
-		return stepExecutionResult{}, s.emulator.Resize(step.Resize.Cols, step.Resize.Rows)
+		return stepExecutionResult{}, s.session.Resize(step.Resize.Cols, step.Resize.Rows)
 	case step.Snapshot != "":
 		return stepExecutionResult{}, s.captureSnapshot(step.Snapshot)
 	case step.Download != nil:
@@ -623,10 +626,13 @@ func (s *runState) resolveRuntimePlaceholders(text string) (string, error) {
 		return text, nil
 	}
 	var firstErr error
-	out := runtimePlaceholderPattern.ReplaceAllStringFunc(text, func(match string) string {
-		key := strings.TrimSuffix(strings.TrimPrefix(match, "${"), "}")
+	out := spec.PlaceholderPattern.ReplaceAllStringFunc(text, func(match string) string {
+		if strings.HasPrefix(match, "$$") {
+			return match // "$${": text the parser already left as it is
+		}
+		key := match[2 : len(match)-1]
 		name, field, ok := splitArtifactKey(key)
-		if !ok {
+		if !ok || !spec.IsPlaceholderKey(key) {
 			return match
 		}
 		s.mu.Lock()
@@ -651,8 +657,6 @@ func (s *runState) resolveRuntimePlaceholders(text string) (string, error) {
 	}
 	return out, nil
 }
-
-var runtimePlaceholderPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
 func splitArtifactKey(key string) (name, field string, ok bool) {
 	const prefix = "artifacts."

@@ -139,27 +139,89 @@ func NewEmulatorWithOptions(cols, rows int, opts Options) *SimpleEmulator {
 	return e
 }
 
+// Resize changes the terminal size the way xterm does, without reflow: the
+// screen keeps what is on it, so a program that redraws its live region with
+// relative cursor moves after SIGWINCH finds its rows where it left them.
+//
+//   - Columns: each row keeps its cells that still fit. Growing pads with
+//     plain blanks; shrinking cuts at the new width, and a wide character cut
+//     in half leaves a blank in its first column (the style is kept), as a
+//     partial erase does.
+//   - Rows: growing adds blank rows at the bottom and does not pull lines back
+//     from the scrollback. Shrinking drops rows from the bottom, except that
+//     when the cursor would fall below the new last row the top rows move into
+//     the scrollback (discarded on the alternate screen, which never feeds it)
+//     until the cursor's row is the last one.
+//   - The cursor and the DECSC and alternate-screen saved positions are clamped
+//     to the new size; visibility is kept. The deferred wrap is dropped, the
+//     scroll region returns to the full screen, and origin mode is reset.
+//
+// The emulator has one grid shared by the main and alternate screens (leaving
+// the alternate screen keeps its contents), so both follow these rules and the
+// alternate-screen flag is untouched. The first call, from the constructor,
+// starts from an empty grid.
 func (e *SimpleEmulator) Resize(cols, rows int) error {
 	if cols <= 0 || rows <= 0 {
 		return fmt.Errorf("terminal size must be positive")
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	oldRows := len(e.cells)
+
+	// Shrinking rows: scroll the top rows out when the cursor would be cut off.
+	shift := 0
+	if rows < oldRows && e.cursor.Y > rows-1 {
+		shift = e.cursor.Y - (rows - 1)
+		if !e.alternateScreen {
+			e.pushScrolledRows(shift)
+		}
+		e.cells = e.cells[shift:]
+		e.cursor.Y -= shift
+	}
+	if len(e.cells) > rows {
+		e.cells = e.cells[:rows]
+	}
+	for len(e.cells) < rows {
+		e.cells = append(e.cells, nil)
+	}
+
+	oldCols := e.cols
+	for y := 0; y < rows; y++ {
+		row := e.cells[y]
+		switch {
+		case row == nil:
+			row = make([]Cell, cols)
+		case len(row) > cols:
+			row = row[:cols:cols]
+		case len(row) < cols:
+			grown := make([]Cell, cols)
+			copy(grown, row)
+			row = grown
+		}
+		for x := len(e.cells[y]); x < cols; x++ { // padding (all of it for a new row)
+			row[x] = Cell{Char: " ", Width: 1}
+		}
+		e.cells[y] = row
+	}
 	e.cols = cols
 	e.rows = rows
-	e.cells = make([][]Cell, rows)
-	for y := 0; y < rows; y++ {
-		e.cells[y] = make([]Cell, cols)
-		for x := 0; x < cols; x++ {
-			e.cells[y][x] = Cell{X: x, Y: y, Char: " ", Width: 1}
+	if cols < oldCols {
+		for y := 0; y < rows; y++ {
+			e.fixWideRow(y)
 		}
 	}
-	e.cursor = Cursor{X: 0, Y: 0, Visible: true}
+	e.reindex()
+
+	e.cursor.X = clamp(e.cursor.X, 0, cols-1)
+	e.cursor.Y = clamp(e.cursor.Y, 0, rows-1)
+	e.savedCursor.X = clamp(e.savedCursor.X, 0, cols-1)
+	e.savedCursor.Y = clamp(e.savedCursor.Y, 0, rows-1)
+	e.mainCursor.X = clamp(e.mainCursor.X, 0, cols-1)
+	e.mainCursor.Y = clamp(e.mainCursor.Y, 0, rows-1)
 	e.pendingWrap = false
 	e.scrollTop = 0
 	e.scrollBottom = rows - 1
 	e.originMode = false
-	e.hasMainCursor = false
 	e.canJoin = false
 	return nil
 }

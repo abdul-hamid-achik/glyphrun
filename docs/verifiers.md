@@ -85,7 +85,7 @@ What counts as scrollback follows xterm:
 - A row enters it when it scrolls off the top while the scroll region starts at the top row: a line feed at the bottom margin, `IND`/`NEL`, autowrap at the bottom-right cell, and `CSI n S`. A region that starts below the first row (`CSI 2;24 r`) adds nothing, and neither do `DL`, `IL`, or reverse index.
 - The alternate screen never adds to it, and entering or leaving the alternate screen leaves it intact.
 - `CSI 3 J` (erase saved lines) and a full reset (`ESC c`) clear it. `CSI 2 J` does not.
-- A resize keeps it; rows are not reflowed.
+- A resize keeps it, and a resize that shrinks the rows while the cursor is below the new last row adds the rows it pushes off the top, as xterm does (see the `resize` step in [Steps](/steps)). Rows already stored are not reflowed.
 - It holds at most `terminal.scrollbackLines` rows (default 10000; see [Configuration](/configuration)). Older rows are dropped first. A failing scrollback check says how many were dropped, and a passing `notContains` on a run that dropped rows only vouches for the rows that were kept.
 
 Screen and region verifiers accept exactly one of: `equals`, `contains`, `notContains`, `matches` (preferred regex form), or legacy `regex` (alias of `matches`). Cell verifiers can check characters and style attributes such as foreground color, background color, bold, dim, italic, underline, and reverse. Cell verifiers compare the raw cell style: a cell on the terminal's default background has an empty `bg` even when the app set a default background with OSC 11. That color is reported separately as `defaultBg` (and `defaultFg`) on the snapshot and is used only when rendering SVG. Cells the app erased while a background was set carry that background, as in xterm.

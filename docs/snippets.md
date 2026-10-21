@@ -18,7 +18,7 @@ steps:
   - use: wait_for_ready_and_quit
 ```
 
-Action files are resolved relative to the importing spec. Placeholders such as `${vars.name}`, `${env.NAME}`, and `${projectRoot}` work inside actions.
+Action files are resolved relative to the importing spec. Placeholders such as `${vars.name}`, `${env.NAME}`, and `${projectRoot}` work inside actions, with the same rules as in specs: text that is not shaped like a Glyphrun key (`${HOME}`, `${var#*:}`) is left for the script, and `$${...}` writes a literal `${...}` (see [Authoring](/authoring#placeholders)).
 
 Use actions for stable repeated mechanics such as opening a TUI, waiting for the ready screen, dismissing an optional prompt, or quitting cleanly. Keep assertions in the spec's `outcomes`.
 

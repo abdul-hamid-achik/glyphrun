@@ -206,7 +206,39 @@ func expandImports(s Spec, specPath string, opts ParseOptions) (Spec, error) {
 	return s, nil
 }
 
-var placeholderPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
+// PlaceholderPattern matches one `${...}` span, or `$${...}`, its escape. A span
+// holds no '$', '{' or '}', so in `${a:-${vars.b}}` the inner span is the one
+// found and substituted. The runner shares the pattern so the parse-time and
+// run-time passes agree on what a span is. Whether a span is a Glyphrun
+// placeholder is decided by IsPlaceholderKey, not by this pattern: scripts are
+// full of `${...}` that belong to the shell.
+var PlaceholderPattern = regexp.MustCompile(`\$\$\{[^{}$]+\}|\$\{[^{}$]+\}`)
+
+// placeholderKeyPattern is the shape of a Glyphrun placeholder key:
+//
+//	projectRoot
+//	vars.NAME   env.NAME   config.NAME
+//	artifacts.NAME.FIELD   (resolved at run time)
+//
+// NAME starts with a letter, digit or underscore and continues with those plus
+// '.' and '-', which covers every var, environment variable and config value
+// name. None of this is valid shell parameter syntax (a '.' ends a parameter
+// name), so a real key never collides with a shell expansion.
+//
+// A bare identifier is deliberately not a key, except projectRoot, the one
+// documented bare key. ${HOME}, ${PWD} and ${IFS} are shell variables and
+// pass through untouched; treating every identifier as a key would force an
+// escape on each of them and break every existing script that uses one.
+var placeholderKeyPattern = regexp.MustCompile(`^(?:projectRoot|(?:vars|env|config)\.[A-Za-z0-9_][A-Za-z0-9_.-]*|artifacts\.[A-Za-z0-9_][A-Za-z0-9_.-]*)$`)
+
+// IsPlaceholderKey reports whether the text between `${` and `}` is shaped like
+// a Glyphrun placeholder key. Anything else (`${HOME}`, `${var#*:}`,
+// `${x:-y}`, `${#arr}`, a JavaScript `${a + b}`) belongs to the script and is
+// left untouched. A key-shaped span that does not resolve is an error, so a
+// typo such as `${vars.nmae}` is still caught.
+func IsPlaceholderKey(key string) bool {
+	return placeholderKeyPattern.MatchString(key)
+}
 
 // IsRuntimePlaceholder reports whether a placeholder key refers to a
 // runtime-resolved value (currently only the artifact namespace) that the
@@ -215,14 +247,34 @@ func IsRuntimePlaceholder(key string) bool {
 	return strings.HasPrefix(key, "artifacts.")
 }
 
+// SubstitutePlaceholders resolves the parse-time placeholders in a spec or
+// action source:
+//
+//   - `${projectRoot}`, `${vars.NAME}`, `${env.NAME}` and `${config.NAME}` are
+//     replaced; one that is not defined is an error.
+//   - `${artifacts.NAME.FIELD}` is left for the runner, which resolves it just
+//     before each step.
+//   - `$${...}` is an escape: it becomes a literal `${...}`, whatever is inside,
+//     for text that is key-shaped but belongs to the script (`$${vars.x}` in a
+//     JavaScript template, or `$${projectRoot}` for a shell variable of that
+//     name). This is the only pass that reads the escape. An escaped artifact
+//     key comes out as `${artifacts...}`, which the runner resolves in the
+//     fields it resolves, so an artifact key cannot be escaped there.
+//   - any other `${...}` is not a placeholder and is left as written.
 func SubstitutePlaceholders(text string, filePath string, opts ParseOptions) (string, error) {
 	projectRoot := opts.ProjectRoot
 	if projectRoot == "" {
 		projectRoot = filepath.Dir(filePath)
 	}
 	var missing []string
-	out := placeholderPattern.ReplaceAllStringFunc(text, func(match string) string {
-		key := strings.TrimSuffix(strings.TrimPrefix(match, "${"), "}")
+	out := PlaceholderPattern.ReplaceAllStringFunc(text, func(match string) string {
+		if strings.HasPrefix(match, "$$") {
+			return match[1:] // drop one '$': "$${x}" -> "${x}"
+		}
+		key := match[2 : len(match)-1]
+		if !IsPlaceholderKey(key) {
+			return match
+		}
 		// Artifact placeholders are resolved at run time, not parse time —
 		// an earlier step's download/transform may populate them between
 		// the parse step and the runner dispatch.
@@ -252,7 +304,7 @@ func SubstitutePlaceholders(text string, filePath string, opts ParseOptions) (st
 		return match
 	})
 	if len(missing) > 0 {
-		return "", fmt.Errorf("unresolved placeholder(s) in %s: %s", filePath, strings.Join(missing, ", "))
+		return "", fmt.Errorf("unresolved placeholder(s) in %s: %s (write $${...} for a literal ${...})", filePath, strings.Join(missing, ", "))
 	}
 	return out, nil
 }
