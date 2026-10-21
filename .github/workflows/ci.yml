@@ -65,6 +65,11 @@ jobs:
           go build -o ./examples/apps/mouseapp/mouseapp ./examples/apps/mouseapp
           ./bin/glyph run examples/specs/mouse_click.yml --format md
 
+      - name: Scrollback example
+        run: |
+          go build -o ./examples/apps/inline/inline ./examples/apps/inline
+          ./bin/glyph run examples/specs/scrollback.yml --format md
+
       - name: JUnit example
         run: |
           mkdir -p reports

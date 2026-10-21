@@ -1,0 +1,74 @@
+version: 1
+name: inline_scrollback
+intent: |
+    an inline-mode TUI commits 100 finished lines above its two-line live
+    region without ever using the alternate screen. The ninety oldest lines
+    scroll off the top of a 12-row terminal into the scrollback, whole and in
+    order, while the newest ten stay on the screen beside the live region.
+target:
+    cmd: ["${vars.inlineBin}"]
+    cwd: "."
+terminal:
+    cols: 60
+    rows: 12
+    profile: xterm-256color
+    alternateScreen: forbid
+preconditions:
+    commands:
+        - run: "go build -o ./examples/apps/inline/inline ./examples/apps/inline"
+          timeoutMs: 30000
+steps:
+    # Wait on the scrollback itself: line 40 has scrolled off once line 50 is
+    # committed, and the final status line says the app is done.
+    - wait:
+        scrollback:
+            contains: "committed line 40"
+        timeoutMs: 5000
+    - wait:
+        screen:
+            contains: "press q to quit"
+        timeoutMs: 5000
+    - snapshot: committed
+    - press: "q"
+    - wait:
+        process:
+            exitCode: 0
+        timeoutMs: 3000
+outcomes:
+    - id: oldest_line_in_scrollback
+      description: the first committed line reached the scrollback
+      verify:
+        scrollback:
+            matches: '(?m)^committed line 1$'
+    - id: lines_whole_and_in_order
+      description: the scrollback holds lines 1 to 90, each once, in order
+      verify:
+        scrollback:
+            matches: '(?s)\Acommitted line 1\ncommitted line 2\ncommitted line 3\n.*\ncommitted line 89\ncommitted line 90\z'
+    - id: ninety_lines_scrolled
+      description: exactly the ninety lines that no longer fit on the screen scrolled off
+      verify:
+        scrollback:
+            lines: {equals: 90}
+    - id: newest_lines_stay_on_screen
+      description: the newest committed line is still on the screen, not in the scrollback
+      verify:
+        scrollback:
+            notContains: "committed line 100"
+    - id: live_region_on_screen
+      description: the live region shows the final status
+      verify:
+        screen:
+            contains: "status: 100 committed"
+    - id: whole_transcript
+      description: the scrollback followed by the screen reads from the first line to the last
+      verify:
+        screen:
+            includeScrollback: true
+            matches: '(?s)\Acommitted line 1\n.*committed line 100\n'
+    - id: clean_exit
+      description: q exits the application cleanly
+      verify:
+        process:
+            exitCode: 0
+contractHash: sha256:973e61b9790b73fcfd3d46f29b3f5d54264aa9dc5b899eedfb2aec4a10231ea2

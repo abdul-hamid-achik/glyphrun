@@ -16,6 +16,7 @@ environments:
     vars:
       helloBin: ./examples/apps/hello/hello
       mouseBin: ./examples/apps/mouseapp/mouseapp
+      inlineBin: ./examples/apps/inline/inline
       defaultCols: 100
       defaultRows: 30
     env:
