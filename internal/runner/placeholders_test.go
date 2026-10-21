@@ -21,10 +21,8 @@ func TestResolveRuntimePlaceholders(t *testing.T) {
 		{"relative path", "${artifacts.report.relativePath}", "artifacts/report/r.txt", ""},
 		{"shell expansions pass through", `echo ${var#*:} ${HOME} ${x:-y} ${#arr}`, `echo ${var#*:} ${HOME} ${x:-y} ${#arr}`, ""},
 		{"artifact key inside a shell default", `${v:-${artifacts.report.path}}`, `${v:-/run/artifacts/report/r.txt}`, ""},
-		{"escaped artifact key is literal", `echo $${artifacts.report.path}`, `echo ${artifacts.report.path}`, ""},
-		{"escaped artifact key beside a real one", `$${artifacts.report.path} ${artifacts.report.path}`, `${artifacts.report.path} /run/artifacts/report/r.txt`, ""},
-		{"escaped non-artifact text was unescaped by the parser and stays", `${vars.x}`, `${vars.x}`, ""},
-		{"escaped artifact key needs no artifact", `$${artifacts.nope.path}`, `${artifacts.nope.path}`, ""},
+		{"a span after a double dollar is left alone", `$${artifacts.report.path}`, `$${artifacts.report.path}`, ""},
+		{"non-key text is left alone", `${vars.x} ${env.Y}`, `${vars.x} ${env.Y}`, ""},
 		{"unknown artifact is an error", `${artifacts.nope.path}`, "", `artifact "nope"`},
 	}
 	for _, tc := range tests {

@@ -98,7 +98,7 @@ func TestSubstitutePlaceholdersTable(t *testing.T) {
 		{name: "escape of an undefined key is not an error", in: `$${vars.nope}`, want: `${vars.nope}`},
 		{name: "escape next to a real key", in: `$${vars.x} ${vars.x}`, want: `${vars.x} VX`},
 		{name: "escape beside a PID", in: `$$${vars.x}`, want: `$${vars.x}`},
-		{name: "artifact escape waits for the runner", in: `$${artifacts.a.path} ${artifacts.a.path}`, want: `$${artifacts.a.path} ${artifacts.a.path}`},
+		{name: "escaped artifact key is literal text for the runner to resolve", in: `$${artifacts.a.path} ${artifacts.a.path}`, want: `${artifacts.a.path} ${artifacts.a.path}`},
 		{name: "double dollar without braces is untouched", in: `echo $$ {vars.x}`, want: `echo $$ {vars.x}`},
 
 		// Runtime keys pass through.

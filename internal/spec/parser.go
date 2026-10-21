@@ -257,8 +257,9 @@ func IsRuntimePlaceholder(key string) bool {
 //   - `$${...}` is an escape: it becomes a literal `${...}`, whatever is inside,
 //     for text that is key-shaped but belongs to the script (`$${vars.x}` in a
 //     JavaScript template, or `$${projectRoot}` for a shell variable of that
-//     name). The one exception is an artifact key, whose escape is kept as
-//     `$${artifacts...}` so the runner, which owns that namespace, removes it.
+//     name). This is the only pass that reads the escape. An escaped artifact
+//     key comes out as `${artifacts...}`, which the runner resolves in the
+//     fields it resolves, so an artifact key cannot be escaped there.
 //   - any other `${...}` is not a placeholder and is left as written.
 func SubstitutePlaceholders(text string, filePath string, opts ParseOptions) (string, error) {
 	projectRoot := opts.ProjectRoot
@@ -268,11 +269,7 @@ func SubstitutePlaceholders(text string, filePath string, opts ParseOptions) (st
 	var missing []string
 	out := PlaceholderPattern.ReplaceAllStringFunc(text, func(match string) string {
 		if strings.HasPrefix(match, "$$") {
-			literal := match[1:] // drop one '$': "$${x}" -> "${x}"
-			if IsRuntimePlaceholder(literal[2 : len(literal)-1]) {
-				return match
-			}
-			return literal
+			return match[1:] // drop one '$': "$${x}" -> "${x}"
 		}
 		key := match[2 : len(match)-1]
 		if !IsPlaceholderKey(key) {

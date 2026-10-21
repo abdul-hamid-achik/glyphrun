@@ -628,13 +628,7 @@ func (s *runState) resolveRuntimePlaceholders(text string) (string, error) {
 	var firstErr error
 	out := spec.PlaceholderPattern.ReplaceAllStringFunc(text, func(match string) string {
 		if strings.HasPrefix(match, "$$") {
-			// The parser keeps the escape of an artifact key for this pass:
-			// "$${artifacts.x.path}" is the literal "${artifacts.x.path}".
-			// Any other "$${" is already literal text and stays as it is.
-			if spec.IsRuntimePlaceholder(match[3 : len(match)-1]) {
-				return match[1:]
-			}
-			return match
+			return match // "$${": text the parser already left as it is
 		}
 		key := match[2 : len(match)-1]
 		name, field, ok := splitArtifactKey(key)

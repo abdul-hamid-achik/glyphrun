@@ -70,6 +70,8 @@ A key-shaped placeholder that has no value is an error, so a typo such as `${var
 
 To write a literal `${...}` that looks like a key, double the dollar: `$${...}` becomes `${...}`. Use it for a shell variable or template that happens to be shaped like a key, such as `$${projectRoot}` or a JavaScript `$${vars.x}`. The escape works for any `${...}`, so `$${HOME}` is `${HOME}` too, but `${HOME}` alone is enough. A `$$` that is not followed by `{` (the shell's process id) is untouched.
 
+A typo in the namespace itself (`${var.bin}`) is not key-shaped, so it passes through to the script rather than failing; that is the cost of leaving JavaScript `${obj.prop}` alone. An escaped artifact key (`$${artifacts.x.path}`) becomes `${artifacts.x.path}` and is still resolved in the fields the runner resolves it in (download paths, transform input and arguments, script fixtures), so it cannot be escaped there.
+
 ## Inline-mode TUIs
 
 An inline-mode TUI never uses the alternate screen. It keeps a small live region (a prompt, a status line) at the bottom of the terminal and commits finished lines above it, so they stay in the shell's scrollback after the app exits. Chat and agent UIs work this way. Their evidence is mostly not on the visible screen: after a long reply, `screen` shows only the last few rows.
