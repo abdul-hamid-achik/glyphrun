@@ -1,3 +1,5 @@
+//go:build !windows
+
 package main
 
 // resize is a tiny demo of an inline-mode TUI that survives a terminal resize,
