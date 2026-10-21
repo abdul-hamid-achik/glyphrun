@@ -626,10 +626,19 @@ func (s *runState) resolveRuntimePlaceholders(text string) (string, error) {
 		return text, nil
 	}
 	var firstErr error
-	out := runtimePlaceholderPattern.ReplaceAllStringFunc(text, func(match string) string {
-		key := strings.TrimSuffix(strings.TrimPrefix(match, "${"), "}")
+	out := spec.PlaceholderPattern.ReplaceAllStringFunc(text, func(match string) string {
+		if strings.HasPrefix(match, "$$") {
+			// The parser keeps the escape of an artifact key for this pass:
+			// "$${artifacts.x.path}" is the literal "${artifacts.x.path}".
+			// Any other "$${" is already literal text and stays as it is.
+			if spec.IsRuntimePlaceholder(match[3 : len(match)-1]) {
+				return match[1:]
+			}
+			return match
+		}
+		key := match[2 : len(match)-1]
 		name, field, ok := splitArtifactKey(key)
-		if !ok {
+		if !ok || !spec.IsPlaceholderKey(key) {
 			return match
 		}
 		s.mu.Lock()
@@ -654,8 +663,6 @@ func (s *runState) resolveRuntimePlaceholders(text string) (string, error) {
 	}
 	return out, nil
 }
-
-var runtimePlaceholderPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 
 func splitArtifactKey(key string) (name, field string, ok bool) {
 	const prefix = "artifacts."
