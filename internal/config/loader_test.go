@@ -389,3 +389,41 @@ retention:
 		t.Fatal("fcheap-publish accepted custom command arguments")
 	}
 }
+
+// TestLoadRuntimeScrollbackLines covers terminal.scrollbackLines: absent keeps
+// the 10000 default, a set value wins, and the schema rejects non-positive
+// values (the config merge cannot tell an explicit 0 from an absent field).
+func TestLoadRuntimeScrollbackLines(t *testing.T) {
+	load := func(t *testing.T, body string) (Runtime, error) {
+		t.Helper()
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "glyphrun.config.yml")
+		if err := os.WriteFile(cfgPath, []byte("version: 1\n"+body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return LoadRuntime(dir, cfgPath, "")
+	}
+	t.Run("default", func(t *testing.T) {
+		rt, err := load(t, "terminal:\n  cols: 90\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := rt.Config.Terminal.ScrollbackLines; got != 10000 {
+			t.Fatalf("ScrollbackLines = %d, want default 10000", got)
+		}
+	})
+	t.Run("explicit", func(t *testing.T) {
+		rt, err := load(t, "terminal:\n  scrollbackLines: 250\n")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := rt.Config.Terminal.ScrollbackLines; got != 250 {
+			t.Fatalf("ScrollbackLines = %d, want 250", got)
+		}
+	})
+	t.Run("rejects zero", func(t *testing.T) {
+		if _, err := load(t, "terminal:\n  scrollbackLines: 0\n"); err == nil {
+			t.Fatal("expected the schema to reject scrollbackLines: 0")
+		}
+	})
+}

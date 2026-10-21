@@ -129,6 +129,126 @@ outcomes:
 	}
 }
 
+// TestParseFileScrollback covers the scrollback surface through the JSON
+// schema and the model: a wait, a verifier, `lines`, `includeScrollback`, and
+// the shapes the schema must reject.
+func TestParseFileScrollback(t *testing.T) {
+	const head = `version: 1
+name: scrollback_parse
+intent: scrollback conditions parse.
+target:
+  cmd: ["/bin/echo", "ready"]
+`
+	parse := func(t *testing.T, body string) (Spec, error) {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "spec.yml")
+		if err := os.WriteFile(path, []byte(head+body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := ParseFile(path, ParseOptions{
+			ProjectRoot:     repoRoot(t),
+			DefaultTerminal: Terminal{Cols: 80, Rows: 24, Profile: "xterm-256color"},
+		})
+		return parsed.Resolved, err
+	}
+	t.Run("accepted", func(t *testing.T) {
+		got, err := parse(t, `steps:
+  - wait:
+      scrollback: {contains: "line 1"}
+      timeoutMs: 500
+  - wait:
+      screen: {contains: "done", includeScrollback: true}
+outcomes:
+  - id: committed
+    description: lines were committed
+    verify:
+      scrollback: {matches: "^line \\d+$"}
+  - id: count
+    description: a hundred lines
+    verify:
+      scrollback:
+        lines: {atLeast: 100}
+  - id: combined
+    description: both
+    verify:
+      screen: {notContains: "boom", includeScrollback: true}
+`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Steps[0].Wait.Scrollback == nil || got.Steps[0].Wait.Scrollback.Contains != "line 1" {
+			t.Errorf("wait.scrollback = %#v", got.Steps[0].Wait.Scrollback)
+		}
+		if w := got.Steps[1].Wait.Screen; w == nil || !w.IncludeScrollback {
+			t.Errorf("wait.screen.includeScrollback = %#v", w)
+		}
+		if v := got.Outcomes[1].Verify.Scrollback; v == nil || v.Lines == nil || *v.Lines.AtLeast != 100 {
+			t.Errorf("verify.scrollback.lines = %#v", v)
+		}
+		if v := got.Outcomes[2].Verify.Screen; v == nil || !v.IncludeScrollback {
+			t.Errorf("verify.screen.includeScrollback = %#v", v)
+		}
+	})
+	for name, body := range map[string]string{
+		"empty scrollback wait": `steps:
+  - wait:
+      scrollback: {}
+outcomes:
+  - id: o
+    description: d
+    verify:
+      process: {exitCode: 0}
+`,
+		"two matchers": `steps:
+  - press: enter
+outcomes:
+  - id: o
+    description: d
+    verify:
+      scrollback: {contains: a, notContains: b}
+`,
+		"lines without comparator": `steps:
+  - press: enter
+outcomes:
+  - id: o
+    description: d
+    verify:
+      scrollback: {lines: {}}
+`,
+		"unknown scrollback field": `steps:
+  - press: enter
+outcomes:
+  - id: o
+    description: d
+    verify:
+      scrollback: {equals: a}
+`,
+		"includeScrollback is not a string": `steps:
+  - press: enter
+outcomes:
+  - id: o
+    description: d
+    verify:
+      screen: {contains: a, includeScrollback: "yes"}
+`,
+		"scrollback beside another verifier": `steps:
+  - press: enter
+outcomes:
+  - id: o
+    description: d
+    verify:
+      scrollback: {contains: a}
+      screen: {contains: a}
+`,
+	} {
+		t.Run("rejected/"+name, func(t *testing.T) {
+			if _, err := parse(t, body); err == nil {
+				t.Fatal("expected the spec to be rejected")
+			}
+		})
+	}
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()

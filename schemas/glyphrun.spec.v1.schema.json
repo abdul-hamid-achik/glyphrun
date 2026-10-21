@@ -305,11 +305,13 @@
       "type": "object",
       "oneOf": [
         { "required": ["screen"] },
+        { "required": ["scrollback"] },
         { "required": ["process"] },
         { "required": ["idle"] }
       ],
       "properties": {
         "screen": { "$ref": "#/$defs/screenCondition" },
+        "scrollback": { "$ref": "#/$defs/scrollbackCondition" },
         "process": { "$ref": "#/$defs/processCondition" },
         "idle": {
           "type": "object",
@@ -327,6 +329,7 @@
       "type": "object",
       "oneOf": [
         { "required": ["screen"] },
+        { "required": ["scrollback"] },
         { "required": ["region"] },
         { "required": ["cell"] },
         { "required": ["cursor"] },
@@ -353,6 +356,7 @@
           "additionalProperties": false
         },
         "screen": { "$ref": "#/$defs/screenCondition" },
+        "scrollback": { "$ref": "#/$defs/scrollbackCondition" },
         "region": { "$ref": "#/$defs/regionCondition" },
         "cell": { "$ref": "#/$defs/cellCondition" },
         "cursor": { "$ref": "#/$defs/cursorCondition" },
@@ -471,7 +475,45 @@
         "contains": { "type": "string", "minLength": 1 },
         "notContains": { "type": "string", "minLength": 1 },
         "matches": { "type": "string", "minLength": 1 },
-        "regex": { "type": "string", "minLength": 1 }
+        "regex": { "type": "string", "minLength": 1 },
+        "includeScrollback": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "scrollbackCondition": {
+      "type": "object",
+      "oneOf": [
+        { "required": ["contains"] },
+        { "required": ["notContains"] },
+        { "required": ["matches"] },
+        { "required": ["lines"] }
+      ],
+      "properties": {
+        "contains": { "type": "string", "minLength": 1 },
+        "notContains": { "type": "string", "minLength": 1 },
+        "matches": { "type": "string", "minLength": 1 },
+        "lines": { "$ref": "#/$defs/linesCondition" }
+      },
+      "additionalProperties": false
+    },
+    "linesCondition": {
+      "type": "object",
+      "oneOf": [
+        { "required": ["equals"] },
+        { "required": ["atLeast"] },
+        { "required": ["atMost"] },
+        { "required": ["between"] }
+      ],
+      "properties": {
+        "equals": { "type": "integer", "minimum": 0 },
+        "atLeast": { "type": "integer", "minimum": 0 },
+        "atMost": { "type": "integer", "minimum": 0 },
+        "between": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "minItems": 2,
+          "maxItems": 2
+        }
       },
       "additionalProperties": false
     },

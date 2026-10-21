@@ -254,6 +254,9 @@ func mergeConfig(base Config, overlay Config) Config {
 	if overlay.Terminal.Rows != 0 {
 		base.Terminal.Rows = overlay.Terminal.Rows
 	}
+	if overlay.Terminal.ScrollbackLines != 0 {
+		base.Terminal.ScrollbackLines = overlay.Terminal.ScrollbackLines
+	}
 	// Normalize: do not clobber the struct wholesale — defaults set in
 	// Defaults() (TrimRight, NormalizeLineEndings) must survive when the
 	// user's config omits a normalize: block or sets only some fields.

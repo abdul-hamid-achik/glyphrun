@@ -203,10 +203,11 @@ type MouseStep struct {
 }
 
 type WaitStep struct {
-	Screen    *ScreenCondition  `yaml:"screen,omitempty" json:"screen,omitempty"`
-	Process   *ProcessCondition `yaml:"process,omitempty" json:"process,omitempty"`
-	Idle      *IdleCondition    `yaml:"idle,omitempty" json:"idle,omitempty"`
-	TimeoutMS int               `yaml:"timeoutMs,omitempty" json:"timeoutMs,omitempty"`
+	Screen     *ScreenCondition     `yaml:"screen,omitempty" json:"screen,omitempty"`
+	Scrollback *ScrollbackCondition `yaml:"scrollback,omitempty" json:"scrollback,omitempty"`
+	Process    *ProcessCondition    `yaml:"process,omitempty" json:"process,omitempty"`
+	Idle       *IdleCondition       `yaml:"idle,omitempty" json:"idle,omitempty"`
+	TimeoutMS  int                  `yaml:"timeoutMs,omitempty" json:"timeoutMs,omitempty"`
 }
 
 type ResizeStep struct {
@@ -223,18 +224,19 @@ type Outcome struct {
 }
 
 type Verify struct {
-	Screen   *ScreenCondition   `yaml:"screen,omitempty" json:"screen,omitempty"`
-	Region   *RegionCondition   `yaml:"region,omitempty" json:"region,omitempty"`
-	Cell     *CellCondition     `yaml:"cell,omitempty" json:"cell,omitempty"`
-	Cursor   *CursorCondition   `yaml:"cursor,omitempty" json:"cursor,omitempty"`
-	Process  *ProcessCondition  `yaml:"process,omitempty" json:"process,omitempty"`
-	Snapshot *SnapshotCondition `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
-	Command  *CommandCondition  `yaml:"command,omitempty" json:"command,omitempty"`
-	File     *FileCondition     `yaml:"file,omitempty" json:"file,omitempty"`
-	Script   *ScriptCondition   `yaml:"script,omitempty" json:"script,omitempty"`
-	Count    *CountCondition    `yaml:"count,omitempty" json:"count,omitempty"`
-	Link     *LinkCondition     `yaml:"link,omitempty" json:"link,omitempty"`
-	Metrics  *MetricsCondition  `yaml:"metrics,omitempty" json:"metrics,omitempty"`
+	Screen     *ScreenCondition     `yaml:"screen,omitempty" json:"screen,omitempty"`
+	Scrollback *ScrollbackCondition `yaml:"scrollback,omitempty" json:"scrollback,omitempty"`
+	Region     *RegionCondition     `yaml:"region,omitempty" json:"region,omitempty"`
+	Cell       *CellCondition       `yaml:"cell,omitempty" json:"cell,omitempty"`
+	Cursor     *CursorCondition     `yaml:"cursor,omitempty" json:"cursor,omitempty"`
+	Process    *ProcessCondition    `yaml:"process,omitempty" json:"process,omitempty"`
+	Snapshot   *SnapshotCondition   `yaml:"snapshot,omitempty" json:"snapshot,omitempty"`
+	Command    *CommandCondition    `yaml:"command,omitempty" json:"command,omitempty"`
+	File       *FileCondition       `yaml:"file,omitempty" json:"file,omitempty"`
+	Script     *ScriptCondition     `yaml:"script,omitempty" json:"script,omitempty"`
+	Count      *CountCondition      `yaml:"count,omitempty" json:"count,omitempty"`
+	Link       *LinkCondition       `yaml:"link,omitempty" json:"link,omitempty"`
+	Metrics    *MetricsCondition    `yaml:"metrics,omitempty" json:"metrics,omitempty"`
 }
 
 // LinkCondition asserts that an OSC 8 hyperlink is present on the screen. `url`
@@ -310,6 +312,33 @@ type ScreenCondition struct {
 	Matches string `yaml:"matches,omitempty" json:"matches,omitempty"`
 	// Regex is kept for backward compatibility; treated the same as Matches.
 	Regex string `yaml:"regex,omitempty" json:"regex,omitempty"`
+	// IncludeScrollback matches against the scrollback followed by the visible
+	// screen instead of the visible screen alone. It is omitted when false so
+	// it never reaches the contract hash of a spec that does not use it.
+	IncludeScrollback bool `yaml:"includeScrollback,omitempty" json:"includeScrollback,omitempty"`
+}
+
+// ScrollbackCondition asserts against the lines that scrolled off the top of
+// the main screen (the terminal's scrollback), which inline-mode TUIs rely on:
+// they commit finished lines above a small live region and never use the
+// alternate screen. Exactly one of Contains / NotContains / Matches / Lines is
+// set. Text matchers see the scrollback as one row per line, normalized like
+// screen text. The alternate screen never adds to the scrollback.
+type ScrollbackCondition struct {
+	Contains    string `yaml:"contains,omitempty" json:"contains,omitempty"`
+	NotContains string `yaml:"notContains,omitempty" json:"notContains,omitempty"`
+	Matches     string `yaml:"matches,omitempty" json:"matches,omitempty"`
+	// Lines compares how many rows the scrollback holds.
+	Lines *LinesCondition `yaml:"lines,omitempty" json:"lines,omitempty"`
+}
+
+// LinesCondition compares a line count. Exactly one comparator is set, the
+// same four that `count` takes.
+type LinesCondition struct {
+	Equals  *int    `yaml:"equals,omitempty" json:"equals,omitempty"`
+	AtLeast *int    `yaml:"atLeast,omitempty" json:"atLeast,omitempty"`
+	AtMost  *int    `yaml:"atMost,omitempty" json:"atMost,omitempty"`
+	Between *[2]int `yaml:"between,omitempty" json:"between,omitempty"`
 }
 
 type RegionCondition struct {

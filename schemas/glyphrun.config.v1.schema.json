@@ -83,6 +83,7 @@
         "profile": { "enum": ["xterm-256color", "vt100", "ansi"] },
         "cols": { "type": "integer", "minimum": 1 },
         "rows": { "type": "integer", "minimum": 1 },
+        "scrollbackLines": { "type": "integer", "minimum": 1 },
         "normalize": { "$ref": "#/$defs/normalize" }
       },
       "additionalProperties": false
