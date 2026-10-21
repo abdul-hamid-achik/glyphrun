@@ -15,6 +15,7 @@ terminal:
   rows: 36
   profile: xterm-256color
   alternateScreen: auto
+  scrollbackLines: 10000
   normalize:
     trimRight: true
     normalizeLineEndings: true
@@ -66,6 +67,8 @@ provide selectors on `tvault env`.
 When `secrets` is absent, behavior is identical to today — the block is purely additive.
 
 `target.timeoutMs` wraps the whole target session after the PTY starts. If it expires, Glyphrun exits with code `3` and writes diagnostics before cleaning up the process.
+
+`terminal.scrollbackLines` (default `10000`, at least `1`) caps how many rows that scroll off the top of the main screen the emulator keeps for the `scrollback` wait and verifier. When the cap is reached the oldest rows are dropped and counted: `run.json` records `scrollbackLines` (rows kept) and `scrollbackDropped`. Rows keep their cells (about 100 bytes each, plain trailing blanks trimmed), so a full buffer of 10000 wide rows can take tens of megabytes; lower the cap for memory-constrained runs and raise it only for specs that need more history. See [Verifiers](/verifiers#scrollback).
 
 Use `terminal.alternateScreen: require` when a full-screen TUI must enter alternate screen mode, or `forbid` when a command must stay on the main terminal screen. The default `auto` records terminal behavior without enforcing it.
 

@@ -6,6 +6,16 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+### Added
+
+- Scrollback for inline-mode TUIs, which never use the alternate screen and commit finished lines above a small live region. The emulator now keeps the rows that scroll off the top of the main screen instead of dropping them. A row is kept when it scrolls off while the scroll region starts at the top row (line feed or `IND`/`NEL` at the bottom margin, autowrap, `CSI n S`); a region that starts lower, `DL`/`IL` and reverse index add nothing. Rows keep their cells and styles; the text drops trailing blanks. The alternate screen never adds to it, entering or leaving the alternate screen leaves it intact, `CSI 3 J` and a full reset (`ESC c`) clear it, and `CSI 2 J` and a resize do not. It is capped by the new `terminal.scrollbackLines` config (default `10000`, minimum `1`); older rows are dropped first and counted.
+- A `scrollback` wait condition (`wait: { scrollback: { contains | notContains | matches | lines }, timeoutMs }`) and a `scrollback` verifier (`verify: { scrollback: { contains | notContains | matches | lines } }`). `lines` compares the row count with one of `equals`, `atLeast`, `atMost`, `between`. Text is matched with the same normalization as `screen`.
+- `includeScrollback: true` on the `screen` wait and verifier matches against the scrollback followed by the visible screen.
+- Artifacts: each `snapshot:` step also writes `snapshots/<name>.scrollback.txt`, and the run writes `scrollback.txt`, when the scrollback is not empty. `run.json` records `scrollbackLines` and `scrollbackDropped` (omitted when zero), and `run.md` and `agent_context.md` mention the scrollback. `glyphrun.run.v1` gains the two optional fields; `glyphrun.config.v1` gains `terminal.scrollbackLines`.
+- An "Inline-mode TUIs" section in the authoring guide, and `examples/specs/scrollback.yml` with a small inline-mode example program.
+
+The new fields are optional and omitted when unused, so the contract hash of an existing spec does not change.
+
 ## [0.22.0] - 2026-10-19
 
 ### Added

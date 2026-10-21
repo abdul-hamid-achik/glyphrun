@@ -30,7 +30,8 @@ save/restore cursor (DECSC/DECRC), and origin mode (DECOM).
 
 It runs on Unix PTYs (macOS, Linux) and on Windows via ConPTY (Windows 10 1809+),
 behind a platform-neutral backend interface. SGR colors (16/256/truecolor),
-OSC 8 hyperlinks (`link` verifier), and mouse input (`mouse` step) are supported;
+OSC 8 hyperlinks (`link` verifier), mouse input (`mouse` step), and the scrollback
+of inline-mode TUIs (`scrollback` wait and verifier) are supported;
 graphics string sequences (Sixel, Kitty) are consumed safely rather than rendered.
 
 Some terminal features are intentionally still future work: remaining xterm edge

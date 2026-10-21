@@ -11,10 +11,14 @@ High-signal files:
 - `diagnostics/environment.md`: project root, active config, target command, terminal profile, and key artifact paths
 - `screens/final.txt`: normalized terminal screen text
 - `screens/final.svg`: deterministic SVG render of the final screen
+- `scrollback.txt`: the lines that scrolled off the top of the main screen, oldest first (written when there are any; governed by the `finalScreen` capture setting)
+- `snapshots/<name>.scrollback.txt`: the scrollback when a `snapshot:` step ran, beside `snapshots/<name>.txt`
 - `frames/frames.ndjson`: terminal frame timeline
 - `raw/pty.raw.log`: redacted raw PTY byte stream
 - `outcomes/results.md`: outcome-only summary
 - `replay.json`: exact-replay manifest — the normalized target argv, terminal profile/viewport, resolved capture policy, redacted env KEY NAMES (never values), glyph version, and one exact `glyph run <spec>` command to reproduce the run
+
+When the scrollback is not empty, `run.json` records `scrollbackLines` and, if the `terminal.scrollbackLines` cap dropped older rows, `scrollbackDropped`; `run.md` and `agent_context.md` repeat the counts and point at `scrollback.txt`.
 
 `agent_context.md` includes the target command, terminal profile, exit code, failed outcomes, recent events, final screen, and suggested inspection commands. Agents should read it first after a failed run.
 
