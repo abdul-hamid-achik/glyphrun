@@ -255,6 +255,10 @@ Supported v1 steps: `press`, `type`, `paste`, `send`, `mouse`, `wait`, `resize`,
 
 `paste` sends bracketed paste delimiters only after the target enables terminal mode `?2004`; otherwise it writes literal text.
 
+`resize: { cols, rows }` resizes the emulator and then the PTY, so the target gets `SIGWINCH`. The screen keeps what is on it, as in xterm (no reflow): columns are padded or cut, growing the rows adds blank rows at the bottom, and shrinking them drops rows from the bottom unless the cursor would fall below the new last row, in which case the top rows move into the scrollback. That makes inline-mode TUIs that redraw their live region with relative cursor moves testable; see `examples/specs/resize.yml`.
+
+Placeholders `${projectRoot}`, `${vars.NAME}`, `${env.NAME}`, `${config.NAME}` are replaced when a spec or action is read, and `${artifacts.NAME.path}` just before the step runs. Only text shaped like one of those keys counts, so scripts keep their own `${HOME}`, `${var#*:}`, `${x:-y}` and `${#arr}`; a key-shaped placeholder with no value (a typo such as `${vars.nmae}`) is an error, and `$${...}` writes a literal `${...}`.
+
 ## Reusable Actions And Conditional Steps
 
 Glyphrun supports reusable action files for repeated TUI mechanics:

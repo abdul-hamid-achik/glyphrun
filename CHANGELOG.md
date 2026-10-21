@@ -6,6 +6,17 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+### Changed
+
+- Resizing keeps the screen, as xterm does, instead of blanking it. The `resize` step used to reallocate every cell blank and move the cursor to the top-left corner, which made inline-mode programs that redraw their live region after `SIGWINCH` with relative cursor moves untestable. Now each row keeps the cells that still fit (no reflow): growing the width pads with blanks, shrinking cuts at the new width, and a wide character cut in half becomes a blank. Growing the rows adds blank rows at the bottom and does not pull lines back from the scrollback. Shrinking the rows drops them from the bottom, unless the cursor would fall below the new last row; then the top rows move into the scrollback, oldest first, until the cursor's row is the last one (on the alternate screen they are discarded, since it never feeds the scrollback). The cursor is clamped and keeps its visibility, a deferred wrap is cleared, and the scroll region goes back to the full screen. The positions saved by `ESC 7` and by entering the alternate screen are clamped to the new size instead of being dropped.
+- The `resize` step now resizes the emulator before the PTY, so the target's `SIGWINCH` redraw cannot reach an emulator that still has the old size.
+- `${...}` in a spec or action file is only a placeholder when it is shaped like a Glyphrun key: `${projectRoot}`, `${vars.NAME}`, `${env.NAME}`, `${config.NAME}`, or `${artifacts.NAME.FIELD}`. Anything else is left untouched, so verifier and step scripts can use shell parameter expansion (`${HOME}`, `${var#*:}`, `${x:-y}`, `${#arr}`) and JavaScript template literals without an "unresolved placeholder(s)" error. A bare identifier is not a key, except `projectRoot`. A key-shaped placeholder with no value, such as the typo `${vars.nmae}`, is still an error.
+
+### Added
+
+- `$${...}` is an escape for a literal `${...}`, for text that is shaped like a key but belongs to the script (`$${projectRoot}`, a JavaScript `$${vars.x}`). Escaped `${artifacts.…}` is unescaped by the runner, which owns that namespace.
+- A "Placeholders" section in the authoring guide, documentation of the `resize` step's behavior, and `examples/specs/resize.yml` with a small inline-mode program (`examples/apps/resize`) that redraws its live region on `SIGWINCH`. CI runs it.
+
 ## [0.23.0] - 2026-10-21
 
 ### Added
