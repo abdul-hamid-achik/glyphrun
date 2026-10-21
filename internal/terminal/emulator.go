@@ -222,7 +222,6 @@ func (e *SimpleEmulator) Resize(cols, rows int) error {
 	e.scrollTop = 0
 	e.scrollBottom = rows - 1
 	e.originMode = false
-	e.savedOrigin = false
 	e.canJoin = false
 	return nil
 }

@@ -208,10 +208,10 @@ func expandImports(s Spec, specPath string, opts ParseOptions) (Spec, error) {
 
 // PlaceholderPattern matches one `${...}` span, or `$${...}`, its escape. A span
 // holds no '$', '{' or '}', so in `${a:-${vars.b}}` the inner span is the one
-// found and substituted. The
-// runner shares it so the parse-time and run-time passes agree on what a span
-// is. Whether a span is a Glyphrun placeholder is decided by IsPlaceholderKey,
-// not by this pattern: scripts are full of `${...}` that belong to the shell.
+// found and substituted. The runner shares the pattern so the parse-time and
+// run-time passes agree on what a span is. Whether a span is a Glyphrun
+// placeholder is decided by IsPlaceholderKey, not by this pattern: scripts are
+// full of `${...}` that belong to the shell.
 var PlaceholderPattern = regexp.MustCompile(`\$\$\{[^{}$]+\}|\$\{[^{}$]+\}`)
 
 // placeholderKeyPattern is the shape of a Glyphrun placeholder key:
