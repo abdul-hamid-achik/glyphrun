@@ -310,6 +310,8 @@ func waitSummary(wait spec.WaitStep) string {
 	switch {
 	case wait.Screen != nil:
 		return "screen " + screenConditionSummary(*wait.Screen)
+	case wait.Scrollback != nil:
+		return "scrollback " + scrollbackConditionSummary(*wait.Scrollback)
 	case wait.Process != nil:
 		return "process " + processConditionSummary(*wait.Process)
 	case wait.Idle != nil:
@@ -323,6 +325,8 @@ func verifySummary(verify spec.Verify) string {
 	switch {
 	case verify.Screen != nil:
 		return "screen " + screenConditionSummary(*verify.Screen)
+	case verify.Scrollback != nil:
+		return "scrollback " + scrollbackConditionSummary(*verify.Scrollback)
 	case verify.Region != nil:
 		return "region " + screenConditionSummary(spec.ScreenCondition{
 			Contains:    verify.Region.Contains,
@@ -345,13 +349,49 @@ func verifySummary(verify spec.Verify) string {
 }
 
 func screenConditionSummary(cond spec.ScreenCondition) string {
+	suffix := ""
+	if cond.IncludeScrollback {
+		suffix = " (+scrollback)"
+	}
+	switch {
+	case cond.Contains != "":
+		return "contains " + strconvQuote(cond.Contains) + suffix
+	case cond.NotContains != "":
+		return "not contains " + strconvQuote(cond.NotContains) + suffix
+	case cond.Regex != "":
+		return "matches " + strconvQuote(cond.Regex) + suffix
+	case cond.Matches != "":
+		return "matches " + strconvQuote(cond.Matches) + suffix
+	default:
+		return "condition"
+	}
+}
+
+func scrollbackConditionSummary(cond spec.ScrollbackCondition) string {
 	switch {
 	case cond.Contains != "":
 		return "contains " + strconvQuote(cond.Contains)
 	case cond.NotContains != "":
 		return "not contains " + strconvQuote(cond.NotContains)
-	case cond.Regex != "":
-		return "matches " + strconvQuote(cond.Regex)
+	case cond.Matches != "":
+		return "matches " + strconvQuote(cond.Matches)
+	case cond.Lines != nil:
+		return "lines " + linesConditionSummary(*cond.Lines)
+	default:
+		return "condition"
+	}
+}
+
+func linesConditionSummary(cond spec.LinesCondition) string {
+	switch {
+	case cond.Equals != nil:
+		return fmt.Sprintf("= %d", *cond.Equals)
+	case cond.AtLeast != nil:
+		return fmt.Sprintf(">= %d", *cond.AtLeast)
+	case cond.AtMost != nil:
+		return fmt.Sprintf("<= %d", *cond.AtMost)
+	case cond.Between != nil:
+		return fmt.Sprintf("%d..%d", cond.Between[0], cond.Between[1])
 	default:
 		return "condition"
 	}

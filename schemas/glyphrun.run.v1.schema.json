@@ -141,6 +141,16 @@
     "exitCode": {
       "type": "integer"
     },
+    "scrollbackLines": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Rows that had scrolled off the top of the main screen when the run ended. Omitted when none did."
+    },
+    "scrollbackDropped": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Older scrollback rows discarded by the terminal.scrollbackLines cap. Omitted when none were."
+    },
     "nextActions": {
       "type": "array",
       "items": {

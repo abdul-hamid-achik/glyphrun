@@ -276,7 +276,7 @@ func callTool(ctx context.Context, params toolCallParams, opts ServerOptions) (a
 			"project":   "glyphrun",
 			"binary":    "glyph",
 			"steps":     []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "download", "transform", "monitor", "batch", "when"},
-			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"},
+			"verifiers": []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics", "scrollback"},
 			"commands":  []string{"init", "run", "run --monitor <path>", "spec verify", "spec scaffold", "spec scaffold --kind action", "spec scaffold --kind story", "spec scaffold --coversSymbol <sym>", "affected-specs --since <ref>", "snapshot update", "snapshot inventory", "diff", "context", "render", "repair", "docs", "agent", "explain", "doctor", "list", "stories", "stories run", "stories run --watch", "stories run --update", "stories run --only <story>", "stories serve --watch", "stories --html", "stories --tui", "stories init", "clean", "clean --no-archive", "mcp", "replay --html"},
 			"namedArtifacts": map[string]any{
 				"placeholders": []string{"${artifacts.<name>.path}", "${artifacts.<name>.relativePath}"},

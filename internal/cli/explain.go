@@ -11,7 +11,7 @@ import (
 // slices so the two outputs cannot drift apart.
 var (
 	explainSteps     = []string{"press", "type", "paste", "send", "mouse", "wait", "resize", "snapshot", "use", "when", "download", "transform", "monitor", "batch"}
-	explainVerifiers = []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics"}
+	explainVerifiers = []string{"screen", "region", "cell", "cursor", "process", "snapshot", "command", "file", "script", "count", "link", "metrics", "scrollback"}
 )
 
 func newExplainCommand(opts *globalOptions) *cobra.Command {
@@ -73,14 +73,17 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"glyph clean --no-archive",
 					"glyph version",
 				},
-				"steps":          explainSteps,
-				"stepFields":     []string{"id", "when"},
-				"verifiers":      explainVerifiers,
-				"screenMatchers": []string{"equals", "contains", "notContains", "matches", "regex"},
-				"modes":          []string{"normal", "debug"},
-				"formats":        []string{"json", "yaml", "md"},
-				"progress":       []string{"auto", "always", "never"},
-				"runSchema":      "urn:glyphrun.dev:run:v1",
+				"steps":              explainSteps,
+				"stepFields":         []string{"id", "when"},
+				"verifiers":          explainVerifiers,
+				"screenMatchers":     []string{"equals", "contains", "notContains", "matches", "regex"},
+				"screenFlags":        []string{"includeScrollback"},
+				"scrollbackMatchers": []string{"contains", "notContains", "matches", "lines"},
+				"waitConditions":     []string{"screen", "scrollback", "process", "idle"},
+				"modes":              []string{"normal", "debug"},
+				"formats":            []string{"json", "yaml", "md"},
+				"progress":           []string{"auto", "always", "never"},
+				"runSchema":          "urn:glyphrun.dev:run:v1",
 				"artifacts": []string{
 					"run.json",
 					"run.yaml",
@@ -91,9 +94,11 @@ func newExplainCommand(opts *globalOptions) *cobra.Command {
 					"screens/final.txt",
 					"screens/final.json",
 					"screens/final.svg",
+					"scrollback.txt",
 					"raw/pty.raw.log",
 					"frames/frames.ndjson",
 					"snapshots/*.txt",
+					"snapshots/*.scrollback.txt",
 					"outcomes/*.md",
 					"diagnostics/*.md",
 					".last-failed.json",

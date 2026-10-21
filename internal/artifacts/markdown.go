@@ -68,6 +68,7 @@ func RenderRunMarkdown(result RunResult) string {
 	fmt.Fprintf(&b, "- exit code: %d\n", result.ExitCode)
 	fmt.Fprintf(&b, "- duration: %dms\n", result.DurationMS)
 	fmt.Fprintf(&b, "- terminal: %dx%d %s\n", result.Terminal.Cols, result.Terminal.Rows, result.Terminal.Profile)
+	writeScrollbackSummary(&b, result)
 	fmt.Fprintf(&b, "- artifacts: %s\n", result.RunDir)
 	if result.StartedAt != "" {
 		fmt.Fprintf(&b, "- started: %s\n", result.StartedAt)
@@ -158,6 +159,7 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string, recen
 		fmt.Fprintf(&b, "- target cwd: `%s`\n", result.Target.Cwd)
 	}
 	fmt.Fprintf(&b, "- terminal: %dx%d %s\n", result.Terminal.Cols, result.Terminal.Rows, result.Terminal.Profile)
+	writeScrollbackSummary(&b, result)
 	fmt.Fprintf(&b, "- duration: %dms\n", result.DurationMS)
 	fmt.Fprintf(&b, "- exit code: %d\n", result.ExitCode)
 	fmt.Fprintf(&b, "- outcomes: %d passed, %d failed\n", passed, failed)
@@ -192,6 +194,9 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string, recen
 		}
 		if result.Artifacts["finalScreenText"] != "" {
 			fmt.Fprintf(&b, "- final screen: `%s`\n", result.Artifacts["finalScreenText"])
+		}
+		if result.Artifacts["scrollback"] != "" {
+			fmt.Fprintf(&b, "- scrollback: `%s`\n", result.Artifacts["scrollback"])
 		}
 		if result.Artifacts["frames"] != "" {
 			fmt.Fprintf(&b, "- frame timeline: `%s`\n", result.Artifacts["frames"])
@@ -241,9 +246,28 @@ func RenderAgentContext(s spec.Spec, result RunResult, finalScreen string, recen
 	if result.Artifacts["finalScreenText"] != "" {
 		fmt.Fprintf(&b, "- `sed -n '1,160p' %s/%s`\n", result.RunDir, result.Artifacts["finalScreenText"])
 	}
+	if result.Artifacts["scrollback"] != "" {
+		fmt.Fprintf(&b, "- `tail -n 40 %s/%s`\n", result.RunDir, result.Artifacts["scrollback"])
+	}
 	fmt.Fprintf(&b, "- `tail -n 20 %s/%s`\n", result.RunDir, result.Artifacts["events"])
 	fmt.Fprintf(&b, "- `glyph run <spec> --format json`\n")
 	return b.String()
+}
+
+// writeScrollbackSummary adds the scrollback line to a run summary when the
+// target scrolled anything off the top of the main screen.
+func writeScrollbackSummary(b *strings.Builder, result RunResult) {
+	if result.ScrollbackLines == 0 && result.ScrollbackDropped == 0 {
+		return
+	}
+	fmt.Fprintf(b, "- scrollback: %d lines", result.ScrollbackLines)
+	if result.ScrollbackDropped > 0 {
+		fmt.Fprintf(b, " (%d older lines dropped; raise terminal.scrollbackLines)", result.ScrollbackDropped)
+	}
+	if path := result.Artifacts["scrollback"]; path != "" {
+		fmt.Fprintf(b, ", `%s`", path)
+	}
+	b.WriteByte('\n')
 }
 
 func outcomeCounts(outcomes []OutcomeResult) (int, int) {
@@ -269,6 +293,7 @@ func orderedArtifactKeys(artifacts map[string]string) []string {
 		"finalScreenText",
 		"finalScreenJSON",
 		"finalScreenSVG",
+		"scrollback",
 		"events",
 		"frames",
 		"rawPtyLog",
@@ -296,6 +321,9 @@ func artifactLabel(key string) string {
 	if strings.HasPrefix(key, "snapshot:") {
 		return "snapshot " + strings.TrimPrefix(key, "snapshot:")
 	}
+	if strings.HasPrefix(key, "snapshotScrollback:") {
+		return "snapshot " + strings.TrimPrefix(key, "snapshotScrollback:") + " scrollback"
+	}
 	switch key {
 	case "agentContext":
 		return "agent context"
@@ -309,6 +337,8 @@ func artifactLabel(key string) string {
 		return "final screen JSON"
 	case "finalScreenSVG":
 		return "final screen SVG"
+	case "scrollback":
+		return "scrollback"
 	case "rawPtyLog":
 		return "raw PTY log"
 	case "inputRawLog":
