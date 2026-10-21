@@ -105,6 +105,12 @@ tasks:
       - go build -o ./examples/apps/inline/inline ./examples/apps/inline
       - '{{.BIN}} run examples/specs/scrollback.yml --format md'
 
+  example:resize:
+    deps: [build]
+    cmds:
+      - go build -o ./examples/apps/resize/resize ./examples/apps/resize
+      - '{{.BIN}} run examples/specs/resize.yml --format md'
+
   example:junit:
     deps: [build]
     cmds:

@@ -595,10 +595,13 @@ func (s *runState) executeStep(ctx context.Context, step spec.Step) (stepExecuti
 	case step.Wait != nil:
 		return stepExecutionResult{}, s.waitFor(ctx, *step.Wait)
 	case step.Resize != nil:
-		if err := s.session.Resize(step.Resize.Cols, step.Resize.Rows); err != nil {
+		// Resize the emulator first: the PTY resize raises SIGWINCH, and the
+		// program's redraw (relative cursor moves, in an inline-mode TUI) must
+		// land on a screen that already has the new size, not race with it.
+		if err := s.emulator.Resize(step.Resize.Cols, step.Resize.Rows); err != nil {
 			return stepExecutionResult{}, err
 		}
-		return stepExecutionResult{}, s.emulator.Resize(step.Resize.Cols, step.Resize.Rows)
+		return stepExecutionResult{}, s.session.Resize(step.Resize.Cols, step.Resize.Rows)
 	case step.Snapshot != "":
 		return stepExecutionResult{}, s.captureSnapshot(step.Snapshot)
 	case step.Download != nil:

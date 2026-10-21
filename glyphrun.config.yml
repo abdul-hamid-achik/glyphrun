@@ -17,6 +17,7 @@ environments:
       helloBin: ./examples/apps/hello/hello
       mouseBin: ./examples/apps/mouseapp/mouseapp
       inlineBin: ./examples/apps/inline/inline
+      resizeBin: ./examples/apps/resize/resize
       defaultCols: 100
       defaultRows: 30
     env:

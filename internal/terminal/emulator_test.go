@@ -1082,19 +1082,21 @@ func TestSimpleEmulatorAltScreenExitRestoresCursor(t *testing.T) {
 	}
 }
 
-// A resize or full reset while on the alternate screen discards the saved
-// main-screen position, which may no longer fit.
-func TestSimpleEmulatorAltScreenSavedCursorDroppedOnResizeAndReset(t *testing.T) {
+// A full reset while on the alternate screen discards the saved main-screen
+// position. A resize keeps it, clamped to the new size, as xterm does.
+func TestSimpleEmulatorAltScreenSavedCursorOnResizeAndReset(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		reset func(t *testing.T, em *SimpleEmulator)
+		wantX int
+		wantY int
 	}{
-		{"resize", func(t *testing.T, em *SimpleEmulator) {
+		{"resize clamps the saved position", func(t *testing.T, em *SimpleEmulator) {
 			if err := em.Resize(6, 3); err != nil {
 				t.Fatal(err)
 			}
-		}},
-		{"RIS", func(t *testing.T, em *SimpleEmulator) { feedAll(t, em, "\x1bc") }},
+		}, 5, 2},
+		{"RIS drops the saved position", func(t *testing.T, em *SimpleEmulator) { feedAll(t, em, "\x1bc") }, 1, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			em := NewEmulator(10, 4)
@@ -1102,8 +1104,8 @@ func TestSimpleEmulatorAltScreenSavedCursorDroppedOnResizeAndReset(t *testing.T)
 			tc.reset(t, em)
 			feedAll(t, em, "\x1b[2;2H\x1b[?1049l")
 			scr := em.Screen()
-			if scr.Cursor().X != 1 || scr.Cursor().Y != 1 {
-				t.Errorf("cursor = (%d,%d), want (1,1): a stale saved position was restored", scr.Cursor().X, scr.Cursor().Y)
+			if scr.Cursor().X != tc.wantX || scr.Cursor().Y != tc.wantY {
+				t.Errorf("cursor = (%d,%d), want (%d,%d)", scr.Cursor().X, scr.Cursor().Y, tc.wantX, tc.wantY)
 			}
 		})
 	}

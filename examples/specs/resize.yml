@@ -1,0 +1,72 @@
+version: 1
+name: inline_resize
+intent: |
+    an inline-mode TUI prints three finished lines and a two-line live region
+    below them, then redraws the region with relative cursor moves when the
+    terminal is resized. Resizing keeps what is on the screen, as a real
+    terminal does: shrinking to fewer rows pushes the top line into the
+    scrollback so the cursor stays on screen, the region is redrawn at its new
+    size beneath the lines that stayed, and growing again adds blank rows
+    without pulling anything back.
+target:
+    cmd: ["${vars.resizeBin}"]
+    cwd: "."
+terminal:
+    cols: 40
+    rows: 10
+    profile: xterm-256color
+    alternateScreen: forbid
+preconditions:
+    commands:
+        - run: "go build -o ./examples/apps/resize/resize ./examples/apps/resize"
+          timeoutMs: 30000
+steps:
+    - wait:
+        screen:
+            contains: "live region: 40x10"
+        timeoutMs: 5000
+    - snapshot: before
+    - resize:
+        cols: 30
+        rows: 4
+    - wait:
+        screen:
+            contains: "live region: 30x4"
+        timeoutMs: 5000
+    - snapshot: shrunk
+    - resize:
+        cols: 40
+        rows: 8
+    - wait:
+        screen:
+            contains: "live region: 40x8"
+        timeoutMs: 5000
+    - snapshot: grown
+    - press: "q"
+    - wait:
+        process:
+            exitCode: 0
+        timeoutMs: 3000
+outcomes:
+    - id: lines_survive_the_resize
+      description: the finished lines are still on the screen after the terminal grew back
+      verify:
+        screen:
+            matches: '(?s)history line 2\nhistory line 3\nlive region: 40x8\npress q to quit'
+    - id: top_line_scrolled_into_scrollback
+      description: the line that no longer fit when the rows shrank went into the scrollback, once
+      verify:
+        scrollback:
+            matches: '\Ahistory line 1\z'
+    - id: region_drawn_once
+      description: the live region was redrawn in place, not repeated
+      verify:
+        screen:
+            includeScrollback: true
+            matches: '(?s)\Ahistory line 1\nhistory line 2\nhistory line 3\nlive region: 40x8\npress q to quit\z'
+    - id: clean_exit
+      description: q exits the application cleanly
+      verify:
+        process:
+            exitCode: 0
+contractHash: sha256:85236db91cf7f58ab9d34560e6704402b735d05aa14bed54de80b7b837f547c1
