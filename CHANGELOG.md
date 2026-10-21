@@ -6,6 +6,8 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-21
+
 ### Added
 
 - Scrollback for inline-mode TUIs, which never use the alternate screen and commit finished lines above a small live region. The emulator now keeps the rows that scroll off the top of the main screen instead of dropping them. A row is kept when it scrolls off while the scroll region starts at the top row (line feed or `IND`/`NEL` at the bottom margin, autowrap, `CSI n S`); a region that starts lower, `DL`/`IL` and reverse index add nothing. Rows keep their cells and styles; the text drops trailing blanks. The alternate screen never adds to it, entering or leaving the alternate screen leaves it intact, `CSI 3 J` and a full reset (`ESC c`) clear it, and `CSI 2 J` and a resize do not. It is capped by the new `terminal.scrollbackLines` config (default `10000`, minimum `1`); older rows are dropped first and counted.
@@ -169,7 +171,8 @@ The new fields are optional and omitted when unused, so the contract hash of an 
 - CI and release workflows reject private employer references in tracked
   release content.
 
-[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.19.0...v0.20.0
