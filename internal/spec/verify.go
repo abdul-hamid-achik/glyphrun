@@ -298,6 +298,12 @@ func validateWait(wait WaitStep) error {
 			return err
 		}
 	}
+	if wait.Scrollback != nil {
+		count++
+		if err := validateScrollbackCondition(*wait.Scrollback); err != nil {
+			return err
+		}
+	}
 	if wait.Process != nil {
 		count++
 	}
@@ -318,6 +324,12 @@ func validateVerify(v Verify) error {
 	if v.Screen != nil {
 		count++
 		if err := validateScreenCondition(*v.Screen); err != nil {
+			return err
+		}
+	}
+	if v.Scrollback != nil {
+		count++
+		if err := validateScrollbackCondition(*v.Scrollback); err != nil {
 			return err
 		}
 	}
@@ -479,6 +491,56 @@ func validateScriptCondition(s ScriptCondition) error {
 	}
 	if s.Runtime != "" && s.Runtime != "node" && s.Runtime != "shell" {
 		return fmt.Errorf("script.runtime must be one of: node, shell")
+	}
+	return nil
+}
+
+// validateScrollbackCondition requires exactly one of contains / notContains /
+// matches / lines, a compilable regex, and a well-formed line comparator.
+func validateScrollbackCondition(c ScrollbackCondition) error {
+	count := 0
+	if c.Contains != "" {
+		count++
+	}
+	if c.NotContains != "" {
+		count++
+	}
+	if c.Matches != "" {
+		count++
+		if _, err := regexp.Compile(c.Matches); err != nil {
+			return fmt.Errorf("scrollback.matches is invalid: %w", err)
+		}
+	}
+	if c.Lines != nil {
+		count++
+		if err := validateLinesCondition(*c.Lines); err != nil {
+			return err
+		}
+	}
+	if count != 1 {
+		return fmt.Errorf("scrollback condition must contain exactly one of contains, notContains, matches, lines")
+	}
+	return nil
+}
+
+func validateLinesCondition(c LinesCondition) error {
+	comps := 0
+	for _, v := range []*int{c.Equals, c.AtLeast, c.AtMost} {
+		if v != nil {
+			comps++
+			if *v < 0 {
+				return fmt.Errorf("scrollback.lines comparators must be >= 0")
+			}
+		}
+	}
+	if c.Between != nil {
+		comps++
+		if c.Between[0] < 0 || c.Between[0] > c.Between[1] {
+			return fmt.Errorf("scrollback.lines.between must be [min, max] with 0 <= min <= max")
+		}
+	}
+	if comps != 1 {
+		return fmt.Errorf("scrollback.lines must include exactly one of equals / atLeast / atMost / between")
 	}
 	return nil
 }

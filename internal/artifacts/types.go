@@ -72,6 +72,12 @@ type RunResult struct {
 	Manifest       []ArtifactManifestEntry  `json:"manifest,omitempty" yaml:"manifest,omitempty"`
 	RunDir         string                   `json:"runDir" yaml:"runDir"`
 	ExitCode       int                      `json:"exitCode" yaml:"exitCode"`
+	// ScrollbackLines is how many rows had scrolled off the top of the main
+	// screen into the scrollback when the run ended; ScrollbackDropped how many
+	// older rows the terminal.scrollbackLines cap discarded. Both are omitted
+	// for a run whose target never scrolled (or dropped) anything.
+	ScrollbackLines   int `json:"scrollbackLines,omitempty" yaml:"scrollbackLines,omitempty"`
+	ScrollbackDropped int `json:"scrollbackDropped,omitempty" yaml:"scrollbackDropped,omitempty"`
 	// TargetExit is set when errorKind is target_exited. It preserves the
 	// target process exit code separately from ExitCode (Glyphrun's runner
 	// exit code, typically 2 for this class of failure).

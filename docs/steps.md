@@ -14,6 +14,12 @@ Optional `id:` labels make failure messages and `StepResult` entries readable (`
 
 Screen/region matchers accept `equals`, `contains`, `notContains`, `matches` (preferred), or legacy `regex`.
 
+A `wait` takes exactly one condition: `screen`, `scrollback`, `process`, or `idle`, plus an optional `timeoutMs` beside it.
+
+- `wait: { screen: { … } }` matches the visible screen. Add `includeScrollback: true` to match the scrollback followed by the visible screen instead.
+- `wait: { scrollback: { contains | notContains | matches | lines } }` matches the lines that have scrolled off the top of the main screen. Use it to wait until an inline-mode TUI has committed a line (see [Inline-mode TUIs](/authoring#inline-mode-tuis)). `lines` compares how many rows the scrollback holds with exactly one of `equals`, `atLeast`, `atMost`, or `between`.
+- A scrollback wait, like a screen wait, ends early with a target-exit error if the process exits before the condition holds.
+
 ```yaml
 steps:
   - id: wait_ready
@@ -27,6 +33,13 @@ steps:
       cols: 120
       rows: 36
   - snapshot: after_submit
+  - wait:
+      scrollback:
+        contains: "build finished"
+  - wait:
+      screen:
+        includeScrollback: true
+        matches: "(?s)build finished.*\\$$"
   - when: 'screen.contains:"optional prompt"'
     press: "enter"
   - when:
@@ -45,7 +58,7 @@ Use `wait` to synchronize on screen text, process state, snapshots, or trusted c
 
 `press` accepts printable single characters plus common terminal keys: `enter`, `tab`, `shift+tab`, `esc`, `backspace`, `delete`, `space`, arrow keys, `pgup`, `pgdown`, `home`, `end`, and `ctrl+<letter>`/`c-<letter>` aliases such as `ctrl+c`, `ctrl+u`, and `c-m`.
 
-Use `snapshot` to capture named terminal states inside the artifact pack. Use `glyph snapshot update <spec>` when a committed snapshot intentionally changes.
+Use `snapshot` to capture named terminal states inside the artifact pack. Use `glyph snapshot update <spec>` when a committed snapshot intentionally changes. When the scrollback is not empty, a snapshot also writes `snapshots/<name>.scrollback.txt` beside the screen; committed goldens stay screen-only.
 
 Use `paste` for multi-character clipboard-style input. Glyphrun sends bracketed paste delimiters only after the target enables terminal mode `?2004`; otherwise it writes the literal text.
 

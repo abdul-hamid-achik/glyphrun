@@ -1,6 +1,9 @@
 package config
 
-import "github.com/abdul-hamid-achik/glyphrun/internal/spec"
+import (
+	"github.com/abdul-hamid-achik/glyphrun/internal/spec"
+	"github.com/abdul-hamid-achik/glyphrun/internal/terminal"
+)
 
 const (
 	DefaultConfigName   = "glyphrun.config.yml"
@@ -79,10 +82,13 @@ type Secrets struct {
 }
 
 type Terminal struct {
-	Profile   string    `yaml:"profile" json:"profile"`
-	Cols      int       `yaml:"cols" json:"cols"`
-	Rows      int       `yaml:"rows" json:"rows"`
-	Normalize Normalize `yaml:"normalize" json:"normalize"`
+	Profile string `yaml:"profile" json:"profile"`
+	Cols    int    `yaml:"cols" json:"cols"`
+	Rows    int    `yaml:"rows" json:"rows"`
+	// ScrollbackLines caps the emulator's scrollback buffer: how many rows that
+	// scrolled off the top of the main screen a run keeps. Default 10000.
+	ScrollbackLines int       `yaml:"scrollbackLines" json:"scrollbackLines"`
+	Normalize       Normalize `yaml:"normalize" json:"normalize"`
 }
 
 type Normalize struct {
@@ -196,9 +202,10 @@ func Defaults() Config {
 			},
 		},
 		Terminal: Terminal{
-			Profile: "xterm-256color",
-			Cols:    100,
-			Rows:    30,
+			Profile:         "xterm-256color",
+			Cols:            100,
+			Rows:            30,
+			ScrollbackLines: terminal.DefaultScrollbackLines,
 			Normalize: Normalize{
 				TrimRight:                 true,
 				NormalizeLineEndings:      true,

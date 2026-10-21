@@ -99,6 +99,12 @@ tasks:
       - go build -o ./examples/apps/reporter/reporter ./examples/apps/reporter
       - '{{.BIN}} run examples/specs/batch_step.yml --format md'
 
+  example:scrollback:
+    deps: [build]
+    cmds:
+      - go build -o ./examples/apps/inline/inline ./examples/apps/inline
+      - '{{.BIN}} run examples/specs/scrollback.yml --format md'
+
   example:junit:
     deps: [build]
     cmds:

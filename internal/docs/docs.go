@@ -24,6 +24,14 @@ Separate behavior contracts from repairable steps. Keep user intent in ` + "`int
 Run ` + "`glyph spec verify <spec> --format json`" + ` before running a spec. Use ` + "`glyph spec verify <spec> --stamp`" + ` only when the expected behavior intentionally changed.
 
 Good specs assert user-visible behavior. Avoid coupling outcomes to implementation details, timing artifacts, or raw ANSI bytes.
+
+## Inline-mode TUIs
+
+An inline-mode TUI never uses the alternate screen: it keeps a small live region at the bottom and commits finished lines above it, so they scroll into the terminal's scrollback. After a long reply the visible screen shows only the last rows, so assert on the scrollback.
+
+Glyphrun keeps the rows that scroll off the top of the main screen. Use ` + "`wait: { scrollback: { contains: \"[done]\" } }`" + ` to wait for committed output, ` + "`verify: { scrollback: { matches | contains | notContains | lines } }`" + ` to assert it, and ` + "`includeScrollback: true`" + ` on a ` + "`screen`" + ` wait or verifier to match the scrollback followed by the visible screen. Set ` + "`terminal.alternateScreen: forbid`" + ` so the spec fails if the app leaves the main screen.
+
+Tips: wait on the scrollback for committed output; the last lines of a short run may still be on the screen, so use ` + "`includeScrollback`" + ` for the whole transcript; match with ` + "`contains`" + ` or ` + "`matches`" + `, since output from before the app started may already be in the scrollback; trailing spaces are trimmed from every row, so match a prompt of ` + "`> `" + ` as ` + "`>$`" + `; use ` + "`lines`" + ` (` + "`equals`" + `, ` + "`atLeast`" + `, ` + "`atMost`" + `, ` + "`between`" + `) when the row count is the contract. A run with a non-empty scrollback writes ` + "`scrollback.txt`" + `, and each ` + "`snapshot:`" + ` step writes ` + "`snapshots/<name>.scrollback.txt`" + `. See ` + "`examples/specs/scrollback.yml`" + `.
 `,
 	"snippets": `# Reusable Actions
 
@@ -37,15 +45,17 @@ Use trusted ` + "`command`" + ` verifiers for Bash checks such as ` + "`test -x 
 
 Supported v1 steps: ` + "`press`" + `, ` + "`type`" + `, ` + "`paste`" + `, ` + "`send`" + `, ` + "`mouse`" + `, ` + "`wait`" + `, ` + "`resize`" + `, ` + "`snapshot`" + `, imported ` + "`use`" + ` actions, ` + "`when`" + ` guards, the artifact-pipeline steps ` + "`download`" + `, ` + "`transform`" + `, ` + "`batch`" + ` (see ` + "`artifacts-pipeline`" + `), and the process-telemetry ` + "`monitor`" + ` step (see ` + "`process-telemetry`" + `).
 
+A ` + "`wait`" + ` takes exactly one condition: ` + "`screen`" + `, ` + "`scrollback`" + `, ` + "`process`" + `, or ` + "`idle`" + `. ` + "`wait: { scrollback: { contains | notContains | matches | lines } }`" + ` waits on the lines that scrolled off the top of the main screen (inline-mode TUIs commit output there); ` + "`wait: { screen: { …, includeScrollback: true } }`" + ` matches the scrollback followed by the visible screen.
+
 ` + "`mouse: { x, y, button?, action? }`" + ` sends a mouse event at the 0-based cell (button: left/middle/right/wheelUp/wheelDown; action: click/press/release/move). The runner encodes it as SGR (1006) or legacy X10 depending on the mode the target enabled.
 
-Every step can include a ` + "`when`" + ` guard (full verifier or shorthand string). Prefer ` + "`wait`" + ` steps that synchronize on visible screen or process state. Use ` + "`snapshot`" + ` to capture named terminal states in the artifact pack.
+Every step can include a ` + "`when`" + ` guard (full verifier or shorthand string). Prefer ` + "`wait`" + ` steps that synchronize on visible screen or process state. Use ` + "`snapshot`" + ` to capture named terminal states in the artifact pack; a non-empty scrollback is saved beside it as ` + "`snapshots/<name>.scrollback.txt`" + `.
 
 ` + "`paste`" + ` sends bracketed paste delimiters only after the target enables terminal mode ` + "`?2004`" + `; otherwise it writes literal text.
 `,
 	"verifiers": `# Verifiers
 
-Supported v1 verifiers: ` + "`screen`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, ` + "`link`" + `, trusted ` + "`command`" + `, and the process-telemetry ` + "`metrics`" + ` verifier (see ` + "`process-telemetry`" + `). Screen/region matchers: ` + "`equals`" + `, ` + "`contains`" + `, ` + "`notContains`" + `, ` + "`matches`" + ` (preferred), or legacy ` + "`regex`" + `.
+Supported v1 verifiers: ` + "`screen`" + `, ` + "`scrollback`" + `, ` + "`region`" + `, ` + "`cell`" + `, ` + "`cursor`" + `, ` + "`process`" + `, ` + "`snapshot`" + `, ` + "`file`" + `, ` + "`script`" + `, ` + "`count`" + `, ` + "`link`" + `, trusted ` + "`command`" + `, and the process-telemetry ` + "`metrics`" + ` verifier (see ` + "`process-telemetry`" + `). Screen/region matchers: ` + "`equals`" + `, ` + "`contains`" + `, ` + "`notContains`" + `, ` + "`matches`" + ` (preferred), or legacy ` + "`regex`" + `.
 
 ` + "`snapshot`" + ` compares a captured screen with its committed golden. ` + "`mode: text`" + ` (default) compares normalized characters; ` + "`mode: cell`" + ` also compares every cell's style against the committed .json grid so a color regression fails the run; ` + "`mode: json`" + ` additionally requires the cursor to match.
 
@@ -61,6 +71,8 @@ Outcomes can set ` + "`timeoutMs`" + ` and ` + "`normalize`" + ` when a single a
 
 ` + "`count`" + ` asserts how many cells on the screen, or within a region, match a character or pattern (see ` + "`count-verifier`" + `).
 
+` + "`scrollback`" + ` asserts on the lines that scrolled off the top of the main screen, which inline-mode TUIs rely on. It takes exactly one of ` + "`contains`" + `, ` + "`notContains`" + `, ` + "`matches`" + `, or ` + "`lines`" + ` (a row count compared with one of ` + "`equals`" + `, ` + "`atLeast`" + `, ` + "`atMost`" + `, ` + "`between: [min, max]`" + `). Text has one row per line, oldest first, normalized like screen text. ` + "`includeScrollback: true`" + ` on a ` + "`screen`" + ` verifier matches the scrollback followed by the visible screen. A row enters the scrollback when it scrolls off the top while the scroll region starts at the top row (line feed, IND/NEL, autowrap, ` + "`CSI n S`" + `); the alternate screen never adds to it; ` + "`CSI 3 J`" + ` and a full reset clear it; ` + "`CSI 2 J`" + ` and resize keep it. It holds ` + "`terminal.scrollbackLines`" + ` rows (default 10000), oldest dropped first, and a failing check reports how many were dropped.
+
 ` + "`link`" + ` asserts that an OSC 8 hyperlink is present: ` + "`link: { url, text }`" + ` matches a substring of the link URI and (optionally) the linked text. Useful for TUIs that render clickable links.
 
 See also: ` + "`file-script-verifiers`" + ` for end-to-end examples of ` + "`file`" + ` and ` + "`script`" + `.
@@ -69,7 +81,7 @@ See also: ` + "`file-script-verifiers`" + ` for end-to-end examples of ` + "`fil
 
 Each run writes ` + "`run.json`" + `, ` + "`run.yaml`" + `, ` + "`run.md`" + `, ` + "`agent_context.md`" + `, ` + "`events.ndjson`" + `, ` + "`spec.resolved.yml`" + `, final screens, frames, raw logs, snapshots, outcomes, and diagnostics.
 
-Start with ` + "`run.md`" + ` for a human summary, ` + "`run.json`" + ` for automation, ` + "`agent_context.md`" + ` for agent debugging, ` + "`diagnostics/environment.md`" + ` for runtime context, and ` + "`screens/final.txt`" + ` for the normalized terminal state.
+Start with ` + "`run.md`" + ` for a human summary, ` + "`run.json`" + ` for automation, ` + "`agent_context.md`" + ` for agent debugging, ` + "`diagnostics/environment.md`" + ` for runtime context, and ` + "`screens/final.txt`" + ` for the normalized terminal state. When lines scrolled off the main screen, ` + "`scrollback.txt`" + ` holds them (oldest first), ` + "`snapshots/<name>.scrollback.txt`" + ` holds them as of each ` + "`snapshot:`" + ` step, and ` + "`run.json`" + ` records ` + "`scrollbackLines`" + ` and ` + "`scrollbackDropped`" + `.
 
 The final screen is also rendered to a deterministic ` + "`screens/final.svg`" + ` (a pure function of the captured cell grid). Render any captured screen on demand with ` + "`glyph render <run|latest> [--screen <name>] [--out path|-]`" + `; the SVG is reproducible and safe to regenerate in CI or drop into a PR comment.
 
@@ -107,6 +119,8 @@ Use config for shared terminal defaults, artifact behavior, variables, and redac
 Use ` + "`glyph init [dir] --cmd <target> --ready <text>`" + ` to create ` + "`glyphrun.config.yml`" + `, ` + "`specs/glyphrun/smoke.yml`" + `, and ` + "`.gitignore`" + ` artifact entries.
 
 Use ` + "`terminal.alternateScreen: require`" + ` when a full-screen TUI must enter alternate screen mode, or ` + "`forbid`" + ` when a command must stay on the main terminal screen. The default is ` + "`auto`" + `.
+
+` + "`terminal.scrollbackLines`" + ` (default ` + "`10000`" + `, minimum ` + "`1`" + `) caps how many rows that scroll off the top of the main screen are kept for the ` + "`scrollback`" + ` wait and verifier. Older rows are dropped first and counted in ` + "`scrollbackDropped`" + ` in ` + "`run.json`" + `.
 
 ## Secrets (tvault env-group integration)
 

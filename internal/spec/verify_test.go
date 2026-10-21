@@ -432,3 +432,60 @@ func TestValidateCountMatchesOneCluster(t *testing.T) {
 		}
 	}
 }
+
+// TestValidateScrollbackConditions covers the scrollback matcher shared by
+// `wait.scrollback` and `verify.scrollback`.
+func TestValidateScrollbackConditions(t *testing.T) {
+	t.Parallel()
+	two := 2
+	cases := []struct {
+		name    string
+		cond    ScrollbackCondition
+		wantErr string
+	}{
+		{name: "contains", cond: ScrollbackCondition{Contains: "line 1"}},
+		{name: "notContains", cond: ScrollbackCondition{NotContains: "boom"}},
+		{name: "matches", cond: ScrollbackCondition{Matches: `^line \d+$`}},
+		{name: "lines equals", cond: ScrollbackCondition{Lines: &LinesCondition{Equals: &two}}},
+		{name: "lines between", cond: ScrollbackCondition{Lines: &LinesCondition{Between: &[2]int{1, 5}}}},
+		{name: "empty", cond: ScrollbackCondition{}, wantErr: "exactly one of contains, notContains, matches, lines"},
+		{name: "two matchers", cond: ScrollbackCondition{Contains: "a", NotContains: "b"}, wantErr: "exactly one of"},
+		{name: "matcher and lines", cond: ScrollbackCondition{Contains: "a", Lines: &LinesCondition{Equals: &two}}, wantErr: "exactly one of"},
+		{name: "bad regex", cond: ScrollbackCondition{Matches: "("}, wantErr: "scrollback.matches is invalid"},
+		{name: "lines without comparator", cond: ScrollbackCondition{Lines: &LinesCondition{}}, wantErr: "scrollback.lines must include exactly one"},
+		{name: "lines two comparators", cond: ScrollbackCondition{Lines: &LinesCondition{Equals: &two, AtLeast: &two}}, wantErr: "scrollback.lines must include exactly one"},
+		{name: "lines negative", cond: ScrollbackCondition{Lines: &LinesCondition{AtLeast: intPtr(-1)}}, wantErr: ">= 0"},
+		{name: "lines reversed between", cond: ScrollbackCondition{Lines: &LinesCondition{Between: &[2]int{5, 1}}}, wantErr: "between"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cond := tc.cond
+			for _, target := range []struct {
+				name string
+				err  error
+			}{
+				{"wait", validateWait(WaitStep{Scrollback: &cond})},
+				{"verify", validateVerify(Verify{Scrollback: &cond})},
+			} {
+				switch {
+				case tc.wantErr == "" && target.err != nil:
+					t.Errorf("%s: unexpected error: %v", target.name, target.err)
+				case tc.wantErr != "" && (target.err == nil || !strings.Contains(target.err.Error(), tc.wantErr)):
+					t.Errorf("%s: error = %v, want it to contain %q", target.name, target.err, tc.wantErr)
+				}
+			}
+		})
+	}
+
+	t.Run("exactly one target per wait and verify", func(t *testing.T) {
+		t.Parallel()
+		sb := &ScrollbackCondition{Contains: "x"}
+		if err := validateWait(WaitStep{Scrollback: sb, Screen: &ScreenCondition{Contains: "x"}}); err == nil {
+			t.Error("wait with screen and scrollback should be rejected")
+		}
+		if err := validateVerify(Verify{Scrollback: sb, Screen: &ScreenCondition{Contains: "x"}}); err == nil {
+			t.Error("verify with screen and scrollback should be rejected")
+		}
+	})
+}

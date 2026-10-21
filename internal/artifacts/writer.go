@@ -142,6 +142,19 @@ func (w *Writer) WriteSnapshot(name string, snapshot terminal.ScreenSnapshot) er
 	return w.manager.WriteJSON("snapshots/"+safe+".json", snapshot)
 }
 
+// WriteSnapshotScrollback writes the scrollback captured by a `snapshot:` step
+// beside that snapshot's screen, as snapshots/NAME.scrollback.txt. The text is
+// redacted like every other artifact.
+func (w *Writer) WriteSnapshotScrollback(name string, text string) error {
+	return w.manager.WriteText("snapshots/"+SafeName(name)+".scrollback.txt", text+"\n")
+}
+
+// WriteScrollback writes the run's final scrollback as scrollback.txt: the rows
+// that scrolled off the top of the main screen, oldest first.
+func (w *Writer) WriteScrollback(text string) error {
+	return w.manager.WriteText("scrollback.txt", text+"\n")
+}
+
 func (w *Writer) WriteOutcome(result OutcomeResult, raw any) error {
 	safe := SafeName(result.ID)
 	md := "# Outcome: " + result.ID + "\n\n" +

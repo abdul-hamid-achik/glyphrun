@@ -427,6 +427,9 @@ type runState struct {
 	termErr        error
 	snapshots      map[string]terminal.ScreenSnapshot
 	namedArtifacts map[string]artifacts.NamedArtifact
+	// scrollbackSnapshots names the snapshot steps that also wrote a
+	// snapshots/NAME.scrollback.txt (the scrollback was not empty then).
+	scrollbackSnapshots map[string]bool
 
 	// stepResults accumulates per-step execution records (SPEC §7.3) during the
 	// run loop so finish() can include them in RunResult.Steps.
@@ -458,11 +461,13 @@ func newRunState(s spec.Spec, rt config.Runtime, writer *artifacts.Writer, redac
 		runtime:         rt,
 		writer:          writer,
 		redactor:        redactor,
-		emulator:        gote.New(s.Terminal.Cols, s.Terminal.Rows),
+		emulator:        gote.NewWithOptions(s.Terminal.Cols, s.Terminal.Rows, terminal.Options{ScrollbackLines: rt.Config.Terminal.ScrollbackLines}),
 		updateSnapshots: updateSnapshots,
 		listener:        listener,
 		snapshots:       map[string]terminal.ScreenSnapshot{},
 		namedArtifacts:  map[string]artifacts.NamedArtifact{},
+
+		scrollbackSnapshots: map[string]bool{},
 	}
 }
 
@@ -1040,6 +1045,16 @@ func (s *runState) captureSnapshot(name string) error {
 		if err := s.writer.WriteSnapshot(name, snapshot); err != nil {
 			return err
 		}
+		// An inline-mode TUI's evidence is mostly in the scrollback, so keep it
+		// beside the screen. Committed goldens stay screen-only.
+		if text, lines := s.scrollbackArtifactText(); lines > 0 {
+			if err := s.writer.WriteSnapshotScrollback(name, text); err != nil {
+				return err
+			}
+			s.mu.Lock()
+			s.scrollbackSnapshots[name] = true
+			s.mu.Unlock()
+		}
 	}
 	if s.updateSnapshots {
 		return s.writeCommittedSnapshot(name, snapshot)
@@ -1066,7 +1081,7 @@ func (s *runState) waitFor(ctx context.Context, wait spec.WaitStep) error {
 	// Only screen waits observe early target exit. wait.Idle can still
 	// become true after the process exits (quiet period elapses), and
 	// wait.Process models exit as the condition itself.
-	observeExit := wait.Screen != nil
+	observeExit := wait.Screen != nil || wait.Scrollback != nil
 	for {
 		if err := s.terminalError(); err != nil {
 			return err
@@ -1151,7 +1166,10 @@ func (s *runState) lastPtyLineSummary() string {
 
 func (s *runState) checkWait(wait spec.WaitStep) (bool, string) {
 	if wait.Screen != nil {
-		return checkScreen(s.screenText(), *wait.Screen)
+		return s.checkScreenCondition(*wait.Screen, s.normalizeConfig())
+	}
+	if wait.Scrollback != nil {
+		return s.checkScrollbackCondition(*wait.Scrollback, s.normalizeConfig())
 	}
 	if wait.Process != nil {
 		return checkProcess(s.session.ExitState(), *wait.Process)
@@ -1265,7 +1283,10 @@ func (s *runState) checkVerifyWithEvidence(ctx context.Context, verify spec.Veri
 	normalize := s.normalizeConfigWith(normalizeOverride)
 	switch {
 	case verify.Screen != nil:
-		ok, message := checkScreen(s.screenTextWithNormalize(normalize), *verify.Screen)
+		ok, message := s.checkScreenCondition(*verify.Screen, normalize)
+		return ok, message, nil
+	case verify.Scrollback != nil:
+		ok, message := s.checkScrollbackCondition(*verify.Scrollback, normalize)
 		return ok, message, nil
 	case verify.Region != nil:
 		cond := verify.Region
@@ -2200,6 +2221,13 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 	if shouldCapture(policy.Frames, status) {
 		result.Artifacts["frames"] = "frames/frames.ndjson"
 	}
+	scrollbackInfo := s.scrollbackInfo()
+	result.ScrollbackLines = scrollbackInfo.Lines
+	result.ScrollbackDropped = scrollbackInfo.Dropped
+	scrollbackText, _ := s.scrollbackArtifactText()
+	if scrollbackInfo.Lines > 0 && shouldCapture(policy.FinalScreen, status) {
+		result.Artifacts["scrollback"] = "scrollback.txt"
+	}
 	if shouldCapture(policy.RawLog, status) {
 		result.Artifacts["rawPtyLog"] = "raw/pty.raw.log"
 		result.Artifacts["inputRawLog"] = "raw/input.raw.log"
@@ -2214,6 +2242,12 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		sort.Strings(snapshotNames)
 		for _, name := range snapshotNames {
 			result.Artifacts["snapshot:"+name] = "snapshots/" + artifacts.SafeName(name) + ".txt"
+			s.mu.Lock()
+			hasScrollback := s.scrollbackSnapshots[name]
+			s.mu.Unlock()
+			if hasScrollback {
+				result.Artifacts["snapshotScrollback:"+name] = "snapshots/" + artifacts.SafeName(name) + ".scrollback.txt"
+			}
 		}
 	}
 	// Surface named artifacts in the run result so agents reading run.json
@@ -2248,6 +2282,9 @@ func (s *runState) finish(started time.Time, status artifacts.RunStatus, outcome
 		// and JSON forms: it's what humans see in a PR comment and what a
 		// multimodal agent can read directly.
 		_ = s.writer.WriteScreenSVG("screens/final.svg", render.SnapshotSVG(finalSnapshot, render.DefaultOptions()))
+		if scrollbackInfo.Lines > 0 {
+			_ = s.writer.WriteScrollback(scrollbackText)
+		}
 	}
 	s.mu.Lock()
 	rawPTY := append([]byte(nil), s.rawPTY...)
@@ -2423,22 +2460,28 @@ func renderEnvironmentDiagnostic(rt config.Runtime, s spec.Spec, result artifact
 }
 
 func checkScreen(text string, cond spec.ScreenCondition) (bool, string) {
+	return checkText("screen", text, cond)
+}
+
+// checkText applies a screen condition to text, naming subject ("screen",
+// "scrollback", ...) in the verdict.
+func checkText(subject, text string, cond spec.ScreenCondition) (bool, string) {
 	switch {
 	case cond.Equals != "":
 		if text == cond.Equals {
-			return true, fmt.Sprintf("screen equals %q", cond.Equals)
+			return true, fmt.Sprintf("%s equals %q", subject, cond.Equals)
 		}
-		return false, fmt.Sprintf("expected screen to equal %q", cond.Equals)
+		return false, fmt.Sprintf("expected %s to equal %q", subject, cond.Equals)
 	case cond.Contains != "":
 		if strings.Contains(text, cond.Contains) {
-			return true, fmt.Sprintf("screen contains %q", cond.Contains)
+			return true, fmt.Sprintf("%s contains %q", subject, cond.Contains)
 		}
-		return false, fmt.Sprintf("expected screen to contain %q", cond.Contains)
+		return false, fmt.Sprintf("expected %s to contain %q", subject, cond.Contains)
 	case cond.NotContains != "":
 		if !strings.Contains(text, cond.NotContains) {
-			return true, fmt.Sprintf("screen does not contain %q", cond.NotContains)
+			return true, fmt.Sprintf("%s does not contain %q", subject, cond.NotContains)
 		}
-		return false, fmt.Sprintf("expected screen not to contain %q", cond.NotContains)
+		return false, fmt.Sprintf("expected %s not to contain %q", subject, cond.NotContains)
 	case cond.Matches != "", cond.Regex != "":
 		pat := cond.Matches
 		if pat == "" {
@@ -2449,11 +2492,11 @@ func checkScreen(text string, cond spec.ScreenCondition) (bool, string) {
 			return false, err.Error()
 		}
 		if re.MatchString(text) {
-			return true, fmt.Sprintf("screen matches %q", pat)
+			return true, fmt.Sprintf("%s matches %q", subject, pat)
 		}
-		return false, fmt.Sprintf("expected screen to match %q", pat)
+		return false, fmt.Sprintf("expected %s to match %q", subject, pat)
 	default:
-		return false, "screen condition is empty"
+		return false, subject + " condition is empty"
 	}
 }
 
