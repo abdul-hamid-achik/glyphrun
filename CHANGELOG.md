@@ -6,6 +6,10 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-10-21
+
+Resizing keeps the screen as a real terminal does, so inline-mode programs can be tested across a resize. A `${...}` that is not a Glyphrun key is left to the script.
+
 ### Changed
 
 - Resizing keeps the screen, as xterm does, instead of blanking it. The `resize` step used to reallocate every cell blank and move the cursor to the top-left corner, which made inline-mode programs that redraw their live region after `SIGWINCH` with relative cursor moves untestable. Now each row keeps the cells that still fit (no reflow): growing the width pads with blanks, shrinking cuts at the new width, and a wide character cut in half becomes a blank. Growing the rows adds blank rows at the bottom and does not pull lines back from the scrollback. Shrinking the rows drops them from the bottom, unless the cursor would fall below the new last row; then the top rows move into the scrollback, oldest first, until the cursor's row is the last one (on the alternate screen they are discarded, since it never feeds the scrollback). The cursor is clamped and keeps its visibility, a deferred wrap is cleared, and the scroll region goes back to the full screen. The positions saved by `ESC 7` and by entering the alternate screen are clamped to the new size instead of being dropped.
@@ -183,7 +187,8 @@ The new fields are optional and omitted when unused, so the contract hash of an 
 - CI and release workflows reject private employer references in tracked
   release content.
 
-[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.20.0...v0.21.0
