@@ -114,16 +114,27 @@ type SimpleEmulator struct {
 	savedStyle  Style
 	savedOrigin bool
 	hasSaved    bool
+
+	// scrollback holds the rows that scrolled off the top of the main screen
+	// (see scrollback.go). The alternate screen never adds to it, and a resize
+	// keeps it.
+	scrollback scrollbackBuffer
 }
 
 func NewEmulator(cols, rows int) *SimpleEmulator {
+	return NewEmulatorWithOptions(cols, rows, Options{})
+}
+
+// NewEmulatorWithOptions is NewEmulator with a configuration, which today is
+// the scrollback capacity.
+func NewEmulatorWithOptions(cols, rows int, opts Options) *SimpleEmulator {
 	if cols <= 0 {
 		cols = 80
 	}
 	if rows <= 0 {
 		rows = 24
 	}
-	e := &SimpleEmulator{cursor: Cursor{Visible: true}, autoWrap: true}
+	e := &SimpleEmulator{cursor: Cursor{Visible: true}, autoWrap: true, scrollback: newScrollbackBuffer(opts.ScrollbackLines)}
 	_ = e.Resize(cols, rows)
 	return e
 }
@@ -1044,7 +1055,9 @@ func (e *SimpleEmulator) setScrollRegion(args string) {
 }
 
 // scrollUp moves the scroll region's lines up by n, blanking the lines that
-// scroll in at the bottom margin.
+// scroll in at the bottom margin. It is the one place a row leaves the top of
+// the screen for good (LF, IND, NEL, autowrap at the bottom margin and SU all
+// end here), so it is where the scrollback is fed.
 func (e *SimpleEmulator) scrollUp(n int) {
 	top, bot := e.scrollTop, e.scrollBottom
 	if n <= 0 || top < 0 || bot >= e.rows || top > bot {
@@ -1052,6 +1065,12 @@ func (e *SimpleEmulator) scrollUp(n int) {
 	}
 	if n > bot-top+1 {
 		n = bot - top + 1
+	}
+	if top == 0 && !e.alternateScreen {
+		// Rows leaving the top of a region that starts at row 0 enter the
+		// scrollback, as in xterm. This must run before the shuffle below
+		// overwrites them.
+		e.pushScrolledRows(n)
 	}
 	for y := top; y <= bot; y++ {
 		if y+n <= bot {
@@ -1237,6 +1256,7 @@ func (e *SimpleEmulator) clear() {
 }
 
 // clearScreen implements ED. Erased cells take the current background (BCE).
+// Mode 3 also empties the scrollback.
 func (e *SimpleEmulator) clearScreen(mode int) {
 	switch mode {
 	case 1:
@@ -1250,6 +1270,12 @@ func (e *SimpleEmulator) clearScreen(mode int) {
 	case 2, 3:
 		for y := 0; y < e.rows; y++ {
 			e.eraseCells(y, 0, e.cols)
+		}
+		if mode == 3 {
+			// Erase saved lines. ED 2 never touches the scrollback. (This
+			// emulator has always blanked the screen on ED 3 too, where xterm
+			// leaves it alone; that is kept as it was.)
+			e.scrollback.clear()
 		}
 	default:
 		for y := max(e.cursor.Y, 0); y < e.rows; y++ {
@@ -1308,6 +1334,9 @@ func (e *SimpleEmulator) fullReset() {
 	e.mouseSGR = false
 	e.defaultFg = ""
 	e.defaultBg = ""
+	// RIS also erases the saved lines, as in xterm and VTE. The drop counter
+	// is history and survives, like alternateScreenUsed.
+	e.scrollback.clear()
 }
 
 func (e *SimpleEmulator) snapshotLocked() ScreenSnapshot {
