@@ -6,6 +6,14 @@ follows Semantic Versioning for its pre-1.0 release line.
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-10-25
+
+An outcome's `normalize` block now masks `snapshot` comparisons too.
+
+### Fixed
+
+- An outcome's `normalize` block now applies to `snapshot` verifiers, as it already did for `screen`, `region`, and `scrollback`. It was silently ignored, so a volatile value such as a branch name or a run id failed the golden compare even when the outcome masked it. When the snapshot also sets its own `normalize`, the outcome's block applies first and the snapshot's second, so both `replace` lists run and the snapshot's scalar flags win. The docs now say that `cell` and `json` snapshot modes compare the raw grid and ignore `normalize`, and that a top-level spec `normalize` also rewrites `wait` conditions.
+
 ## [0.24.0] - 2026-10-21
 
 Resizing keeps the screen as a real terminal does, so inline-mode programs can be tested across a resize. A `${...}` that is not a Glyphrun key is left to the script.
@@ -187,7 +195,8 @@ The new fields are optional and omitted when unused, so the contract hash of an 
 - CI and release workflows reject private employer references in tracked
   release content.
 
-[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.24.1...HEAD
+[0.24.1]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.24.0...v0.24.1
 [0.24.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/abdul-hamid-achik/glyphrun/compare/v0.21.0...v0.22.0

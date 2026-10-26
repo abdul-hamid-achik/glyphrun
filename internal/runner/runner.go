@@ -1326,7 +1326,7 @@ func (s *runState) checkVerifyWithEvidence(ctx context.Context, verify spec.Veri
 		ok, message := checkProcess(s.session.ExitState(), *verify.Process)
 		return ok, message, nil
 	case verify.Snapshot != nil:
-		ok, message := s.checkSnapshot(*verify.Snapshot)
+		ok, message := s.checkSnapshot(*verify.Snapshot, normalizeOverride)
 		return ok, message, nil
 	case verify.Command != nil:
 		err := s.runShellCommand(ctx, verify.Command.Run, verify.Command.Cwd, verify.Command.TimeoutMS)
@@ -1614,7 +1614,11 @@ func truncateScriptOutput(s string, n int) string {
 	return s[:n] + "..."
 }
 
-func (s *runState) checkSnapshot(cond spec.SnapshotCondition) (bool, string) {
+// checkSnapshot compares the captured screen with its golden. The outcome's
+// normalize block (outcomeNormalize) applies first, then the snapshot's own
+// normalize block, so the snapshot's scalar flags win and both levels' replace
+// and ignore rules apply, as the screen and region verifiers do.
+func (s *runState) checkSnapshot(cond spec.SnapshotCondition, outcomeNormalize *spec.Normalize) (bool, string) {
 	s.mu.Lock()
 	current, ok := s.snapshots[cond.Name]
 	s.mu.Unlock()
@@ -1635,7 +1639,7 @@ func (s *runState) checkSnapshot(cond spec.SnapshotCondition) (bool, string) {
 	if err != nil {
 		return false, fmt.Sprintf("failed to read committed snapshot %q: %v", cond.Name, err)
 	}
-	normalize := s.normalizeConfigWith(cond.Normalize)
+	normalize := applyNormalizeOverlay(s.normalizeConfigWith(outcomeNormalize), cond.Normalize)
 	expectedText := normalizePlainSnapshotText(string(expected), normalize)
 	actualText := normalizeSnapshotText(current, normalize)
 	if expectedText != actualText {

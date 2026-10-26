@@ -6,7 +6,7 @@ description: The Glyphrun verifier vocabulary — screen, scrollback, region, ce
 
 The v1 verifier vocabulary is `screen`, `scrollback`, `region`, `cell`, `cursor`, `process`, `snapshot`, trusted `command`, `file`, `script`, `count`, `link`, and the process-telemetry `metrics` verifier (see [Process Telemetry](/process-telemetry) and `glyph docs process-telemetry --format md`).
 
-The `snapshot` verifier compares a captured screen with its committed golden under `snapshotRoot`. `mode` selects the contract: `text` (default) compares the normalized characters, so a golden stays portable across terminals that color differently; `cell` also compares every cell's style (color, bold, dim, italic, underline, reverse) against the committed `.json` grid, so a color regression fails the run; `json` additionally requires the cursor to match. Stories pick the mode with `goldenMode` (see [Stories](/stories)).
+The `snapshot` verifier compares a captured screen with its committed golden under `snapshotRoot`. `mode` selects the contract: `text` (default) compares the normalized characters, so a golden stays portable across terminals that color differently; `cell` also compares every cell's style (color, bold, dim, italic, underline, reverse) against the committed `.json` grid, so a color regression fails the run; `json` additionally requires the cursor to match. Stories pick the mode with `goldenMode` (see [Stories](/stories)). The `cell` and `json` modes compare the raw cell grid and ignore `normalize` (`replace` and `ignoreRegions` have no effect there); mask volatile text in `text` mode.
 
 Examples:
 
@@ -115,6 +115,10 @@ outcomes:
       screen:
         contains: "build-<id>"
 ```
+
+The `normalize` block of an outcome applies to every text comparison in that outcome: `screen`, `region`, `scrollback`, and `snapshot`. A `snapshot` verifier can also carry its own `normalize` block under `verify.snapshot`. When both are set, the outcome's block applies first and the snapshot's block second: their `replace` rules run in that order, `ignoreRegions` lists are combined, and a scalar flag (`trimRight`, `normalizeLineEndings`, `stripAnsiTitle`) set on the snapshot overrides the outcome's. The same rules are applied to the committed golden, so a volatile value is masked on both sides and the golden file keeps the text it was recorded with.
+
+A top-level `normalize:` block in a spec, and the `terminal.normalize` block in the config, also apply to `wait` conditions. A `wait` on text that a rule masks must match the placeholder, not the original text.
 
 Use trusted `command` verifiers only for local checks you would be comfortable running from a shell script.
 
